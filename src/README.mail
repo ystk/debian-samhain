@@ -1,0 +1,13 @@
+
+Double delivery: if one or more recipients fail, all successful 
+                 recipients may get the message again.
+
+No exit message with debug executable
+
+setaddrseverity = ...
+                 individual severity for this addr, bound by MailSeverity
+
+setmailalias = alias : list
+
+closeaddress
+                 close address entry
