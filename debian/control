@@ -1,0 +1,30 @@
+Source: samhain
+Section: admin
+Priority: optional
+Maintainer: Javier Fernandez-Sanguino Pen~a <jfs@debian.org>
+Build-Depends: debhelper (>= 4.1.16), autoconf, procps, libgmp3-dev, e2fslibs-dev, libprelude-dev
+Standards-Version: 3.5.8
+Homepage: http://la-samhna.de/samhain/index.html
+
+Package: samhain
+Architecture: any
+Depends: ${shlibs:Depends}, debconf (>= 1.2.9) | debconf-2.0
+Description: Data integrity and host intrusion alert system
+ Samhain is an integrity checker and host intrusion detection system that
+ can be used on single hosts as well as large, UNIX-based networks.
+ It supports central monitoring as well as powerful (and new) stealth
+ features to run undetected on memory using steganography.
+ .
+ Main features
+     * Complete integrity check
+          + uses cryptographic checksums of files to detect
+            modifications,
+          + can find rogue SUID executables anywhere on disk, and
+     * Centralized monitoring
+          + native support for logging to a central server via encrypted
+            and authenticated connections
+     * Tamper resistance
+          + database and configuration files can be signed
+          + logfile entries and e-mail reports are signed
+          + support for stealth operation
+ .

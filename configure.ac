@@ -54,7 +54,7 @@ sh_use_pie=yes
 
 case "$host_os" in
 
-	*linux*)
+	*linux*|*-kfreebsd*-gnu|*-gnu*)
 	sh_use_lcaps="yes"
 	AC_DEFINE(HOST_IS_LINUX)
         AC_DEFINE(HAVE_EXT2_IOCTLS)

@@ -1,0 +1,32 @@
+#!/bin/sh -e
+
+. /usr/share/debconf/confmodule
+test $DEBIAN_SCRIPT_DEBUG && set -v -x
+
+
+case "$1" in
+    install)
+    ;;
+    upgrade)
+    ;;
+    configure)
+     # Only initialize if the database does not exist yet
+     if [ ! -f /var/state/samhain/samhain_file ] ; then
+         [ -f /var/log/samhain/samhain-init.log ] && rm -f /var/log/samhain/samhain-init.log
+         echo "Creating samhain's file integrity database (this can take some minutes)...."
+         samhain -t init >/var/log/samhain/samhain-init.log 2>&1
+     fi
+
+    ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 0
+    ;;
+esac
+
+
+#DEBHELPER#
+
+exit 0

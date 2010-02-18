@@ -1,0 +1,449 @@
+samhain (2.6.2-1) unstable; urgency=low
+
+  * New upstream release.
+  * Fix FTBFS on KFreeBSD by defining _GNU_SOURCE and adjusting
+    samhain-install.sh.in (Closes: #565820)
+  * Lintian fixes:
+    - Do not create /var/run/samhain in debian/dirs but, instead, do it in the
+      init script when the daemon is started.
+    - Fix debian/samhain.doc-base: section and PDf location
+    - debian/postinst: change absolute reference to samhain binary
+    - debian/control: Move Homepage to package header
+    - debian/copyright: Re-encode in UTF-8
+  * Use debhelper compatibility version 5 adjusting debian/compat
+    and commenting out DH_COMPAT in debian/rules
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@debian.org>  Thu, 18 Feb 2010 23:24:52 +0100
+
+samhain (2.5.4-2) unstable; urgency=low
+
+  * Fix FTBFS on KFreeBSD by defining _GNU_SOURCE and adjusting
+    samhain-install.sh.in (Closes: #565820)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@debian.org>  Thu, 18 Feb 2010 23:15:40 +0100
+
+samhain (2.5.4-1) experimental; urgency=low
+
+  * New upstream release, upload to experimental since it uses a new
+  dnmalloc allocator as a security measure against heap buffer overflows
+  and might introduce stability problems
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@debian.org>  Thu, 05 Mar 2009 09:03:09 +0100
+
+samhain (2.4.6a-1) experimental; urgency=low
+
+  * New upstream release (Closes: #493114)
+  * Update maintainer address
+  * Add procps to Build-Depends
+  * Adjust documentation handling for this new release in maintainer
+    build scripts
+  * Reenable GCC_STACK_PROTECT in the configure scripts to try to see if
+    #382617 reproduces.
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@debian.org>  Sun, 28 Sep 2008 18:05:27 +0200
+
+samhain (2.2.3-6) unstable; urgency=low
+
+  * Take over maintainership. Previous upload was not a proper NMU.
+    - Acknowledge changes in previous NMU. Actually, the fix 
+      to the init.d script also fixed a long-standing bug, which had the same
+      symptoms (Closes: #499799, #255435)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@debian.org>  Sun, 28 Sep 2008 17:59:50 +0200
+
+samhain (2.2.3-5) unstable; urgency=low
+
+  * Use "--oknodo" when stopping the daemon when restarting it
+    Closes: #499799
+
+ -- Christian Perrier <bubulle@debian.org>  Sun, 28 Sep 2008 17:20:13 +0200
+
+samhain (2.2.3-4) unstable; urgency=low
+
+  * Add LSB header to the init.d script (Closes: #468167)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@debian.org>  Fri, 21 Mar 2008 02:09:28 +0100
+
+samhain (2.2.3-3) unstable; urgency=low
+
+  * Add OS detection to support kFreeBSD and Hurd with patches provided
+    by Cyril Brulebois (Closes: #414151)
+  * Add --foreground option to the example in the README.Debian
+    (Closes: #390061) 
+  * Add support for Prelude, using patch provided by Pierre Chifflier 
+    (Closes: #312276)
+  * Add additional files to the default samhainrc as suggested by Olleg
+    Samoylov (Closes: #394622)
+  * Modify Makefile.in so that the samhain program is not installe the program
+    stripped, let dh_strip do his job (Closes: 437948)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@debian.org>  Sun, 28 Oct 2007 21:53:52 +0100
+
+samhain (2.2.3-2) unstable; urgency=low
+
+  * Disable GCC_STACK_PROTECT from the autoconf definition as this
+    introduces a FTBFS currently. Should be reenabled once this
+    issue is fixed (Closes: #382617)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sat, 19 Aug 2006 10:38:36 +0200
+
+samhain (2.2.3-1) unstable; urgency=low
+
+  * Upgrade to latest release
+  * Make samhain's configuration file mode 640 (instead of 644, users
+    don't need to read this file)
+  * Modify default samhainrc so it does not include /usr/X11R6/bin since
+    in the latest Xorg (v7) packages this directory is now a symlink
+    (Closes: #378320)
+  * Add /etc/nologin to the IgnoreAll section as suggested by Olleg Samoylov
+    (Closes: #381859)
+  * Add debconf translation to Portuguese contributed by Rui Branco (Note: had
+    to change the PO-Revision-Date since it was not properly defined and had
+    the default value) (Closes: #381446)
+  * Further modify Makefile.in so 'sstrip' doesn't even get compiled (as we
+    don't use it or redistribute it), it is also a pain to maintain as it
+    includes kernel headers and breaks occasionally.
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Thu, 17 Aug 2006 01:10:22 +0200
+
+samhain (2.2.0-2) unstable; urgency=low
+
+  * Include patch provided by upstream fix build issues in amd64 with
+    gcc 4.1 (Closes: #370808)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Fri,  9 Jun 2006 16:15:08 +0200
+
+samhain (2.2.0-1) unstable; urgency=low
+
+  * New upstream release (Closes: #366826)
+  * Include patch provided by upstream to fix build error
+    when building with autoconf 2.59d (Closes: #369503)
+  * Provide Swedish Debconf translation sent by  Daniel Nylander 
+    (Closes: #331582) 
+  * Add information on how to build the server version and make new
+    packages in the README.Debian file.
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Mon,  5 Jun 2006 22:10:15 +0200
+
+samhain (2.0.10a-4) unstable; urgency=low
+
+  * Add Build-Depends on autoconf (Closes: #369387)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Tue, 30 May 2006 01:31:07 +0200
+
+samhain (2.0.10a-3) unstable; urgency=low
+
+  * Use AC_TRY_LINK instead of AC_TRY_COMPILE in aclocal.m4's
+    GCC_STACK_PROTECT_CC to prevent a FTBFS with gcc-4.1 in
+    mips (Closes: #358644)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sun, 28 May 2006 19:17:49 +0200
+
+samhain (2.0.10a-2) unstable; urgency=low
+
+  * Make the package a non-native Debian package.
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sat,  5 Nov 2005 16:00:30 +0100
+
+samhain (2.0.10a-1) unstable; urgency=low
+
+  * New upstream release.
+  * Update FSF address in debian/copyright (Closes #329046)
+  * Added Swedish translation provided by Daniel Nylander (Closes #331582)
+  * Fixed example in HOWTO-samhain+GnuPG.html to use --with-ftp (Closes:
+    #306462)
+  * Added /etc/postfix/prng_exch to the default samhainrc so that 
+    it is not checked for size change (Closes: #320110)
+  * Commented out [Kernel] and [Utmp] sections in the default samhainrc file
+    as they don't apply to Linux (Closes: #306971)
+  * Properly purge samhain generate files (Closes: #333422)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Tue, 11 Oct 2005 23:31:17 +0200
+
+samhain (2.0.9-1) unstable; urgency=low
+
+  * New upstream release (Closes: #319587)
+  * Use debhelper compatibility version 4, adjust debian/rules
+    and remove debian/conffiles
+  * Fix location of doc-base documents (Closes: #306471)
+  * Added Vietnamese debconf translation provided by Clytie Siddall 
+    (Closes: #317877)
+  * Removed usr/bin from debian/dirs as it is not needed
+  * Add Dependency on "debconf | debconf-2.0" as requested by Joey Hess
+  * Added copyright statements from the included libraries in debian/copyright
+    after a review of the COPYING file and the source code.
+  * Minor fixes in the header of debian/rules (20001 -> 2001 :-)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sun, 28 Aug 2005 17:21:30 +0200
+
+samhain (2.0.2a-2) unstable; urgency=low
+
+  * Added check translation provided by Miroslav Kure (Closes: #294780)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sat, 12 Feb 2005 12:32:32 +0100
+
+samhain (2.0.2a-1) unstable; urgency=low
+
+  * New upstream release (Closes: #259275)
+    - Fixes buffer overflow which can lead to local root compromise.
+      (no CVE entry) (Closes: #281199)
+    - Adjusted locations of files used under debian/ since they have 
+      been moved in upstream sources
+  * Since profiles have been removed provide a samhainrc file under debian/
+    - This new samhainrc file is based in the samhainrc.linux file with
+      the default values used in previous releases. It changes, however,
+      the mail subject so it's clearer to the admin that the messages
+      are sent by samhain.
+  * Modified Makefile so errors related to used targets are trapped 
+    (Closes: #259958)
+  * Fixed apt.conf example in README.Debian (Closes: #269843)
+  * Included italian debian/po translation provided by Luca Monducci 
+    (Closes: #280140)
+  * Added a new 'get-orig-source' target to retrieve the latest version
+    from the homepage.
+  * Replaced dh_installmanpages by dh_installman
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sun, 14 Nov 2004 23:12:33 +0100
+
+samhain (1.8.9-1) unstable; urgency=low
+
+  * New upstream release (Closes: #238758)
+  * Added new docs provided in this release do debian/docs
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sat,  3 Jul 2004 16:29:25 +0200
+
+samhain (1.8.2-4) unstable; urgency=low
+
+  * Included Japanese translation provided by Hideki Yamane  (Closes: #243274)
+  * Added logfile rotation as suggested by Max Goodman (Closes: #251799)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Mon,  7 Jun 2004 10:37:04 +0200
+
+samhain (1.8.2-3) unstable; urgency=low
+
+  * Added e2fslibs-dev to Build-Depends (Closes: #229851)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Tue, 27 Jan 2004 23:08:41 +0100
+
+samhain (1.8.2-2) unstable; urgency=low
+
+  * Removed redundant dependancy on libgmp3 (lintian error)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Mon, 26 Jan 2004 22:00:10 +0100
+
+samhain (1.8.2-1) unstable; urgency=low
+
+  * New upstream release (Closes: #228958)
+  * Added more example files contributed under scripts/ to the package.
+  * Added more documents provided under DOCS/
+  * Added README.Debian note about using samhain on sid systems and over
+    reports generated there (Closes: #226731)
+  * Sh_unix.c now includes ext2fs/ext2fs.h instead of the Linux kernel headers
+    (which are bound to break and should not be included by applications
+    directly)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Mon, 26 Jan 2004 20:42:55 +0100
+
+samhain (1.7.10-4) unstable; urgency=medium
+
+  * Fixed postinst so the database is only initialised if it
+    does not exist, otherwise it will get appended and will
+    grow in each upgrade (potentially making samhain slower every
+    time..)
+  * Added NEWS file for users suggesting the revision of their
+    state files due to this unreported bug.
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sat, 20 Sep 2003 23:13:12 +0200
+
+samhain (1.7.10-3) unstable; urgency=low
+
+  * Added dutch po-debconf translation (Closes: #205167) 
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sun, 24 Aug 2003 01:44:14 +0200
+
+samhain (1.7.10-2) unstable; urgency=high
+
+  * Updated config.sub and config.guess with latest version (Closes: #203795)
+    
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sun,  3 Aug 2003 22:19:33 +0200
+     
+samhain (1.7.10-1) unstable; urgency=low
+
+  * New upstream release (Closes: #199571)
+  * Moved to debconf po templates (Closes: #203671)
+  * Added french po translation  (Closes: #203672)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Fri,  1 Aug 2003 17:37:42 +0200
+
+samhain (1.7.8-1) unstable; urgency=low
+
+  * New upstream release.
+  * Modified the debian/rules and debian/docs files in order to adjust
+    to the upstream changes in the upstream package.
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sat, 14 Jun 2003 22:26:31 +0200
+
+samhain (1.7.1a-6) unstable; urgency=low
+
+  * Added ${shlibs:Depends} since samhain is no longer compiled
+    staticly (Closes: #196602)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sat, 14 Jun 2003 22:11:20 +0200
+
+samhain (1.7.1a-5) unstable; urgency=low
+
+  * Now _reall_ removed the samhain.1.todo file
+  * Added debconf versioned dependancy to ensure start-stop
+  of samhain.
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sat,  5 Apr 2003 18:12:21 +0200
+
+samhain (1.7.1a-4) unstable; urgency=low
+
+  * Changed from Architecture: all to any. Stupid me.
+  * Sstrip does not get called any longer (commented out in 
+    # Makefile.in) (Closes: #148453)
+  * Re-enabled dh_strip
+  * Removed samhain.1.todo from Debian dir (was getting installed
+  as a manpage)
+  * Postinst was not starting properly the samhain database, when 
+  was this removed????
+  * Updating year in copyright file
+  * Improved the description of the package
+  * Removed dh_undocumented from debian/rules
+  * Added more info to the README file
+  * Modified Debian profiel so that nothing gets printed to /dev/console
+  (PrintSeverity) and so that higher priorities get logged to syslog
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Fri,  4 Apr 2003 20:19:50 +0200
+
+samhain (1.7.1a-3) unstable; urgency=low
+
+  * Now Architecture: all  (Closes: #178883)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Thu, 30 Jan 2003 22:33:03 +0100
+
+samhain (1.7.1a-2) unstable; urgency=low
+
+  * Added a TODO file
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Fri, 10 Jan 2003 01:59:54 +0100
+
+samhain (1.7.1a-1) unstable; urgency=low
+
+  * New upstream release
+  * Added latest config.sub and config.guess files (Closes: #173073)
+  * Properly added an init script (I'm considering using the one provided in the package
+  for all Linux distributions, and have fixed a typo in it, but I'm not sure about doing
+  it just yet)
+  * Removed undocumented manpages of binaries no longer present
+  * Fixed many lintian errors
+  * Made it 'i386' only, still no clue about the ELF header bug #148453
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Thu,  9 Jan 2003 20:17:21 +0100
+
+samhain (1.6.1-2) unstable; urgency=low
+
+  * Fixed typo in templates (unreported bug sent by Thomas Gebhardt)
+  * Move template.ru to templates.ru (!)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Mon, 18 Nov 2002 12:17:34 +0100
+
+samhain (1.6.1-1) unstable; urgency=low
+
+  * New upstream release (missed 1.5, oh well...)
+  * This package installs correctly (Closes: #152925)
+  * Since yule is no longer installed the "ELF header" bug does no longer stand 
+  (Closes: #148453)
+  * Fixed upstream's Makefile to clean the binaries properly.
+  * Added a doc-base file for the manual.
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Fri,  6 Sep 2002 09:52:41 +0200
+
+samhain (1.4.7-4) unstable; urgency=low
+
+  * Compiled against libgmp3-dev and changed dependancies (Closes: #151218)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sat, 29 Jun 2002 01:08:26 +0200
+
+samhain (1.4.7-3) unstable; urgency=low
+
+  * Added libgmp2 depends and build-depends (Closes: #148594)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Thu, 27 Jun 2002 01:56:05 +0200
+
+samhain (1.4.7-2) unstable; urgency=low
+
+  * Changed Makefile to strip and then sstrip (previous buildds did this
+  and worked for ia64). (Closes: #148463)
+  * Added (properly) german and russian template files 
+  (Closes: #112158, #136607)
+  * Modified default samhainrc to properly work for Debian environments
+    (Closes: #131909)
+  * This *is* a new release upstream, should have closed this bug
+  previously (Closes: #148059)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Wed, 29 May 2002 14:09:56 +0200
+
+samhain (1.4.7-1) unstable; urgency=low
+
+  * Latest upstream release (stable) (Closes:
+  * Added missing dirs to debian/dirs.
+  * Added init.d as a conffile.
+  * Moved /var/samhain to /var/log/samhain and also make use of 
+  other directories (/var/run, /var/lock/...)
+  * Fixed postinst script accordingly.
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Fri, 24 May 2002 19:37:15 +0200
+
+samhain (1.3.0-4) unstable; urgency=low
+
+  * Fixed init script to properly run samhain (Closes: #148057)
+  * Added german template file (Closes: #112158)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sun, 30 Dec 2001 17:23:19 +0100
+
+samhain (1.3.0-3) unstable; urgency=medium
+
+  * Fixed postinst issue (Closes: #120575)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Thu, 22 Nov 2001 21:42:30 +0100
+
+samhain (1.3.0-2) unstable; urgency=low
+
+  * Fixed positinst (Closes: #115890)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Tue, 20 Nov 2001 15:59:17 +0100
+
+samhain (1.3.0-1) unstable; urgency=low
+
+  * New upstream version.
+  * Postinst does not fork when creating database (Closes: #115888)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Mon, 19 Nov 2001 17:06:15 +0100
+
+samhain (1.2.6-4) unstable; urgency=high
+
+  * Added debconf note and samhain initialization in background (Closes: #110841)
+  * Changed section to admin.
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Tue,  4 Sep 2001 19:42:25 +0200
+
+samhain (1.2.6-3) unstable; urgency=low
+
+  * Changed configure options so log files are installed in /var (Closes: #110668)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Thu, 30 Aug 2001 19:06:27 +0200
+
+samhain (1.2.6-2) unstable; urgency=low
+
+  * Added --oknodo to the Samhain stop in the init.d file (Closes: #110506)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Wed, 29 Aug 2001 15:55:44 +0200
+
+samhain (1.2.6-1) unstable; urgency=low
+
+  * Initial Release.
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Mon, 20 Aug 2001 20:36:17 +0200
+

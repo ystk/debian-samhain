@@ -1,0 +1,115 @@
+#!/usr/bin/make -f
+# debian/rules for samhain
+# Copyright (C) 2001 to 2003 by Javier Fernandez-Sanguino
+# based on
+# Sample debian/rules that uses debhelper.
+# GNU copyright 1997 to 1999 by Joey Hess.
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+# This is the debhelper compatability version to use.
+# export DH_COMPAT=5
+
+build: build-stamp
+build-stamp:
+	dh_testdir
+
+	./configure --prefix=/usr --mandir=\$${prefix}/share/man \
+		--with-config-file=/etc/samhain/samhainrc \
+		--with-state-dir=/var/state/samhain  \
+		--with-prelude \
+		--enable-network=no  \
+		--with-pid-file=/var/run/samhain/samhain.pid \
+		--with-log-file=/var/log/samhain/samhain.log 
+	$(MAKE)
+
+	touch build-stamp
+
+clean:
+	dh_testdir
+	dh_testroot
+	rm -f build-stamp
+	-[ -f Makefile ] && $(MAKE) distclean
+	dh_clean
+
+install: build
+	dh_testdir
+	dh_testroot
+	dh_clean -k
+	dh_installdirs
+	# Fix the permissions
+	chmod o-rX `pwd`/debian/samhain/var/log/samhain \
+		`pwd`/debian/samhain/var/state/samhain \
+		`pwd`/debian/samhain/etc/samhain
+
+	$(MAKE) install install-boot DESTDIR=`pwd`/debian/samhain
+	# However, remove the rc.d links
+	-rm -rf `pwd`/debian/samhain/etc/rc?.d
+	# And remove /var/run dir, it is created by the init.d
+	rmdir debian/samhain/var/run/samhain
+
+	# We no longer copy it, it does not seem useful
+#	install -m 755 encode `pwd`/debian/samhain/usr/bin/samhain_encode
+	# This one should be used, the default one provides
+	# much more configuration options which will make warnings appear
+	# in a stock Debian system, it is patched, however
+	install -m 640 debian/samhainrc `pwd`/debian/samhain/etc/samhain/samhainrc
+	install -m 644 debian/samhain.logrotate.d `pwd`/debian/samhain/etc/logrotate.d/samhain
+
+# Build architecture-independent files here.
+binary-indep: build install
+# We have nothing to do by default.
+
+# Build architecture-dependent files here.
+binary-arch: build install
+#	dh_testversion
+	dh_testdir
+	dh_testroot
+	dh_installdebconf	
+	dh_installdocs 
+	[ -f debian/samhain/usr/share/doc/samhain/MANUAL-2_3.html.tar ] && \
+		cd debian/samhain/usr/share/doc/samhain && \
+		tar xf MANUAL-2_3.html.tar && mv MANUAL-2_3 manual.html && \
+		rm -f MANUAL-2_3.html.tar
+	dh_installexamples scripts/example_pager.pl \
+		scripts/example_sms.pl \
+		yulerc.template \
+		samhainrc.linux \
+		scripts/README \
+		scripts/samhainadmin.pl \
+		scripts/samhain.cgi \
+		scripts/samhain.xsl \
+		scripts/samhain.dtd \
+		scripts/chroot.sh \
+		scripts/*spec
+	dh_installmenu
+	dh_installinit -- defaults 19 
+	dh_installman man/samhain.8 man/samhainrc.5
+	dh_installchangelogs docs/Changelog
+	dh_link
+	dh_strip
+	dh_compress
+	dh_fixperms
+	dh_installdeb
+	dh_shlibdeps
+	dh_gencontrol
+	dh_md5sums
+	dh_builddeb
+
+get-orig-source:
+	@echo "Retrieving source"
+	wget -q -O samhain-current.tar.gz  http://la-samhna.de/samhain/samhain-current.tar.gz
+	@echo "Extracting source"
+	tar -zxf samhain-current.tar.gz
+	@echo "Verifying source"
+	# Take the latest version
+	file=`tar -ztf samhain-current.tar.gz |grep -v asc | head -1`; \
+	gpgfile=`tar -ztf samhain-current.tar.gz |grep asc | head -1`; \
+	newfile=`echo $$file | sed -e 's/-/_/; s/\.tar/.orig.tar/'`; \
+	mv $$file $$newfile; \
+	gpg -q --verify $$gpgfile $$newfile 
+	rm -f samhain-current.tar.gz
+
+binary: binary-indep binary-arch
+.PHONY: build clean binary-indep binary-arch binary install

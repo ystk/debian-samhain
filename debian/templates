@@ -1,0 +1,6 @@
+Template: samhain/init-log
+Type: note
+_Description: Samhain initialization
+ The database used for Samhain will be initialized now. Any errors/messages
+ regarding this initialization can be recovered from
+ /var/log/samhain/samhain-init.log

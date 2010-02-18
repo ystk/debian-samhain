@@ -1,0 +1,13 @@
+
+* Check why the init script provided upstream and the Debian init script are different
+
+* Check why the daemon does not behave the same when sending mail locally if the MTA is
+ not listening in port 25. It seems not to be able to send mails directly to local users
+
+* Fix the issue with ELF headers in non-i386 architectures
+
+* Determine if old bugs are still relevant
+
+* Provide also the samhain LKM and the applet-monitor
+
+* Provide versions for mysql and postgres?

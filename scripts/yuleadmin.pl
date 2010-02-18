@@ -41,8 +41,8 @@ my $base = basename($0);
 #my $yule     = "./yule";
 #my $gpg      = "/usr/bin/gpg";
 
-my $cfgfile  = "REQ_FROM_SERVER/home/rainer/PROJECTS/samhain/devel/testrc_2";
-my $yule     = "/home/rainer/PROJECTS/samhain/devel/sbin/yule";
+my $cfgfile  = "/etc/samhain/samhainrc";
+my $yule     = "/usr/sbin/samhain";
 my $gpg      = "";
 
 $cfgfile  =~ s/^REQ_FROM_SERVER//;

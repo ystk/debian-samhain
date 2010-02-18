@@ -1,0 +1,16 @@
+Document: samhain-manual
+Title: Samhain Manual
+Author: Rainer Wichmann 
+Abstract: This manual describes what samhain is
+ and how it can be used to check the file integrity of your
+ server.
+Section: System/Security
+
+
+Format: PDF
+Files: /usr/share/doc/samhain/MANUAL-2_3.pdf.gz
+
+Format: HTML
+Index: /usr/share/doc/samhain/manual.html/index.html
+Files: /usr/share/doc/samhain/manual.html/*.html
+

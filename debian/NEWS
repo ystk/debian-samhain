@@ -1,0 +1,26 @@
+samhain (2.5.4-1) unstable; urgency=low
+
+  Since version 2.5.4 samhain uses the dnmalloc allocator as a proactive
+  security measure against heap buffer overflows. If you experience stability
+  problems, please report these issues as a bug report against the Debian
+  package providing information on your architecture. 
+  
+  As a workaround you can use the sources and use recompile them using
+  --disable-dnmalloc flag.
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@debian.org>  Thu, 05 Mar 2009 09:04:22 +0100
+
+samhain (1.7.10-4) unstable; urgency=low
+
+  Since version 1.7.10-4 the postinst has been fixed and the integrity
+  database will not be initialized each time the package is upgrade.
+  Previous versions would do so and, as a consequence, the 
+  /var/state/samhain/samhain_file would be appended an will grow with
+  each upgrade. Users that have frequently upgraded samhain are suggested
+  to review the size of that file and consider (if it's too big, i.e
+  over 2-3 MBs) to purge it and re-run 'samhain -t init' to recreate it.
+  When I find a good way to detect appended databases code will be added
+  to the package management scripts in order to remove and regenerate it 
+  (just in case some users suffer from this issue). 
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@computer.org>  Sat, 20 Sep 2003 23:13:12 +0200

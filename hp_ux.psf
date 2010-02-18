@@ -1,0 +1,75 @@
+# PSF
+depot
+  layout_version 1.0
+# Product definition:
+product
+  tag            samhain
+  revision       2.6.2
+  is_patch       false
+  title          samhain Client
+  description    "Client for the samhain system"
+  machine_type   *
+  os_name        HP-UX
+  os_release     ?.11.*
+  os_version     ?
+  directory      /
+  is_locatable   false
+
+# Dummy for configure warning
+# datarootdir = @datarootdir@
+
+# Specify a checkremove script that executes during the 
+# swremove analysis phase. (This script prevents the
+# removal of the SD product and returns an ERROR.
+#    checkremove     scripts/checkremove.sd
+ 
+ configure       ./sc/configure
+ unconfigure     ./sc/unconfigure
+ preremove       ./sc/preremove
+
+ # Fileset definitions:
+  fileset
+    tag          basic
+    title        Core system
+    revision     2.6.2
+    file_permissions -m 0700 -o root -g sys
+ #
+ # Files:
+#
+    directory    ./sbin/init.d=/sbin/init.d
+    file         -m 0555 -o bin -g bin samhain
+#
+    directory    ./usr=/usr
+    file         -m 0555 -o bin -g bin .
+#
+    directory    ./etc/samhain=/etc/samhain
+    file  -v     -m 0600 samhainrc
+    file         -m 0555 -o bin -g bin .
+#
+    directory    ./usr/sbin=/usr/sbin
+    file         *
+    file         -m 0555 -o bin -g bin .
+    file         -m 0750 -o bin -g bin samhain
+#
+    directory    .uvar/state/samhain=uvar/state/samhain
+    file         -m 0555 -o bin -g bin .
+#
+    directory    ./var/log/samhain=/var/log/samhain
+    file         -m 0755 -o adm -g adm .
+#
+    directory    ./var/run/samhain=/var/run/samhain
+    file         -m 0555 -o bin -g bin .
+ end
+ # Manpage fileset definitions:
+ #fileset
+ #   tag          man
+ #   title        Manual pages for samhain
+ #   revision     2.05
+ #   directory    .${prefix}/share/man/man8=${prefix}/share/man/man8
+ #   file         *
+ #   directory    .${prefix}/share/man/man5=${prefix}/share/man/man5
+ #   file         *
+ #end  
+ #man
+end
+#

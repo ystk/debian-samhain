@@ -53,7 +53,7 @@ selectconfig = @selectconfig@
 top_builddir = .
 
 INSTALL = @INSTALL@
-INSTALL_PROGRAM = @INSTALL@ -s -m 700
+INSTALL_PROGRAM = @INSTALL@ -m 700
 INSTALL_SHELL = @INSTALL@ -m 700
 INSTALL_DATA = @INSTALL@ -m 600
 INSTALL_MAN = @INSTALL@ -m 644
@@ -215,7 +215,7 @@ PROGRAMS = $(SETPWD) $(STEGIN) $(SAMHAIN) $(YULECTL)
 #
 #----------------------------------------------------------
 
-all: $(top_srcdir)/depend.sum $(SETPWD) $(STEGIN) $(SAMHAIN) $(YULECTL) @sh_lkm@ sstrip
+all: $(top_srcdir)/depend.sum $(SETPWD) $(STEGIN) $(SAMHAIN) $(YULECTL) @sh_lkm@ 
 
 
 #----------------------------------------------------------
@@ -523,15 +523,13 @@ uninstall-lkm:
 	./samhain-install.sh --destdir=$(DESTDIR) --express --verbose uninstall-lkm
 
 
-install-program: $(PROGRAMS) sstrip
+install-program: $(PROGRAMS) 
 	@$(mkinstalldirs) $(DESTDIR)$(sbindir)
 	@list='$(PROGRAMS)'; for p in $$list; do \
 	  if test -f $$p; then \
 	    echo " $(INSTALL_PROGRAM) $$p $(DESTDIR)$(sbindir)/`echo $$p|sed 's%samhain%@install_name@%'|sed 's%yule%@install_name@%'`"; \
 	    $(INSTALL_PROGRAM) $$p $(DESTDIR)$(sbindir)/`echo $$p|sed 's%samhain%@install_name@%'|sed 's%yule%@install_name@%'`; \
 	    chmod 0700 $(DESTDIR)$(sbindir)/`echo $$p|sed 's%samhain%@install_name@%'|sed 's%yule%@install_name@%'`; \
-	    echo " ./sstrip $(DESTDIR)$(sbindir)/`echo $$p|sed 's%samhain%@install_name@%'|sed 's%yule%@install_name@%'`"; \
-	    ./sstrip $(DESTDIR)$(sbindir)/`echo $$p|sed 's%samhain%@install_name@%'|sed 's%yule%@install_name@%'`; \
 	  else :; fi; \
 	done
 
@@ -1247,9 +1245,8 @@ sh_ks.h: kern_head
 	./kern_head > sh_ks.h
 
 sh_ks_xor.h: encode sh_ks.h
-	@echo 'encode $(XOR_CODE) sh_ks.h'; \
-	sleep 1; \
-	./encode $(XOR_CODE) sh_ks.h; \
+	@echo 'encode $(XOR_CODE) sh_ks.h'
+	./encode $(XOR_CODE) sh_ks.h
 	mv x_sh_ks.h  sh_ks_xor.h
 
 # For bignum
@@ -1316,29 +1313,26 @@ exepack_fill: $(srcsrc)/exepack_fill.c minilzo.o exepack
 	echo "$(LINK) exepack_fill.o minilzo.o"; \
 	$(LINK) exepack_fill.o minilzo.o
 
-samhain.pk: $(SAMHAIN) exepack exepack_fill sstrip
+samhain.pk: $(SAMHAIN) exepack exepack_fill
 	@echo "cp ./$(SAMHAIN) ./samhain.pk.data"; \
-	cp ./$(SAMHAIN) ./samhain.pk.data; \
+	cp ./$(SAMHAIN) ./samhain.pk.data
 	echo "strip ./samhain.pk.data"; \
-	strip ./samhain.pk.data > /dev/null 2>&1  || echo "... is already stripped"; \
-	echo "./sstrip ./samhain.pk.data"; \
-	./sstrip ./samhain.pk.data > /dev/null 2>&1  || echo "sstrip returned false"; \
-	test -f exepack.out && rm exepack.out; \
+	strip ./samhain.pk.data > /dev/null 2>&1  || echo "... is already stripped"
+	test -f exepack.out && rm exepack.out
 	echo "./exepack_fill exepack samhain.pk.data exepack.out"; \
-	./exepack_fill exepack samhain.pk.data exepack.out; \
-	chmod +x exepack.out; \
+	./exepack_fill exepack samhain.pk.data exepack.out
+	chmod +x exepack.out
 	echo "strip exepack.out"; \
-	strip exepack.out > /dev/null 2>&1 || echo "... is already stripped"; \
-	./sstrip exepack.out > /dev/null 2>&1 || echo "sstrip returned false"; \
+	strip exepack.out > /dev/null 2>&1 || echo "... is already stripped"
 	echo "mv exepack.out samhain.pk"; \
 	rm -f samhain.pk; mv exepack.out samhain.pk
 
 samhain-packed: $(SAMHAIN) samhain_setpwd
 	@echo "samhain_setpwd samhain new $(CLIENTPASSWD)"; \
-	samhain_setpwd samhain new $(CLIENTPASSWD); \
+	samhain_setpwd samhain new $(CLIENTPASSWD)
 	echo "rm -f samhain; mv samhain.new samhain"; \
-	rm -f samhain; mv samhain.new samhain; \
-	$(MAKE) samhain.pk; \
+	rm -f samhain; mv samhain.new samhain
+	$(MAKE) samhain.pk
 	echo "rm -f samhain; mv samhain.pk samhain"; \
 	rm -f samhain; mv samhain.pk samhain
 

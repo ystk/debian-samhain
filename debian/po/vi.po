@@ -1,0 +1,30 @@
+# Vietnamese translation for samhain.
+# Copyright © 2005 Free Software Foundation, Inc.
+# Clytie Siddall <clytie@riverland.net.au>, 2005.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: samhain 2.0.2a-2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2003-07-26 22:57+0200\n"
+"PO-Revision-Date: 2005-07-12 16:26+0930\n"
+"Last-Translator: Clytie Siddall <clytie@riverland.net.au>\n"
+"Language-Team: Vietnamese <gnomevi-list@lists.sourceforge.net>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0\n"
+"X-Generator: LocFactoryEditor 1.2.2\n"
+
+#. Description
+#: ../templates:3
+msgid "Samhain initialization"
+msgstr "Khởi động Samhain"
+
+#. Description
+#: ../templates:3
+msgid ""
+"The database used for Samhain will be initialized now. Any errors/messages "
+"regarding this initialization can be recovered from /var/log/samhain/samhain-"
+"init.log"
+msgstr "Lúc này sẽ khởi tạo cơ sở dữ liệu được dùng cho Samhain. Có thể phục hồi thông tin lỗi / thông điệp nào về việc khởi tạo này từ bản ghi «/var/log/samhain/samhain-init.log»."

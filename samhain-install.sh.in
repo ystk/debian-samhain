@@ -679,7 +679,7 @@ then
               update="(PATH=\$PATH:/usr/sbin; pwd_mkdb -p /etc/master.passwd)"
               break
 	      ;;
-           Linux/* )
+           Linux/* | GNU/kFreeBSD/* | GNU/* )
                file=/etc/passwd
                entry="${user}:*:${uid}:${gid}:${realname}:${home}:${shell}"
                update="(PATH=\$PATH:/usr/sbin; pwconv)"
@@ -885,7 +885,7 @@ then
 	rc_uinst="rm -f ${DESTDIR}/etc/init.d/@install_name@; rm -f ${DESTDIR}/etc/rc0.d/K10@install_name@; rm -f ${DESTDIR}/etc/rc1.d/K10@install_name@; rm -f ${DESTDIR}/etc/rc3.d/S99@install_name@"
 	;;
 
-    Linux/*)
+    Linux/* | GNU/kFreeBSD/* | GNU/* )
 	rlv="2 3 4 5"
 	linkopt="-f -s"
 	# find rc directories

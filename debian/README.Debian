@@ -1,0 +1,117 @@
+samhain for Debian
+------------------
+
+Samhain reports 
+---------------
+(in systems that are upgrade periodically)
+
+If you are running samhain and are constantly updating your system,
+maybe because you are running Debian 'sid' (i.e. unstable, not advised
+on production servers) you will find that when you run 'apt-get upgrade'
+you will get a flood of e-mails warning of system changes.
+You will also get them when the system is rebooted or samhain is restarted.
+
+The main reason for this is that samhain is esentially doing its job:
+warning the administrator of file system changes, and will keep on doing
+this until the administrator updates the file system integrity database.
+Notice that in a production server this will also happen when a security
+update is made and patches are installed from Debian sources.
+
+This package will _never_ include a cron job that will do this for you,
+since it could open a way for attackers to leave samhain useless (kill
+samhain, make your changes, wait until the cron job updates samhain, restart
+samhain...)
+
+It's the administrator job to determine wether a change samhain has
+reported since the database was initialized/updated is correct or not and
+when this has been verified he needs to manually reset the database
+('samhain -t update -m none'). 
+ 
+If this is your situation, and your integrity database is in your system
+in read-write media (again, not recommended) you might want to run 
+'samhain -t update' after each programmed upgrade.
+Moreover, you could do this automatically by
+changing apt.conf (again, not recommend):
+
+--------------------------------------------------------------------------
+DPkg
+{
+   Pre-Invoke { "/etc/init.d/samhain stop" };
+   Post-Invoke { "echo Updating samhain database" ;
+   		 "/usr/sbin/samhain -t update --foreground -m none" ;
+   		 "/etc/init.d/samhain start" };
+};
+--------------------------------------------------------------------------
+
+Notice this configuration opens up a "window of vulnerability" in which
+an attacker can wait until you run an update through apt, and makes his
+changes before all the packages are installed. Since samhain is stopped
+before that and the database is updated before it's restarted, the attacker's
+changes will go unnoticed.
+
+With this configuration you will only receive a mail of the fact that samhain
+was stopped and started, but no mail regarding the changes done to the filesystem
+(you can modify the '-m' switch to change this, however)
+
+Included functionality
+----------------------
+
+Whileas samhain provides a client/server model as well as some nifty
+security features (such as using GNUpg to test the database)
+and functionality features (such as logging to SQL databases) they
+have not been (yet) included in the package. Please read the manual and
+use the sources (adjusting as needed) if you want these options.
+
+You can still use the Debian sources, if you want, to create new packages with
+those features.  For example, if you want to compile the server instead you
+have to use the --enable-network=server flag. You can change this in the
+debian/rules file inside the sources of the Debian package and recompile the
+package (dpkg-buildpackage). You could do something like this:
+
+$ apt-get source samhain
+$ cd samhain-2.0.10a
+$ vi debian/rules
+[ change the --enable-network= call ]
+$ dch --newversion 1:2.2.0-1
+[ ... introduce a relevant changelog entry ... ]
+$ dpkg-buildpackage
+[ ... builds the package ... ]
+
+If you change the Debian version of the package  (using 'dch') apt will 
+not update your package from Debian sources if these get update with a new
+release. That's what the 'dch --newversion 1:2.2.0-1' is for.
+A package with this version  should never be upgraded by apt (as it would be
+higher to any other version I might introduce in the archive due to the '1:'
+epoch). You can also put the samhain package 'on hold' will not be
+upgraded either (read more on 'holding' packages in the dpkg or apt
+documentation)
+
+Samhain does not provide the web-based console (Beltane) either, you can
+retrieve it from  http://la-samhna.de/beltane/index.html
+
+The feature to detect loadable kernel module rootkits has been disabled 
+for the time being (it is kernel specific)
+
+In any clase, please take you time to customise samhain's configuration
+file (/etc/samhain/samhainrc) specially the places (and kind of errors)
+which Samahin will log (by sending an email, printing to console or to
+syslog), please do 'man samhainrc'
+
+FIXED? (check)
+- Make samhainrc adapted to Debian system -> 1.6 comes with a profile for
+	Debian-i386linux (this one is installed)
+
+TODO list
+- Write manpages for samhain_encode and samhain_pwd based on README
+- Currently not compiled with options, but could be compiled with
+GPG/PGP support 
+- postrm script should remove database (if any)
+- create a samhain-stealth package that conflicts with sanhain and does not
+include the manpages and provides kernel module for stealth
+- probably separate the client and server stuff in different packages
+
+ -- Javier Fernandez-Sanguino Peña <jfs@computer.org>
+Thu,  1 Jun 2006 21:36:21 +0200
+
+
+

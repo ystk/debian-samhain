@@ -4255,7 +4255,7 @@ sh_use_pie=yes
 
 case "$host_os" in
 
-	*linux*)
+	*linux*|*-kfreebsd*-gnu|*-gnu*)
 	sh_use_lcaps="yes"
 	cat >>confdefs.h <<\_ACEOF
 #define HOST_IS_LINUX 1

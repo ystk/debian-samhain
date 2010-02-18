@@ -1,0 +1,9 @@
+# Debconf Config Script for samhain
+#
+
+# Let's use debconf.
+. /usr/share/debconf/confmodule
+
+# Show note.
+db_input medium samhain/init-log || true
+db_go

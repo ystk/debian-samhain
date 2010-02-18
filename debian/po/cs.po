@@ -1,0 +1,39 @@
+#
+#    Translators, if you are not familiar with the PO format, gettext
+#    documentation is worth reading, especially sections dedicated to
+#    this format, e.g. by running:
+#         info -n '(gettext)PO Files'
+#         info -n '(gettext)Header Entry'
+#
+#    Some information specific to po-debconf are available at
+#            /usr/share/doc/po-debconf/README-trans
+#         or http://www.debian.org/intl/l10n/po-debconf/README-trans
+#
+#    Developers do not need to manually edit POT or PO files.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: samhain\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2003-07-26 22:57+0200\n"
+"PO-Revision-Date: 2005-02-09 20:51+0100\n"
+"Last-Translator: Miroslav Kure <kurem@debian.cz>\n"
+"Language-Team: Czech <debian-l10n-czech@debian.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=ISO-8859-2\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#. Description
+#: ../templates:3
+msgid "Samhain initialization"
+msgstr "Inicializace Samhainu"
+
+#. Description
+#: ../templates:3
+msgid ""
+"The database used for Samhain will be initialized now. Any errors/messages "
+"regarding this initialization can be recovered from /var/log/samhain/samhain-"
+"init.log"
+msgstr ""
+"Nyní bude inicializována databáze Samhainu. Ve¹keré chyby s inicializací "
+"spojené budou uchovány v souboru /var/log/samhain/samhain-init.log."

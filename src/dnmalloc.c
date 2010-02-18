@@ -215,10 +215,10 @@
   kernel versions newer than 1.3.77.
 */
 
+#define _GNU_SOURCE 1
 #ifndef HAVE_MREMAP
 #ifdef linux
 #define HAVE_MREMAP 1
-#define _GNU_SOURCE
 #else
 #define HAVE_MREMAP 0
 #endif

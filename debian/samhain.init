@@ -1,0 +1,76 @@
+#! /bin/sh
+# 
+# Init.d file for Samhain, based on the example init.d file written by
+# Miquel van Smoorenburg and modified for Debian GNU/Linux by Ian Murdock
+#
+### BEGIN INIT INFO
+# Provides:          samhain
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+### END INIT INFO
+#
+
+prefix="/usr"
+exec_prefix="${prefix}"
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+DAEMON=${exec_prefix}/sbin/samhain
+NAME=samhain
+DESC="file integrity checker"
+
+test -f $DAEMON || exit 0
+
+set -e
+
+case "$1" in
+  start)
+        echo -n "Starting $DESC: "
+	#
+	# Remove a stale lockfile, if found
+	#
+	if test -f /var/samhain/.samhain_lock; then
+	    rm -f /var/samhain/.samhain_lock
+	fi
+	if ! test -d /var/run/samhain/; then
+            mkdir /var/run/samhain/
+            chmod o-rX /var/run/samhain/
+	fi
+        start-stop-daemon --start --quiet --exec $DAEMON
+        echo "$NAME."
+	#
+	# The hiding kernel module
+	#
+	: # no kernel module
+        ;;
+  stop)
+        echo -n "Stopping $DESC: "
+        start-stop-daemon --stop --quiet --oknodo --exec $DAEMON
+        echo "$NAME."
+        ;;
+  reload|force-reload)
+        echo "Reloading $DESC configuration files."
+        start-stop-daemon --stop --signal 1 --quiet --exec $DAEMON
+  	;;
+  restart)
+        #
+        #       If the "reload" option is implemented, move the "force-reload"
+        #       option to the "reload" entry above. If not, "force-reload" is
+        #       just the same as "restart".
+        #
+        echo -n "Restarting $DESC: "
+        start-stop-daemon --stop --quiet --oknodo --exec $DAEMON
+        sleep 3
+        start-stop-daemon --start --quiet --exec $DAEMON
+        echo "$NAME."
+        ;;
+  *)
+        N=/etc/init.d/$NAME
+        echo "Usage: $N {start|stop|restart|reload|force-reload}" >&2
+        # echo "Usage: $N {start|stop|restart|force-reload}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0
