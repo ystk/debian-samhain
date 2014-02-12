@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <limits.h>
 
 #include <errno.h>
@@ -71,6 +72,123 @@
 
 #undef  FIL__
 #define FIL__  _("sh_files.c")
+
+static char * sh_files_C_dequote (char * s, size_t * length)
+{
+  size_t i, j, len = *length;
+  int    flag = 0;
+  char  *p, *q, *po, *pend;
+  
+  /* search for backslash
+   */
+  for (i = 0; i < len; ++i)
+    {
+      if (s[i] == '\\')
+	{
+	  flag = 1;
+	  break;
+	}
+    }
+
+  if (flag == 0 || *s == '\0')
+    return s;
+
+  po = SH_ALLOC(len+1); *po = '\0'; p = po; pend = &po[len];
+
+  i = 0; j = 0; q = s;
+
+  do
+    {
+      if (*q == '\\')
+	{
+	  ++q;
+
+	  if (*q == '\0')
+	    { *p = *q; flag = 0; break; }
+	  else if (*q == 'a')
+	    { *p = '\a'; ++p; ++q; }
+	  else if (*q == 'b')
+	    { *p = '\b'; ++p; ++q; }
+	  else if (*q == 'f')
+	    { *p = '\f'; ++p; ++q; }
+	  else if (*q == 'n')
+	    { *p = '\n'; ++p; ++q; }
+	  else if (*q == 'r')
+	    { *p = '\r'; ++p; ++q; }
+	  else if (*q == 't')
+	    { *p = '\t'; ++p; ++q; }
+	  else if (*q == 'v')
+	    { *p = '\v'; ++p; ++q; }
+	  else if (*q == '\\')
+	    { *p = '\\'; ++p; ++q; }
+	  else if (*q == '\'')
+	    { *p = '\''; ++p; ++q; }
+	  else if (*q == '"')
+	    { *p = '"';  ++p; ++q; }
+	  else if (*q == 'x')
+	    {
+	      if (isxdigit((int) q[1]) && isxdigit((int) q[2]))
+		{
+		  /* hexadecimal value following */
+		  unsigned char cc = (16 * sh_util_hexchar(q[1])) 
+		    + sh_util_hexchar(q[2]);
+		  *p = (char) cc;
+		  ++p; q += 3;
+		}
+	      else
+		{
+		  *p = '\0'; flag = 0; break;
+		}
+	    }
+	  else if (isdigit((int)*q))
+	    {
+	      if (isdigit((int) q[1]) && q[1] < '8' && 
+		  isdigit((int) q[2]) && q[2] < '8')
+		{
+		  /* octal value following */
+		  char tmp[4];  unsigned char cc;
+		  tmp[0] = *q; ++q; tmp[1] = *q; ++q; tmp[2] = *q; ++q; 
+		  tmp[3] = '\0';
+		  cc = strtol(tmp, NULL, 8);
+		  *p = (char) cc; ++p;
+		}
+	      else
+		{
+		  *p = '\0'; flag = 0; break;
+		}
+	    }
+	  else
+	    {
+	      /* invalid escape sequence */
+	      *p = '\0'; flag = 0; break;
+	    }
+	}
+      else
+	{
+	  *p = *q; 
+	  ++p; ++q;
+	}
+    } while (*q && p <= pend);
+
+  SL_REQUIRE (p <= pend, _("p <= pend"));
+
+  if (flag)
+    {
+      *p = '\0';
+      *length = strlen(po);
+    }
+  else
+    {
+      SH_FREE(po);
+      po = NULL;
+      *length = 0;
+    }
+
+  SL_REQUIRE (*length <= len, _("*length <= len"));
+
+  SH_FREE(s);
+  return po;
+}
 
 extern int flag_err_debug;
 extern int flag_err_info;
@@ -311,7 +429,8 @@ unsigned long sh_files_chk ()
 		   * is reported if ptr->reported == S_TRUE because the
 		   * file has been added.
 		   */
-		  if (sh_hash_have_it (ptr->name) >= 0)
+		  if (sh_hash_have_it (ptr->name) >= 0 && 
+		      !SH_FFLAG_REPORTED_SET(ptr->is_reported))
 		    {
 		      if (S_FALSE == sh_ignore_chk_del(ptr->name))
 			{
@@ -623,7 +742,9 @@ static int sh_files_parse_mask (unsigned long * mask, const char * str)
 /* get content */
 	if (0 == strncmp(myword, _("TXT"), 3))
 	  sh_files_set_mask (mask, MODI_TXT, act);
-	
+/* get content */
+	if (0 == strncmp(myword, _("AUDIT"), 3))
+	  sh_files_set_mask (mask, MODI_AUDIT, act);
       }
   }
   SL_RETURN ( (0), _("sh_files_parse_mask"));
@@ -796,8 +917,13 @@ int sh_files_push_file_int (int class, const char * str_s, size_t len)
 			 fileName);
       SH_FREE(fileName);
       SH_FREE(new_item_ptr);
+      new_item_ptr = NULL;
     }
 
+  if (new_item_ptr && MODI_AUDIT_ENABLED(new_item_ptr->check_mask))
+    {
+      sh_audit_mark(new_item_ptr->name);
+    }
   SL_RETURN(0, _("sh_files_push_file_int"));
 }
 
@@ -998,32 +1124,45 @@ static int sh_files_pushfile (int class, const char * str_s)
       reject = 1;
     }
 
-  if (str_s == NULL) 
+  if (str_s == NULL || str_s[0] == '\0') 
     SL_RETURN((-1),_("sh_files_pushfile"));
 
   len = sl_strlen(str_s);
+
+  if ( (str_s[0] == '"'  && str_s[len-1] == '"' ) ||
+       (str_s[0] == '\'' && str_s[len-1] == '\'') )
+    {
+      if (len < 3)
+	SL_RETURN((-1),_("sh_files_pushfile"));
+      --len;
+      p = sh_util_strdup_l(&str_s[1], len);
+      p[len-1] = '\0';
+      --len;
+    }
+  else
+    {
+      p = sh_util_strdup_l(str_s, len);
+    }
+
+  p = sh_files_C_dequote(p, &len);
+  if (!p || len == 0)
+    SL_RETURN((-1), _("sh_files_pushfile"));
 
   if (len >= PATH_MAX) 
     {
       /* Name too long
        */
-      tmp = sh_util_safe_name (str_s);
+      tmp = sh_util_safe_name (p);
       sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_FI_2LONG,
 		       tmp);
       SH_FREE(tmp);
       SL_RETURN((-1),_("sh_files_pushfile"));
     } 
-  else if (len < 1) 
-    {
-      /* Should not happen (str_s == NULL caught further above)
-       */
-      SL_RETURN((-1),_("sh_files_pushfile"));
-    } 
-  else if (str_s[0] != '/') 
+  else if (p[0] != '/') 
     {
       /* Not an absolute path
        */
-      tmp = sh_util_safe_name (str_s);
+      tmp = sh_util_safe_name (p);
       sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_FI_NOPATH,
 		       tmp);
       SH_FREE(tmp);
@@ -1034,13 +1173,11 @@ static int sh_files_pushfile (int class, const char * str_s)
       /* remove a terminating '/', take care of the 
        * special case of the root directory.
        */
-      p = sh_util_strdup (str_s);
       if (p[len-1] == '/' && len > 1)
 	{
 	  p[len-1] = '\0';
 	  --len;
 	}
-      
     } 
 
 #ifdef HAVE_GLOB_H
@@ -1342,6 +1479,12 @@ int sh_files_push_dir_int (int class, char * tail, size_t len, int rdepth)
 			 dirName);
       SH_FREE(dirName);
       SH_FREE(new_item_ptr);
+      new_item_ptr = NULL;
+    }
+
+  if (new_item_ptr && MODI_AUDIT_ENABLED(new_item_ptr->check_mask))
+    {
+      sh_audit_mark(new_item_ptr->name);
     }
 
   SL_RETURN(0, _("sh_files_push_dir_int"));
@@ -1363,10 +1506,29 @@ static int sh_files_pushdir (int class, const char * str_s)
     sh_files_delglobstack ();
   }
 
-  if (str_s == NULL)
+  if (str_s == NULL || str_s[0] == '\0') 
+    SL_RETURN((-1),_("sh_files_pushdir"));
+
+  len = sl_strlen(str_s);
+
+  if ( (str_s[0] == '"'  && str_s[len-1] == '"' ) ||
+       (str_s[0] == '\'' && str_s[len-1] == '\'') )
+    {
+      if (len < 3)
+	SL_RETURN((-1),_("sh_files_pushdir"));
+      --len;
+      p = sh_util_strdup_l(&str_s[1], len);
+      p[len-1] = '\0';
+      --len;
+    }
+  else
+    {
+      p = sh_util_strdup_l(str_s, len);
+    }
+
+  p = sh_files_C_dequote(p, &len);
+  if (!p || len == 0)
     SL_RETURN((-1), _("sh_files_pushdir"));
-  
-  p = sh_util_strdup (str_s);
 
   if (p[0] != '/')
     {
@@ -1381,8 +1543,19 @@ static int sh_files_pushdir (int class, const char * str_s)
     tail   = p;
   
 
-  if (rdepth < (-1) || tail == p || rdepth > 99)
-    rdepth = (-2);
+  if (tail == p)
+    {
+      /* Setting to an invalid number will force MaxRecursionLevel,
+       * see sh_files_setrec_int()
+       */
+      rdepth = (-2);
+    }
+  else if ( (rdepth < (-1) || rdepth > 99) || 
+	    ((rdepth == (-1)) && (class != SH_LEVEL_ALLIGNORE)) )
+    {
+      SH_FREE(p);
+      SL_RETURN((-1), _("sh_files_pushdir"));
+    }
 
   len = sl_strlen(tail);
 
@@ -1411,13 +1584,11 @@ static int sh_files_pushdir (int class, const char * str_s)
     } 
   else 
     {
-      
       if (tail[len-1] == '/' && len > 1)
 	{
 	  tail[len-1] = '\0';
 	  --len;
 	}
-      
     } 
 
 #ifdef HAVE_GLOB_H
@@ -2419,3 +2590,101 @@ int sh_files_test_setup ()
 }
 
 #endif
+
+#ifdef SH_CUTEST
+#include "CuTest.h"
+
+void Test_file_dequote (CuTest *tc)
+{
+#if (defined (SH_WITH_CLIENT) || defined (SH_STANDALONE)) 
+
+  char str1[]  = "1234567890";
+  char str1a[] = "123456\\\"789\\r";
+  char str1b[] = "12345678\\r9";
+  char str1c[] = "12345678\\x0a_9";
+  char str1d[] = "12345678\\007_9";
+  char str1e[] = "123456789\\\\";
+
+  char str2[] = "1234567890\\xw";
+  char str3[] = "1234567890\\xw99";
+  char str4[] = "1234567890\\0ww";
+  char str5[] = "12345\\g67890";
+  char str6[] = "1234567890\\009a";
+
+  char *s, *p, *q;
+  size_t lo, lr;
+
+  s = SH_ALLOC(64); sl_strlcpy(s, str1, 64); p = s; lo = strlen(s); lr = lo;
+  q = sh_files_C_dequote(s, &lr);
+  CuAssertPtrNotNull(tc, q);
+  CuAssertTrue(tc, p  == q);
+  CuAssertTrue(tc, lr == lo);
+
+  s = SH_ALLOC(64); sl_strlcpy(s, str1a, 64); p = s; lo = strlen(s); lr = lo;
+  q = sh_files_C_dequote(s, &lr);
+  CuAssertPtrNotNull(tc, q);
+  CuAssertTrue(tc, p  != q);
+  CuAssertTrue(tc, 0 == strcmp(q, "123456\"789\r"));
+  CuAssertTrue(tc, lr == (lo-2));
+
+  s = SH_ALLOC(64); sl_strlcpy(s, str1b, 64); p = s; lo = strlen(s); lr = lo;
+  q = sh_files_C_dequote(s, &lr);
+  CuAssertPtrNotNull(tc, q);
+  CuAssertTrue(tc, p  != q);
+  CuAssertTrue(tc, 0 == strcmp(q, "12345678\r9"));
+  CuAssertTrue(tc, lr == (lo-1));
+
+  s = SH_ALLOC(64); sl_strlcpy(s, str1c, 64); p = s; lo = strlen(s); lr = lo;
+  q = sh_files_C_dequote(s, &lr);
+  CuAssertPtrNotNull(tc, q);
+  CuAssertTrue(tc, p  != q);
+  CuAssertTrue(tc, 0 == strcmp(q, "12345678\x0a_9"));
+  CuAssertTrue(tc, lr == (lo-3));
+
+  s = SH_ALLOC(64); sl_strlcpy(s, str1d, 64); p = s; lo = strlen(s); lr = lo;
+  q = sh_files_C_dequote(s, &lr);
+  CuAssertPtrNotNull(tc, q);
+  CuAssertTrue(tc, p  != q);
+  CuAssertTrue(tc, 0 == strcmp(q, "12345678\007_9"));
+  CuAssertTrue(tc, lr == (lo-3));
+
+  s = SH_ALLOC(64); sl_strlcpy(s, str1e, 64); p = s; lo = strlen(s); lr = lo;
+  q = sh_files_C_dequote(s, &lr);
+  CuAssertPtrNotNull(tc, q);
+  CuAssertTrue(tc, p  != q);
+  CuAssertTrue(tc, 0 == strcmp(q, "123456789\\"));
+  CuAssertTrue(tc, lr == (lo-1));
+
+  s = SH_ALLOC(64); sl_strlcpy(s, str2, 64); p = s; lo = strlen(s); lr = lo;
+  q = sh_files_C_dequote(s, &lr);
+  CuAssertTrue(tc, q == NULL);
+  CuAssertTrue(tc, lr == 0);
+
+  s = SH_ALLOC(64); sl_strlcpy(s, str3, 64); p = s; lo = strlen(s); lr = lo;
+  q = sh_files_C_dequote(s, &lr);
+  CuAssertTrue(tc, q == NULL);
+  CuAssertTrue(tc, lr == 0);
+
+  s = SH_ALLOC(64); sl_strlcpy(s, str4, 64); p = s; lo = strlen(s); lr = lo;
+  q = sh_files_C_dequote(s, &lr);
+  CuAssertTrue(tc, q == NULL);
+  CuAssertTrue(tc, lr == 0);
+
+  s = SH_ALLOC(64); sl_strlcpy(s, str5, 64); p = s; lo = strlen(s); lr = lo;
+  q = sh_files_C_dequote(s, &lr);
+  CuAssertTrue(tc, q == NULL);
+  CuAssertTrue(tc, lr == 0);
+
+  s = SH_ALLOC(64); sl_strlcpy(s, str6, 64); p = s; lo = strlen(s); lr = lo;
+  q = sh_files_C_dequote(s, &lr);
+  CuAssertTrue(tc, q == NULL);
+  CuAssertTrue(tc, lr == 0);
+
+  return;
+#else
+  (void) tc; /* fix compiler warning */
+  return;
+#endif
+}
+#endif
+

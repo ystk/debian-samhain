@@ -20,10 +20,15 @@
 #ifndef SH_FILES_H
 #define SH_FILES_H
 
+void sh_audit_mark (char * file);
+void sh_audit_delete_all ();
+char * sh_audit_fetch (char * file, time_t time, char * result, size_t rsize);
+
 struct sh_dirent {
   char             * sh_d_name;
   struct sh_dirent * next;
 };
+
 
 /* free a directory listing
  */

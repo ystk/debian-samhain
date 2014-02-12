@@ -23,7 +23,7 @@ CREATE TABLE log (
         module        VARCHAR2(8),
         return_code   INTEGER,
         syscall       VARCHAR2(16),
-        ip            VARCHAR2(16),
+        ip            VARCHAR2(46),
         tty           VARCHAR2(16),
         peer          VARCHAR2(64),
         fromhost      VARCHAR2(64),

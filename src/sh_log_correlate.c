@@ -270,8 +270,12 @@ void sh_keep_match()
 	      /* Use pcre_dfa_exec() to obtain number of matches. Needs ovector
 	       * array, otherwise number of matches is not returned.
 	       */
+#if defined(HAVE_PCRE_DFA_EXEC)
 	      int ovector[SH_MINIBUF];
 	      int wspace[SH_MINIBUF];
+#endif
+
+#if defined(HAVE_PCRE_DFA_EXEC)
 	      int val = pcre_dfa_exec(mkeep->rule, NULL, 
 				      sh_string_str(res), 
 				      (int)sh_string_len(res), 
@@ -279,6 +283,16 @@ void sh_keep_match()
 				      0, 
 				      ovector, SH_MINIBUF,
 				      wspace, SH_MINIBUF);
+#else
+	      int val = pcre_exec(mkeep->rule, NULL, 
+				  sh_string_str(res), 
+				  (int)sh_string_len(res), 
+				  0, /* start at offset 0 in the subject */
+				  0, 
+				  NULL, 0);
+	      val = (val >= 0) ? 1 : val;			      
+#endif
+
 	      if (val >= 0)
 		{
 		  sh_string * alias;

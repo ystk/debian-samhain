@@ -121,6 +121,10 @@ cat_entry msg_cat[] = {
   { MSG_UT_LG3C,     SH_ERR_INFO,    EVENT, N_("msg=\"Logout\" tty=\"%s\" time=\"%s\" status=\"%d\"")},
   { MSG_UT_ROT,      SH_ERR_WARN,    RUN,   N_("msg=\"Logfile size decreased\" path=\"%s\"")},
 
+  { MSG_UT_BAD,      SH_ERR_SEVERE,  EVENT, N_("msg=\"Login at disallowed time\" userid=\"%s\" host=\"%s\" time=\"%s\"")},
+  { MSG_UT_FIRST,    SH_ERR_SEVERE,  EVENT, N_("msg=\"First login from this host\" userid=\"%s\" host=\"%s\" time=\"%s\"")},
+  { MSG_UT_OUTLIER,  SH_ERR_SEVERE,  EVENT, N_("msg=\"Login time outlier\" userid=\"%s\" host=\"%s\" time=\"%s\"")},
+
 #endif
 
 #ifdef SH_USE_PROCESSCHECK
@@ -161,6 +165,12 @@ cat_entry msg_cat[] = {
   { MSG_LOGMON_COR,  SH_ERR_SEVERE,  EVENT, N_("msg=\"POLICY [Logfile] Correlation event %s occured %d time(s)\"") },
   { MSG_LOGMON_MARK, SH_ERR_SEVERE,  EVENT, N_("msg=\"POLICY [Logfile] Event %s missing for %lu seconds\"") },
   { MSG_LOGMON_BURST, SH_ERR_SEVERE, EVENT, N_("msg=\"POLICY [Logfile] Repeated %d times: %s\" host=\"%s\"") },
+#endif
+
+#ifdef USE_REGISTRY_CHECK
+  { MSG_REG_MISS,   SH_ERR_SEVERE,  EVENT, N_("msg=\"POLICY [RegistryKeyMissing]\" path=\"%s\" %s")},
+  { MSG_REG_NEW,    SH_ERR_SEVERE,  EVENT, N_("msg=\"POLICY [RegistryKeyNew]\" path=\"%s\" %s")},
+  { MSG_REG_CHANGE, SH_ERR_SEVERE,  EVENT, N_("msg=\"POLICY [RegistryKeyChanged]\" path=\"%s\" %s")},
 #endif
 
 #if defined(SH_WITH_CLIENT) || defined(SH_STANDALONE)
@@ -453,6 +463,9 @@ cat_entry msg_cat[] = {
   { MSG_UT_LG3C,     SH_ERR_INFO,    EVENT, N_("msg=<Logout>, tty=<%s>, time=<%s>")},
   { MSG_UT_ROT,      SH_ERR_WARN,    RUN,   N_("msg=<Logfile size decreased>, path=<%s>")},
 
+  { MSG_UT_BAD,      SH_ERR_SEVERE,  EVENT, N_("msg=<Login at disallowed time> userid=<%s> host=<%s> time=<%s>")},
+  { MSG_UT_FIRST,    SH_ERR_SEVERE,  EVENT, N_("msg=<First login from this host> userid=<%s> host=<%s> time=<%s>")},
+  { MSG_UT_OUTLIER,  SH_ERR_SEVERE,  EVENT, N_("msg=<Login time outlier> userid=<%s> host=<%s> time=<%s>")},
 #endif
 
 #ifdef SH_USE_PROCESSCHECK
@@ -493,6 +506,12 @@ cat_entry msg_cat[] = {
   { MSG_LOGMON_COR,  SH_ERR_SEVERE,  EVENT, N_("msg=<POLICY [Logfile] Correlation event %s occured %d time(s)>") },
   { MSG_LOGMON_MARK, SH_ERR_SEVERE,  EVENT, N_("msg=<POLICY [Logfile] Event %s missing for %lu seconds>") },
   { MSG_LOGMON_BURST, SH_ERR_SEVERE, EVENT, N_("msg=<POLICY [Logfile] Repeated %d times: %s>, host=<%s> ") },
+#endif
+
+#ifdef USE_REGISTRY_CHECK
+  { MSG_REG_MISS,   SH_ERR_SEVERE,  EVENT, N_("msg=<POLICY [RegistryKeyMissing] %s>, path=<%s>, %s")},
+  { MSG_REG_NEW,    SH_ERR_SEVERE,  EVENT, N_("msg=<POLICY [RegistryKeyNew] %s>, path=<%s>, %s")},
+  { MSG_REG_CHANGE, SH_ERR_SEVERE,  EVENT, N_("msg=<POLICY [RegistryKeyChanged] %s>, path=<%s>, %s")},
 #endif
 
 #if defined(SH_WITH_CLIENT) || defined(SH_STANDALONE)

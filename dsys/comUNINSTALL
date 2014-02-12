@@ -78,7 +78,7 @@ commandUNINSTALL() {
     # Create temporary directory on host.
     #---------------------------------------------------------------------
 
-    tmpdir=`eval echo "/tmp/sh_${src_version}_${arch}_${format}_$$"`
+    tmpdir=`eval echo "${temp_dir}/sh_${src_version}_${arch}_${format}_$$"`
 
     if test x"$simulate" = x0
     then

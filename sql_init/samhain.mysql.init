@@ -32,7 +32,7 @@ CREATE TABLE    samhain.log (
   	module        VARCHAR(8),
   	return_code   INTEGER,
   	syscall       VARCHAR(16),
-  	ip            VARCHAR(16),
+  	ip            VARCHAR(46),
   	tty           VARCHAR(16),
         peer          VARCHAR(64),
 	fromhost      VARCHAR(64),

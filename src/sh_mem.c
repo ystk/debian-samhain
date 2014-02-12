@@ -111,7 +111,7 @@ void sh_mem_dump ()
 }
 #endif
 
-static void ** sh_mem_merr_1;
+static memlist_t ** sh_mem_merr_1;
 
 void sh_mem_stat ()
 {
@@ -120,7 +120,7 @@ void sh_mem_stat ()
 
   SL_ENTER(_("sh_mem_stat"));
 
-  sh_mem_merr_1 = (void **) &merrlist;
+  sh_mem_merr_1 = (memlist_t **) &merrlist;
 
   if (Alloc_Count == Free_Count) 
     {
@@ -165,7 +165,7 @@ void sh_mem_stat ()
   SL_RET0(_("sh_mem_stat"));
 }
 
-static void ** sh_mem_merr_2;
+static memlist_t ** sh_mem_merr_2;
 
 void sh_mem_check ()
 {
@@ -176,7 +176,7 @@ void sh_mem_check ()
 
   SL_ENTER(_("sh_mem_check"));
 
-  sh_mem_merr_2 = (void **) &merrlist;
+  sh_mem_merr_2 = (memlist_t **) &merrlist;
 
   sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_MSTAMP,
 		   Mem_Max, Mem_Current);
@@ -316,7 +316,7 @@ void * sh_mem_malloc (size_t size, char * file, int line)
 }
 
 static void ** sh_mem_dummy_a;
-static void ** sh_mem_merr_3;
+static memlist_t ** sh_mem_merr_3;
 
 void sh_mem_free (void * aa, char * file, int line)
 {
@@ -332,7 +332,7 @@ void sh_mem_free (void * aa, char * file, int line)
 
   a      = aa;
   sh_mem_dummy_a = &a;
-  sh_mem_merr_3  = (void **) &merrlist;
+  sh_mem_merr_3  = (memlist_t **) &merrlist;
 
 
   if ( a == NULL ) 

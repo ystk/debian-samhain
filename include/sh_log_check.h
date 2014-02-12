@@ -25,6 +25,7 @@ struct sh_logrecord
 #define SH_LOGFILE_MOVED  (1<<0)
 #define SH_LOGFILE_REWIND (1<<1)
 #define SH_LOGFILE_PIPE   (1<<2)
+#define SH_LOGFILE_NOFILE (1<<3)
 
 struct sh_logfile 
 {
@@ -51,6 +52,15 @@ struct sh_logfile
   struct sh_logfile * next;
 };
 
+/* Generic callback function to parse fileinfo. 
+ */
+void * sh_eval_fileinfo_generic(char * str);
+
+/* Generic parser info. 
+ */
+struct sh_logrecord * sh_parse_generic (sh_string * logline, void * fileinfo);
+
+
 /****************************************************************
  **
  ** Parsing and reading functions
@@ -58,6 +68,16 @@ struct sh_logfile
 
 /* Open file, position at stored offset. */
 int sh_open_for_reader (struct sh_logfile * logfile);
+
+/* Simple line reader for executed shell command   */ 
+sh_string * sh_command_reader (sh_string * record, 
+			       struct sh_logfile * logfile);
+
+/* Wrapper for sh_command_reader */
+sh_string * sh_read_shell (sh_string * record, struct sh_logfile * logfile);
+
+/* Parses a shell command reply. */
+struct sh_logrecord * sh_parse_shell (sh_string * logline, void * fileinfo);
 
 /* Simple line reader.   */ 
 sh_string * sh_default_reader (sh_string * record, 

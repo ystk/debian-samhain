@@ -37,7 +37,7 @@ src_unpack() {
 	   gunzip -c ${P}.tar.gz | tar xf -  || die
 	   cd ${P}
 	elif test -d "samhain-${PV}"; then
-	   mv "samhain-${PV}" "yule-${PV}"
+	   mv "samhain-${PV}" "samhain-${PV}"
 	fi
 }
 
@@ -55,7 +55,7 @@ src_compile() {
 #	      --with-state-dir=/var/lib/${PN} \
 #	      --with-log-file=/var/log/${PN}.log \
 
-	./configure ${myconf} --enable-base=11190108,811868198  '--with-trusted=0,2,1000' '--enable-xml-log' '--enable-debug' '--enable-network=server' '--prefix=/home/rainer/PROJECTS/samhain/devel' '--localstatedir=/home/rainer/PROJECTS/samhain/devel' '--with-config-file=REQ_FROM_SERVER/home/rainer/PROJECTS/samhain/devel/testrc_2' '--with-data-file=REQ_FROM_SERVER/home/rainer/PROJECTS/samhain/devel/.samhain_file' '--with-logserver=127.0.0.1' '--with-log-file=/home/rainer/PROJECTS/samhain/devel/.samhain_log' '--with-pid-file=/home/rainer/PROJECTS/samhain/devel/.samhain_lock' '--with-database=postgresql' 'CC=' || die
+	./configure ${myconf} --enable-base=1885945947,1886289839  || die
         emake || die
 
 	echo '#!/bin/sh' > ./sstrip
@@ -66,27 +66,27 @@ src_install() {
         make DESTDIR=${D} install-light  || die
         make DESTDIR=${D} install-boot   || die
 
-	rm -f ${D}//home/rainer/PROJECTS/samhain/devel/sbin/yule_stealth
+	rm -f ${D}//usr/local/sbin/samhain_stealth
 }
 
 pkg_prerm() {
-	rc-update del yule
-	einfo "Stopping service yule"
-	test -f /etc/init.d/yule && /etc/init.d/yule stop
+	rc-update del samhain
+	einfo "Stopping service samhain"
+	test -f /etc/init.d/samhain && /etc/init.d/samhain stop
 	sleep 3
 }
 
 pkg_postinst() {
-	rc-update add yule default
+	rc-update add samhain default
 	einfo
-        einfo "yule is installed but is NOT running yet, and the database"
+        einfo "samhain is installed but is NOT running yet, and the database"
 	einfo "of file signatures is NOT initialized yet."
 	einfo
-	einfo "You need to run \"yule -t init\" to initialize "
+	einfo "You need to run \"samhain -t init\" to initialize "
         einfo "the baseline database of file signatures."
         einfo
-	einfo "After initializing the database, you can start yule"
-	einfo "with \"/etc/init.d/yule start\". It is configured to start"
+	einfo "After initializing the database, you can start samhain"
+	einfo "with \"/etc/init.d/samhain start\". It is configured to start"
 	einfo "automatically on the next boot for runlevel \"default\""
 }	      
 

@@ -119,7 +119,7 @@ int sh_util_set_interactive(const char * str)
 #define STDERR_FILENO 0
 #endif
 
-int sh_util_ask_update(char * path)
+int sh_util_ask_update(const char * path)
 {
   int    inchar, c;
   int    i = S_TRUE;
@@ -870,6 +870,10 @@ void sh_util_cpylong (char * dest, const char * src, int len )
     long l;
     char c[sizeof(long)];
   } u;
+#ifdef WORDS_BIGENDIAN
+  unsigned char swap;
+  unsigned char * ii = (unsigned char *) dest;
+#endif
 
   SL_ENTER(_("sh_util_cpylong"));    
 
@@ -892,6 +896,10 @@ void sh_util_cpylong (char * dest, const char * src, int len )
       if (i == (len-1)) break;
       ++i;
     }
+#ifdef WORDS_BIGENDIAN
+  swap = ii[0]; ii[0] = ii[3]; ii[3] = swap;
+  swap = ii[1]; ii[1] = ii[2]; ii[2] = swap;
+#endif
   SL_RET0(_("sh_util_cpylong"));
 }
 

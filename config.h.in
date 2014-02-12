@@ -363,6 +363,9 @@
 /* Define if your struct utmp has ut_addr.    */
 #undef HAVE_UTADDR
 
+/* Define if your struct utmp has ut_addr_v6  */
+#undef HAVE_UTADDR_V6
+
 /* Define if your includes are broken.        */
 #undef HAVE_BROKEN_INCLUDES
 
@@ -481,6 +484,12 @@
 /* Define to 1 if you have the <attr/xattr.h> header file. */
 #undef HAVE_ATTR_XATTR_H
 
+/* Define to 1 if you have the <auparse.h> header file. */
+#undef HAVE_AUPARSE_H
+
+/* Define if you have the auparse lib */
+#undef HAVE_AUPARSE_LIB
+
 /* Define to 1 if you have the `basename' function. */
 #undef HAVE_BASENAME
 
@@ -519,6 +528,9 @@
 /* Define to 1 if you have the `fgetxattr' function. */
 #undef HAVE_FGETXATTR
 
+/* Define to 1 if you have the `getaddrinfo' function. */
+#undef HAVE_GETADDRINFO
+
 /* Define to 1 if you have the `getcwd' function. */
 #undef HAVE_GETCWD
 
@@ -530,6 +542,9 @@
 
 /* Define to 1 if you have the `gethostname' function. */
 #undef HAVE_GETHOSTNAME
+
+/* Define to 1 if you have the `getnameinfo' function. */
+#undef HAVE_GETNAMEINFO
 
 /* Define to 1 if you have the `getpagesize' function. */
 #undef HAVE_GETPAGESIZE
@@ -683,6 +698,9 @@
 /* Define to 1 if you have the <paths.h> header file. */
 #undef HAVE_PATHS_H
 
+/* Define if you have pcre_dfa_exec */
+#undef HAVE_PCRE_DFA_EXEC
+
 /* Define if you have pcre/pcre.h. */
 #undef HAVE_PCRE_PCRE_H
 
@@ -718,6 +736,9 @@
 
 /* Define to 1 if you have the <rpc/rpcent.h> header file. */
 #undef HAVE_RPC_RPCENT_H
+
+/* Define to 1 if you have the <rpc/rpc.h> header file. */
+#undef HAVE_RPC_RPC_H
 
 /* Define if you have SA_SIGINFO */
 #undef HAVE_SA_SIGINFO
@@ -815,7 +836,7 @@
 /* Have sockcred structure */
 #undef HAVE_STRUCT_SOCKCRED
 
-/* Define to 1 if `f_flags' is member of `struct statfs'. */
+/* Define to 1 if `f_flags' is a member of `struct statfs'. */
 #undef HAVE_STRUCT_STATFS_F_FLAGS
 
 /* Define if you have the <sys/acct.h> header file. */
@@ -889,6 +910,9 @@
 /* Define to 1 if you have the `writev' function. */
 #undef HAVE_WRITEV
 
+/* Define if host OS is 64bit Linux */
+#undef HOST_IS_64LINUX
+
 /* Define if host OS is OPENBSD */
 #undef HOST_IS_OPENBSD
 
@@ -917,6 +941,9 @@
 
 /* Define to the one symbol short name of this package. */
 #undef PACKAGE_TARNAME
+
+/* Define to the home page for this package. */
+#undef PACKAGE_URL
 
 /* Define to the version of this package. */
 #undef PACKAGE_VERSION
@@ -970,6 +997,12 @@
 /* Define if you want to check processes */
 #undef SH_USE_PROCESSCHECK
 
+/* The address of the vmlist */
+#undef SH_VMLIST
+
+/* The address of the vmlist spinlock */
+#undef SH_VMLIST_LOCK
+
 /* The size of `char *', as computed by sizeof. */
 #undef SIZEOF_CHAR_P
 
@@ -1012,8 +1045,14 @@
 /* Define if you want ACL support. */
 #undef USE_ACL
 
+/* Define if you do not want IPv6 */
+#undef USE_IPV4
+
 /* Define if you want the logfile monitor module. */
 #undef USE_LOGFILE_MONITOR
+
+/* Define for registry check */
+#undef USE_REGISTRY_CHECK
 
 /* Define if you want to use the system malloc */
 #undef USE_SYSTEM_MALLOC
@@ -1058,13 +1097,14 @@
    nothing if this is not supported.  Do not define if restrict is
    supported directly.  */
 #undef restrict
-/* Work around a bug in Sun C++: it does not support _Restrict, even
-   though the corresponding Sun C compiler does, which causes
-   "#define restrict _Restrict" in the previous line.  Perhaps some future
-   version of Sun C++ will work with _Restrict; if so, it'll probably
-   define __RESTRICT, just as Sun C does.  */
+/* Work around a bug in Sun C++: it does not support _Restrict or
+   __restrict__, even though the corresponding Sun C compiler ends up with
+   "#define restrict _Restrict" or "#define restrict __restrict__" in the
+   previous line.  Perhaps some future version of Sun C++ will work with
+   restrict; if so, hopefully it defines __RESTRICT like Sun C does.  */
 #if defined __SUNPRO_CC && !defined __RESTRICT
 # define _Restrict
+# define __restrict__
 #endif
 
 /* Define to `unsigned int' if <sys/types.h> does not define. */

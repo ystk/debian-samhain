@@ -377,6 +377,8 @@ testcompile ()
 		$MAKE distclean 
 	fi
 	#
+	[ -z "${SMATCH}" ] || { CC="${SAVE_CC}"; export CC; SMATCH=""; export SMATCH; }
+	#
 	${TOP_SRCDIR}/configure --quiet  --prefix=$PW_DIR --localstatedir=$PW_DIR --with-config-file=$PW_DIR/samhainrc.test  --enable-process-check --enable-port-check --enable-static > /dev/null 2>> test_log
 	#
 	let "num = num + 1" >/dev/null
@@ -385,7 +387,8 @@ testcompile ()
 	run_smatch $? $num || let "numfail = numfail + 1"  >/dev/null
 	let "num = num + 1" >/dev/null
 	run_uno $? $num || let "numfail = numfail + 1"  >/dev/null
-
+	#
+	[ -z "${SMATCH_CC}" ] || { CC="${SMATCH_CC}"; export CC; SMATCH="${SAVE_SMATCH}"; export SMATCH; }
 	#
 	# test standalone compilation
 	#

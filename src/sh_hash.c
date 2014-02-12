@@ -392,7 +392,13 @@ static file_type * sh_hash_create_ft (const sh_file_t * p, char * fileHash)
   SL_RETURN((theFile), _("sh_hash_create_ft"));
 }
 
-static sh_file_t * hashsearch (char * s);
+struct two_sh_file_t {
+  sh_file_t * prev;
+  sh_file_t * this;
+};
+
+static sh_file_t * hashsearch (const char * s);
+static int hashsearch_prev (const char * s, struct two_sh_file_t * a, int * index); 
 
 static sh_file_t * tab[TABSIZE];
 
@@ -402,7 +408,7 @@ static sh_file_t * tab[TABSIZE];
  *
  **************************************************************/
 
-static int hashfunc(char *s) 
+static int hashfunc(const char *s) 
 {
   unsigned int n = 0; 
 
@@ -422,6 +428,7 @@ int hashreport_missing( char *fullpath, int level)
   char * str;
   char hashbuf[KEYBUF_SIZE];
   int  retval;
+  volatile int flag = 0;
 
   /* --------  find the entry for the file ----------------       */
 
@@ -448,6 +455,7 @@ int hashreport_missing( char *fullpath, int level)
   tmp = sh_util_safe_name(fullpath);
   sh_error_handle (level, FIL__, __LINE__, 0, 
 		   MSG_FI_MISS2, tmp, str);
+  flag = 1;
   SH_FREE(tmp);
   SH_FREE(str);
   if (theFile->attr_string) SH_FREE(theFile->attr_string);
@@ -457,6 +465,7 @@ int hashreport_missing( char *fullpath, int level)
  unlock_and_return:
   ; /* 'label at end of compound statement */
   SH_MUTEX_UNLOCK(mutex_hash);
+
   return retval;
 }
 
@@ -466,6 +475,28 @@ int hashreport_missing( char *fullpath, int level)
  * search for files not visited, and check whether they exist
  *
  **************************************************************/
+static sh_file_t * delete_db_entry(sh_file_t *p)
+{
+  if (p->fullpath)
+    {
+      SH_FREE(p->fullpath);
+      p->fullpath = NULL;
+    }
+  if (p->linkpath)
+    {
+      if (p->linkpath != notalink)
+	SH_FREE(p->linkpath);
+      p->linkpath = NULL;
+    }
+  if (p->attr_string)
+    {
+      SH_FREE(p->attr_string);
+      p->attr_string = NULL;
+    }
+  SH_FREE(p);
+  return NULL;
+}
+
 static void hash_unvisited (int j, 
 			    sh_file_t *prev, sh_file_t *p, ShErrLevel level)
 {
@@ -559,24 +590,9 @@ static void hash_unvisited (int j,
 		tab[j] = p->next;
 	      else
 		prev->next = p->next;
-	      if (p->fullpath)
-		{
-		  SH_FREE(p->fullpath);
-		  p->fullpath = NULL;
-		}
-	      if (p->linkpath)
-		{
-		  if (p->linkpath != notalink)
-		    SH_FREE(p->linkpath);
-		  p->linkpath = NULL;
-		}
-	      if (p->attr_string)
-		{
-		  SH_FREE(p->attr_string);
-		  p->attr_string = NULL;
-		}
-	      SH_FREE(p);
-	      p = NULL;
+
+	      p = delete_db_entry(p);
+
 	      SL_RET0(_("hash_unvisited"));
 #else
 	      SET_SH_FFLAG_REPORTED(p->fflags); 
@@ -617,6 +633,7 @@ static void hash_unvisited (int j,
 }
 
 
+
 /*********************************************************************
  *
  * Search for files in the database that have been deleted from disk.
@@ -637,6 +654,120 @@ void sh_hash_unvisited (ShErrLevel level)
   SH_MUTEX_UNLOCK(mutex_hash);
 
   SL_RET0(_("hash_unvisited"));
+}
+
+/*********************************************************************
+ *
+ * Remove a single file from the database.
+ *
+ *********************************************************************/
+void sh_hash_remove (const char * path)
+{
+  struct two_sh_file_t entries;
+  int index;
+
+  SL_ENTER(_("sh_hash_remove"));
+
+  SH_MUTEX_LOCK(mutex_hash);
+
+  if ((sh.flag.reportonce == S_TRUE && sh.flag.update == S_FALSE) || 
+      (S_TRUE == sh.flag.update && S_TRUE == sh_util_ask_update(path)))
+    {
+      if (0 == hashsearch_prev (path, &entries, &index))
+	{
+	  sh_file_t * p = entries.this;
+#ifdef REPLACE_OLD
+	  /* Remove the old entry
+	   */
+	  if (entries.prev == p)
+	    tab[index] = p->next;
+	  else
+	    entries.prev->next = p->next;
+	  
+	  p = delete_db_entry(p);
+	  
+	  goto end;
+#else
+	  SET_SH_FFLAG_REPORTED(p->fflags); 
+#endif
+	}
+    }
+
+ end:
+  ; /* 'label at end of compound statement' */
+  SH_MUTEX_UNLOCK(mutex_hash);
+
+  SL_RET0(_("sh_hash_remove"));
+}
+
+
+/*********************************************************************
+ *
+ * Search for unvisited entries in the database, custom error handler.
+ *
+ *********************************************************************/
+void sh_hash_unvisited_custom (char prefix, void(*handler)(const char * key))
+{
+  int i;
+  sh_file_t *p    = NULL;
+  sh_file_t *prev = NULL;
+  sh_file_t *next = NULL;
+
+  SL_ENTER(_("sh_hash_unvisited_custom"));
+
+  SH_MUTEX_LOCK(mutex_hash);
+  for (i = 0; i < TABSIZE; ++i)
+    {
+      if (tab[i] != NULL)
+	{
+	  p = tab[i]; prev = p;
+
+	  do 
+	    {
+	      next = p->next;
+
+	      if (p->fullpath && 
+		  prefix == p->fullpath[0])
+		{
+		  if ((!SH_FFLAG_VISITED_SET(p->fflags)) 
+		      && (!SH_FFLAG_REPORTED_SET(p->fflags)))
+		    {
+		      handler(p->fullpath);
+
+		      if (!SH_FFLAG_CHECKED_SET(p->fflags))
+			{
+			  /* delete */
+			  if (tab[i] == p)
+			    {
+			      tab[i] = p->next;
+			      prev   = tab[i];
+			      next   = prev;
+			    }
+			  else
+			    {
+			      prev->next = p->next;
+			      next       = prev->next;
+			    }
+
+			  p = delete_db_entry(p);
+			}
+		    }
+		  if (p)
+		    {
+		      CLEAR_SH_FFLAG_VISITED(p->fflags);
+		      CLEAR_SH_FFLAG_CHECKED(p->fflags);
+		    }
+		}
+	      if (p)
+		prev = p;
+	      p    = next;
+	    } 
+	  while (p);
+	}
+    }
+  SH_MUTEX_UNLOCK(mutex_hash);
+
+  SL_RET0(_("hash_unvisited_custom"));
 }
 
 
@@ -682,7 +813,7 @@ static void hash_kill (sh_file_t *p)
  * get info out of hash array
  *
  ***********************************************************************/
-static sh_file_t * hashsearch (char * s) 
+static sh_file_t * hashsearch (const char * s) 
 {
   sh_file_t * p;
 
@@ -695,6 +826,42 @@ static sh_file_t * hashsearch (char * s)
 	  SL_RETURN( p, _("hashsearch"));
     } 
   SL_RETURN( NULL, _("hashsearch"));
+} 
+
+static int hashsearch_prev (const char * s, struct two_sh_file_t * a, int * index) 
+{
+  sh_file_t * this;
+  sh_file_t * prev = NULL;
+
+  SL_ENTER(_("hashsearch_prev"));
+
+  if (s)
+    {
+      *index = hashfunc(s);
+
+      this = tab[*index];
+
+      prev  = this;
+
+      if (this)
+	{
+	  do {
+	    
+	    if ((this->fullpath != NULL) && (0 == strcmp(s, this->fullpath)))
+	      {
+		a->prev = prev;
+		a->this = this;
+		
+		SL_RETURN( 0, _("hashsearch_prev"));
+	      }
+	    
+	    prev = this;
+	    this = this->next;
+	    
+	  } while(this);
+	} 
+    }
+  SL_RETURN( -1, _("hashsearch"));
 } 
 
 
@@ -1386,7 +1553,10 @@ void sh_hash_hashdelete ()
   int i;
 
   SL_ENTER(_("sh_hash_hashdelete"));
-  SH_MUTEX_LOCK(mutex_hash);
+
+  /* need deadlock detection here if called from exit handler 
+   */
+  SH_MUTEX_TRYLOCK(mutex_hash);
 
   if (IsInit == 0) 
     goto unlock_and_exit;
@@ -1402,6 +1572,7 @@ void sh_hash_hashdelete ()
  unlock_and_exit:
   ; /* 'label at end of compound statement */
   SH_MUTEX_UNLOCK(mutex_hash);
+
   SL_RET0(_("sh_hash_hashdelete"));
 }
 
@@ -1804,7 +1975,7 @@ static void sh_hash_pushdata_int (file_type * buf, char * fileHash)
 			    sl_strlen(sh_db_version_string));
 		  sl_write (pushdata_fd, _(" Date "), 6);
 		  (void) sh_unix_time(0, timestring, sizeof(timestring));
-		  sl_write (pushdata_fd, timestring, sl_strlen(timestring));
+		  sl_write (pushdata_fd, timestring, strlen(timestring));
 		  sl_write (pushdata_fd,        "\n", 1);
 		} else {
 		  printf ("%s",_("\n#Host "));
@@ -1946,7 +2117,7 @@ int sh_hash_writeout()
  * Check whether a file is present in the database.
  *
  *********************************************************************/
-static sh_file_t *  sh_hash_have_it_int (char * newname)
+static sh_file_t *  sh_hash_have_it_int (const char * newname)
 {
   sh_file_t * p;
   char hashbuf[KEYBUF_SIZE];
@@ -1967,7 +2138,7 @@ static sh_file_t *  sh_hash_have_it_int (char * newname)
   SL_RETURN( (p), _("sh_hash_have_it_int"));
 }
 
-int sh_hash_have_it (char * newname)
+int sh_hash_have_it (const char * newname)
 {
   sh_file_t * p;
   int retval;
@@ -1992,7 +2163,7 @@ int sh_hash_have_it (char * newname)
   return retval;
 }
 
-int sh_hash_get_it (char * newname, file_type * tmpFile)
+int sh_hash_get_it (const char * newname, file_type * tmpFile, char * fileHash)
 {
   sh_file_t * p;
   int retval;
@@ -2016,6 +2187,11 @@ int sh_hash_get_it (char * newname, file_type * tmpFile)
       tmpFile->size  = p->theFile.size;
       tmpFile->mtime = p->theFile.mtime;
       tmpFile->ctime = p->theFile.ctime;
+      tmpFile->atime = p->theFile.atime;
+
+      if (NULL != fileHash)
+	sl_strlcpy(fileHash, p->theFile.checksum, KEY_LEN+1);
+
       tmpFile->attr_string = NULL;
       retval = 0;
     }
@@ -2143,9 +2319,15 @@ static int sh_hash_set_visited_int (char * newname, int flag)
 int sh_hash_set_missing (char * newname)
 {
   int i;
-  SL_ENTER(_("sh_hash_set_visited"));
+  SL_ENTER(_("sh_hash_set_missing"));
+
   i = sh_hash_set_visited_int(newname, SH_FFLAG_CHECKED);
-  SL_RETURN(i, _("sh_hash_set_visited"));
+
+  if (sh.flag.checkSum != SH_CHECK_INIT) {
+    sh_hash_remove(newname);
+  }
+
+  SL_RETURN(i, _("sh_hash_set_missing"));
 }
 
 /* mark the file as visited and reported
@@ -2176,24 +2358,26 @@ int sh_hash_set_visited_true (char * newname)
  *
  ******************************************************************/
 
-void sh_hash_push2db (char * key, unsigned long val1, 
-		      unsigned long val2, unsigned long val3,
-		      unsigned char * str, int size)
+void sh_hash_push2db (const char * key, struct store2db * save)
 {
   int         i = 0;
   char      * p;
   char        i2h[2];
   file_type * tmpFile = SH_ALLOC(sizeof(file_type));
 
+  int size            = save->size;
+  unsigned char * str = save->str;
+
+
   tmpFile->attr_string = NULL;
   tmpFile->link_path   = NULL;
 
   sl_strlcpy(tmpFile->fullpath, key, PATH_MAX);
-  tmpFile->size  = val1;
-  tmpFile->mtime = val2;
-  tmpFile->ctime = val3;
+  tmpFile->size  = save->val0;
+  tmpFile->mtime = save->val1;
+  tmpFile->ctime = save->val2;
+  tmpFile->atime = save->val3;
 
-  tmpFile->atime = 0;
   tmpFile->mode  = 0;
   tmpFile->owner = 0;
   tmpFile->group = 0;
@@ -2225,11 +2409,12 @@ void sh_hash_push2db (char * key, unsigned long val1,
       tmpFile->link_path = sh_util_strdup("-");
     }
 
-  if (sh.flag.checkSum == SH_CHECK_CHECK && 
-      sh.flag.update == S_TRUE)
-    sh_hash_pushdata_memory (tmpFile, SH_KEY_NULL);
+  if (sh.flag.checkSum == SH_CHECK_INIT)
+    sh_hash_pushdata (tmpFile, 
+		      (save->checksum[0] == '\0') ? SH_KEY_NULL : save->checksum);
   else
-    sh_hash_pushdata (tmpFile, SH_KEY_NULL);
+    sh_hash_pushdata_memory (tmpFile, 
+			     (save->checksum[0] == '\0') ? SH_KEY_NULL : save->checksum);
 
   if (tmpFile->link_path) SH_FREE(tmpFile->link_path);
   SH_FREE(tmpFile);
@@ -2238,23 +2423,25 @@ void sh_hash_push2db (char * key, unsigned long val1,
 
 extern int sh_util_hextobinary (char * binary, char * hex, int bytes);
 
-char * sh_hash_db2pop (char * key, unsigned long * val1, 
-		       unsigned long * val2, unsigned long * val3,
-		       int * size)
+char * sh_hash_db2pop (const char * key, struct store2db * save)
 {
   size_t      len;
   char      * p;
   int         i;
   char      * retval = NULL;
+  char        fileHash[KEY_LEN+1];
   file_type * tmpFile = SH_ALLOC(sizeof(file_type));
   
-  *size = 0;
+  save->size = 0;
 
-  if (0 == sh_hash_get_it (key, tmpFile))
+  if (0 == sh_hash_get_it (key, tmpFile, fileHash))
     {
-      *val1 = tmpFile->size;
-      *val2 = tmpFile->mtime;
-      *val3 = tmpFile->ctime;
+      save->val0 = tmpFile->size;
+      save->val1 = tmpFile->mtime;
+      save->val2 = tmpFile->ctime;
+      save->val3 = tmpFile->atime;
+
+      sl_strlcpy(save->checksum, fileHash, KEY_LEN+1);
 
       if (tmpFile->link_path && tmpFile->link_path[0] != '-')
 	{
@@ -2265,27 +2452,28 @@ char * sh_hash_db2pop (char * key, unsigned long * val1,
 
 	  if (i == 0)
 	    {
-	      *size = (len/2);
-	      p[*size] = '\0';
+	      save->size = (len/2);
+	      p[save->size] = '\0';
 	      retval = p;
 	    }
 	  else
 	    {
 	      SH_FREE(p);
-	      *size = 0;
+	      save->size = 0;
 	    }
 	}
       else
 	{
-	  *size = 0;
+	  save->size = 0;
 	}
     }
   else
     {
-      *size = -1;
-      *val1 =  0;
-      *val2 =  0;
-      *val3 =  0;
+      save->size = -1;
+      save->val0 = 0;
+      save->val1 = 0;
+      save->val2 = 0;
+      save->val3 = 0;
     }
   if (tmpFile->link_path) SH_FREE(tmpFile->link_path);
   SH_FREE(tmpFile);
@@ -3458,7 +3646,7 @@ int sh_hash_compdata (int class, file_type * theFile, char * fileHash,
 	  sl_snprintf(tmp, SH_MSG_BUF, _("link_old=\"%s\" link_new=\"%s\" "),
 		      tmp_lnk_old, tmp_lnk);
 #else
-	  sl_snprintf(tmp, SH_MSG_BUF, _("link_old=<%s>, link_new=<%s>"),
+	  sl_snprintf(tmp, SH_MSG_BUF, _("link_old=<%s>, link_new=<%s>, "),
 		      tmp_lnk_old, tmp_lnk);
 #endif
 	  SH_FREE(tmp_lnk);
@@ -3478,6 +3666,27 @@ int sh_hash_compdata (int class, file_type * theFile, char * fileHash,
 #endif
 	}
 
+      if (MODI_AUDIT_ENABLED(theFile->check_mask))
+	{
+	  char result[256];
+
+	  if (NULL != sh_audit_fetch (theFile->fullpath, theFile->mtime, result, sizeof(result)))
+	    {
+#ifdef SH_USE_XML
+	      sl_strlcat(msg, _("obj=\""), SH_MSG_BUF);
+#else
+	      sl_strlcat(msg, _("obj=<"), SH_MSG_BUF);
+#endif
+
+	      sl_strlcat(msg, result, SH_MSG_BUF);
+
+#ifdef SH_USE_XML
+	      sl_strlcat(msg, _("\" "), SH_MSG_BUF);
+#else
+	      sl_strlcat(msg, _(">"), SH_MSG_BUF);
+#endif
+	    } 
+	}
 
       tmp_path = sh_util_safe_name(theFile->fullpath);
       sh_error_handle(log_severity, FIL__, __LINE__, 

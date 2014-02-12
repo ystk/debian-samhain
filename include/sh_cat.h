@@ -129,6 +129,9 @@ enum {
  MSG_UT_LG3C,     
  MSG_UT_ROT,      
 
+ MSG_UT_BAD,
+ MSG_UT_FIRST,
+ MSG_UT_OUTLIER,
 #endif
 
 #ifdef SH_USE_PROCESSCHECK
@@ -169,6 +172,12 @@ enum {
  MSG_LOGMON_COR,
  MSG_LOGMON_MARK,
  MSG_LOGMON_BURST,
+#endif
+
+#ifdef USE_REGISTRY_CHECK
+ MSG_REG_MISS,
+ MSG_REG_NEW,
+ MSG_REG_CHANGE,
 #endif
 
 #if defined(SH_WITH_CLIENT) || defined(SH_STANDALONE)

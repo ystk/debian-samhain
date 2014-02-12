@@ -178,7 +178,7 @@ typedef struct log_user {
   char                ut_tty[UT_LINESIZE+1];    
   char                name[UT_NAMESIZE+1];
   char                ut_host[UT_HOSTSIZE+1];
-  char                ut_ship[16]; /* IP address */
+  char                ut_ship[SH_IP_BUF]; /* IP address */
   time_t              time;
   struct log_user   * next;
 } blah_utmp;
@@ -224,6 +224,22 @@ sh_rconf sh_utmp_table[] = {
     sh_utmp_set_login_timer
   },
   {
+    N_("logincheckfirst"),
+    sh_login_set_checklevel
+  },
+  {
+    N_("logincheckoutlier"),
+    sh_login_set_siglevel
+  },
+  {
+    N_("logincheckdate"),
+    sh_login_set_def_allow
+  },
+  {
+    N_("logincheckuserdate"),
+    sh_login_set_user_allow
+  },
+  {
     NULL,
     NULL
   },
@@ -236,6 +252,8 @@ static void set_defaults(void)
   ShUtmpLogout       = SH_ERR_INFO;
   ShUtmpActive       = S_TRUE;
   ShUtmpInterval     = 300;
+
+  sh_login_reset();
   return;
 }
 
@@ -435,25 +453,34 @@ static struct SH_UTMP_S * sh_utmp_getutid(struct SH_UTMP_S * ut)
 #endif
 
 #ifdef HAVE_UTADDR
-#ifdef HAVE_INET_ATON
-static char * my_inet_ntoa(struct in_addr in)
+#ifdef HAVE_UTADDR_V6
+static char * my_inet_ntoa(SINT32 * ut_addr_v6, char * buf, size_t buflen)
 {
-  return /*@-unrecog@*/inet_ntoa(in)/*@+unrecog@*/;
+  struct in_addr in;
+
+  buf[0] = '\0';
+
+  if (0 == (ut_addr_v6[1] + ut_addr_v6[2] + ut_addr_v6[3]))
+    {
+      memcpy(&in, ut_addr_v6, sizeof(struct in_addr));
+      sl_strlcpy(buf, inet_ntoa(in), buflen);
+    }
+  else
+    {
+      inet_ntop(AF_INET6, ut_addr_v6, buf, buflen);
+    }
+  return buf;
 }
 #else
-static char * my_inet_ntoa(struct in_addr in)
+static char * my_inet_ntoa(SINT32 ut_addr, char * buf, size_t buflen)
 {
-  unsigned char a, b, c, d;
-  static char   foo[16];
-  char          bar[4];
-  memcpy (bar, &(in.s_addr), 4); /* memory alignment (?) */
-  memcpy (&a, &bar[0], 1);
-  memcpy (&b, &bar[1], 1);
-  memcpy (&c, &bar[2], 1);
-  memcpy (&d, &bar[3], 1);
-  sprintf(foo, _("%d.%d.%d.%d"),                        /* known to fit  */
-	  (int) a, (int) b, (int) c, (int) d);
-  return foo;
+  struct in_addr in;
+
+  buf[0] = '\0';
+
+  memcpy(&in, ut_addr, sizeof(struct in_addr));
+  sl_strlcpy(buf, inet_ntoa(in), buflen);
+  return buf;
 }
 #endif
 /* #ifdef HAVE_UTADDR */
@@ -497,6 +524,9 @@ static int sh_utmp_init_internal (void)
 
 int sh_utmp_init (struct mod_type * arg)
 {
+#if !defined(HAVE_PTHREAD)
+  (void) arg;
+#endif
   if (ShUtmpActive == BAD)
     return SH_MOD_FAILED;
 #ifdef HAVE_PTHREAD
@@ -547,7 +577,9 @@ int sh_utmp_end ()
   set_defaults();
   init_done          = 0;
 
+#if defined(HAVE_PTHREAD)
   sh_inotify_remove(&inotify_watch);
+#endif
 
   SL_RETURN( (0), _("sh_utmp_end"));
 }
@@ -556,7 +588,9 @@ int sh_utmp_end ()
 int sh_utmp_reconf()
 {
   set_defaults();
+#if defined(HAVE_PTHREAD)
   sh_inotify_remove(&inotify_watch);
+#endif
   return 0;
 }
 
@@ -889,10 +923,11 @@ static void sh_utmp_addlogin (struct SH_UTMP_S * ut)
       user->ut_host[0] = '\0';
 #endif
 #ifdef HAVE_UTADDR
-      /*@-type@*//* ut_addr does exist !!! */
-      (void) sl_strlcpy((char*)(user->ut_ship), 
-			my_inet_ntoa(*(struct in_addr*)&(ut->ut_addr)), 16);
-      /*@+type@*/
+#ifdef HAVE_UTADDR_V6
+      my_inet_ntoa(ut->ut_addr_v6, user->ut_ship, SH_IP_BUF);
+#else
+      my_inet_ntoa(ut->ut_addr, user->ut_ship, SH_IP_BUF);
+#endif
 #endif
       user->time = ut->ut_time;
 
@@ -1029,7 +1064,11 @@ static void sh_utmp_addlogin (struct SH_UTMP_S * ut)
       sl_strlcpy(user->ut_host, ut->ut_host, UT_HOSTSIZE+1);
 #endif
 #ifdef HAVE_UTADDR
-      sl_strlcpy(user->ut_ship,my_inet_ntoa((struct in_addr)ut->ut_addr),16);
+#ifdef HAVE_UTADDR_V6
+      my_inet_ntoa(ut->ut_addr_v6, user->ut_ship, SH_IP_BUF);
+#else
+      my_inet_ntoa(ut->ut_addr, user->ut_ship, SH_IP_BUF);
+#endif
 #endif
       user->time       = ut->ut_time;
       user->next       = userlist;
@@ -1205,18 +1244,17 @@ static void sh_utmp_check_internal (int mode)
   SL_RET0(_("sh_utmp_check_internal"));
 }
 
+extern void sh_ltrack_check(struct SH_UTMP_S * ut);
 
 static void sh_utmp_login_morechecks(struct SH_UTMP_S * ut)
 {
-  if (ut)
-    return;
+  sh_ltrack_check(ut);
   return;
 }
 
 static void sh_utmp_logout_morechecks(struct log_user * user)
 {
-  if (user)
-    return;
+  (void) user;
   return;
 }
 

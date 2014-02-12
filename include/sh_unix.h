@@ -89,10 +89,15 @@ typedef enum {
 #define MODI_SGROW (1 << 12)
 /* use prelink     */
 #define MODI_PREL (1 << 13)
+
 /* get content     */
 #define MODI_TXT ((1 << 14)|MODI_CHK)
-
 #define MODI_TXT_ENABLED(a) (((a)&(1 << 14))!=0)
+
+/* get audit record  */
+#define MODI_AUDIT (1 << 15)
+#define MODI_AUDIT_ENABLED(a) (((a)&(1 << 15))!=0)
+
 
 #define SH_TXT_MAX 9200
 

@@ -97,6 +97,8 @@
 #include "sh_mem.h"
 #include "sh_hash.h"
 #include "sh_tools.h"
+#include "sh_restrict.h"
+#include "sh_ipvx.h"
 #include "sh_tiger.h"
 #include "sh_prelink.h"
 #include "sh_pthread.h"
@@ -669,6 +671,10 @@ void sh_unix_sigaction (int mysignal)
   if (mysignal == SIGTTOU)
     sig_force_check = 1;
 #endif
+#ifdef SIGTTIN
+  if (mysignal == SIGTTIN)
+    sig_fresh_trail = 1;
+#endif
 #ifdef SIGABRT
   if (mysignal == SIGABRT)
     sig_fresh_trail       = 1;
@@ -836,9 +842,7 @@ void sh_unix_siginstall (int goDaemon)
 #ifdef SIGTSTP
   retry_sigaction(FIL__, __LINE__, SIGTSTP,   &ignact, &oldact);
 #endif
-#ifdef SIGTTIN
-  retry_sigaction(FIL__, __LINE__, SIGTTIN,   &ignact, &oldact);
-#endif
+
 #if defined (SH_WITH_CLIENT) || defined (SH_STANDALONE)
 #ifdef SIGTTOU
   if (goDaemon == 1)
@@ -846,9 +850,18 @@ void sh_unix_siginstall (int goDaemon)
   else
     retry_sigaction(FIL__, __LINE__, SIGTTOU,   &ignact, &oldact);
 #endif
+#ifdef SIGTTIN
+  if (goDaemon == 1)
+    retry_sigaction(FIL__, __LINE__, SIGTTIN,     &act2, &oldact);
+  else
+    retry_sigaction(FIL__, __LINE__, SIGTTIN,   &ignact, &oldact);
+#endif
 #else
 #ifdef SIGTTOU
   retry_sigaction(FIL__, __LINE__, SIGTTOU,   &ignact, &oldact);
+#endif
+#ifdef SIGTTIN
+  retry_sigaction(FIL__, __LINE__, SIGTTIN,   &ignact, &oldact);
 #endif
 #endif
 
@@ -1515,7 +1528,7 @@ static void  sh_unix_resetsignals(void)
 
   do {
     errno = 0;
-    test  = sigprocmask(SIG_UNBLOCK, &set_proc, NULL);
+    test  = SH_SETSIGMASK(SIG_UNBLOCK, &set_proc, NULL);
   } while (test < 0 && errno == EINTR);
 
   /* 
@@ -1547,6 +1560,20 @@ static void  sh_unix_resetsignals(void)
 
 /* Get the local hostname (FQDN)
  */
+static char * sh_tolower (char * s)
+{
+  char * ret = s;
+  if (s)
+    {
+      for (; *s; ++s)
+	{ 
+	  *s = tolower((unsigned char) *s);
+	}
+    }
+  return ret;
+}
+
+
 #include <sys/socket.h> 
 
 /* Required for BSD
@@ -1579,12 +1606,13 @@ const char * sh_unix_h_name (struct hostent * host_entry)
 void sh_unix_localhost()
 {
   struct utsname   buf;
-  struct hostent * he1;
   int              i;
   int              ddot;
   int              len;
   char           * p;
   char             hostname[256];
+  char             numeric[SH_IP_BUF];
+  char           * canonical;
 
 
   SL_ENTER(_("sh_unix_localhost"));
@@ -1630,23 +1658,18 @@ void sh_unix_localhost()
       sl_strlcpy(hostname, buf.nodename, 256);
     }
 
-  SH_MUTEX_LOCK(mutex_resolv);
-  he1 = sh_gethostbyname(hostname);
+  canonical = sh_ipvx_canonical(hostname, numeric, sizeof(numeric));
 
-  if (he1 != NULL)
+  if (canonical == NULL)
     {
-      sl_strlcpy (sh.host.name, sh_unix_h_name(he1), SH_PATHBUF);
-    }
-  SH_MUTEX_UNLOCK(mutex_resolv);
-
-  if (he1 == NULL)
-    {
-      dlog(1, FIL__, __LINE__, 
-	   _("According to uname, your nodename is %s, but your resolver\nlibrary cannot resolve this nodename to a FQDN. For more information, see the entry about self-resolving under 'Most frequently' in the FAQ that you will find in the docs/ subdirectory.\n"),
-	   hostname);
       sl_strlcpy (sh.host.name, hostname,    SH_PATHBUF);
+      sh_tolower (sh.host.name);
     }
-  
+  else
+    {
+      sl_strlcpy (sh.host.name, canonical,   SH_PATHBUF);
+      SH_FREE(canonical);
+    }
 
   /* check whether it looks like a FQDN
    */
@@ -1655,18 +1678,16 @@ void sh_unix_localhost()
   for (i = 0; i < len; ++i) 
     if (sh.host.name[i] == '.') ++ddot; 
 
-  if (ddot == 0 && he1 != NULL)
+  if (ddot == 0)
     { 
       dlog(1, FIL__, __LINE__, 
 	   _("According to uname, your nodename is %s, but your resolver\nlibrary cannot resolve this nodename to a FQDN.\nRather, it resolves this to %s.\nFor more information, see the entry about self-resolving under\n'Most frequently' in the FAQ that you will find in the docs/ subdirectory.\n"),
 	   hostname, sh.host.name);
-      sl_strlcpy (sh.host.name, 
-		  inet_ntoa (*(struct in_addr *) he1->h_addr), 
-		  SH_PATHBUF);
+      sl_strlcpy (sh.host.name, numeric, SH_PATHBUF);
       SL_RET0(_("sh_unix_localhost"));
     } 
 
-  if (is_numeric(sh.host.name)) 
+  if (sh_ipvx_is_numeric(sh.host.name)) 
     {
       dlog(1, FIL__, __LINE__, 
 	   _("According to uname, your nodename is %s, but your resolver\nlibrary cannot resolve this nodename to a FQDN.\nRather, it resolves this to %s.\nFor more information, see the entry about self-resolving under\n'Most frequently' in the FAQ that you will find in the docs/ subdirectory.\n"),
@@ -1689,12 +1710,12 @@ void sh_unix_localhost()
 #if defined(HAVE_UNAME)
   struct utsname   buf;
 #endif
-  struct hostent * he1;
   int              i;
   int              ddot;
   int              len;
   char             hostname[1024];
-
+  char             numeric[SH_IP_BUF];
+  char           * canonical;
 
   SL_ENTER(_("sh_unix_localhost"));
 
@@ -1709,22 +1730,17 @@ void sh_unix_localhost()
   (void) gethostname (hostname, 1024);
   hostname[1023] = '\0';
 
-  SH_MUTEX_LOCK(mutex_resolv);
-  he1 = sh_gethostbyname(hostname);
+  canonical = sh_ipvx_canonical(hostname, numeric, sizeof(numeric));
 
-  if (he1 != NULL)
+  if (canonical == NULL)
     {
-      sl_strlcpy (sh.host.name, sh_unix_h_name(he1), SH_PATHBUF);
+      sl_strlcpy (sh.host.name, hostname, SH_PATHBUF);
+      sh_tolower (sh.host.name);
     }
-  SH_MUTEX_UNLOCK(mutex_resolv);
-
-  if (he1 == NULL)
+  else
     {
-      dlog(1, FIL__, __LINE__, 
-	   _("According to gethostname, your nodename is %s, but your resolver\nlibrary cannot resolve this nodename to a FQDN.\nFor more information, see the entry about self-resolving under\n'Most frequently' in the FAQ that you will find in the docs/ subdirectory.\n"),
-	   hostname);
-      sl_strlcpy (sh.host.name, _("localhost"), SH_PATHBUF);
-      SL_RET0(_("sh_unix_localhost"));
+      sl_strlcpy (sh.host.name, canonical,   SH_PATHBUF);
+      SH_FREE(canonical);
     }
 
   /* check whether it looks like a FQDN
@@ -1738,13 +1754,11 @@ void sh_unix_localhost()
       dlog(1, FIL__, __LINE__, 
 	   _("According to uname, your nodename is %s, but your resolver\nlibrary cannot resolve this nodename to a FQDN.\nRather, it resolves this to %s.\nFor more information, see the entry about self-resolving under\n'Most frequently' in the FAQ that you will find in the docs/ subdirectory.\n"),
 	   hostname, sh.host.name);
-      sl_strlcpy (sh.host.name, 
-		  inet_ntoa (*(struct in_addr *) he1->h_addr), 
-		  SH_PATHBUF);
+      sl_strlcpy (sh.host.name, numeric, SH_PATHBUF);
       SL_RET0(_("sh_unix_localhost"));
     }
 
-  if (is_numeric(sh.host.name)) 
+  if (sh_ipvx_is_numeric(sh.host.name)) 
     {
       dlog(1, FIL__, __LINE__, 
 	   _("According to uname, your nodename is %s, but your resolver\nlibrary cannot resolve this nodename to a FQDN.\nRather, it resolves this to %s.\nFor more information, see the entry about self-resolving under\n'Most frequently' in the FAQ that you will find in the docs/ subdirectory.\n"),
@@ -1894,6 +1908,8 @@ int sh_unix_init(int goDaemon)
 #endif
   char errbuf[SH_ERRBUF_SIZE];
 
+  extern void sh_kill_sub();
+
   SL_ENTER(_("sh_unix_init"));
 
   /* fork twice, exit the parent process
@@ -1903,7 +1919,9 @@ int sh_unix_init(int goDaemon)
     switch (aud_fork(FIL__, __LINE__)) {
     case 0:  break;                             /* child process continues */
     case -1: SL_RETURN((-1),_("sh_unix_init")); /* error                   */
-    default: aud__exit(FIL__, __LINE__, 0);     /* parent process exits    */
+    default:                                    /* parent process exits    */
+      sh_kill_sub(); 
+      aud__exit(FIL__, __LINE__, 0);
     }
 
     /* Child processes do not inherit page locks across a fork.
@@ -1917,7 +1935,9 @@ int sh_unix_init(int goDaemon)
     switch (aud_fork(FIL__, __LINE__)) {
     case 0:  break;                             /* child process continues */
     case -1: SL_RETURN((-1),_("sh_unix_init")); /* error                   */
-    default: aud__exit(FIL__, __LINE__, 0);     /* parent process exits    */
+    default:                                    /* parent process exits    */
+      sh_kill_sub(); 
+      aud__exit(FIL__, __LINE__, 0);
     }
 
     /* Child processes do not inherit page locks across a fork.
@@ -3127,15 +3147,6 @@ int sh_unix_getinfo_attr (char * name,
 
   SL_RETURN(0, _("sh_unix_getinfo_attr"));
 }
-#else
-static 
-int sh_unix_getinfo_attr (char * name, 
-			  unsigned long * flags, 
-			  char * c_attr,
-			  int fd, struct stat * buf)
-{
-  return 0;
-}
 
 /* defined(__linux__) || defined(HAVE_STAT_FLAGS) */
 #endif
@@ -3333,7 +3344,7 @@ int sh_unix_checksum_size (char * filename, struct stat * fbuf,
   if (sh.flag.checkSum != SH_CHECK_INIT)
     {
       /* lookup file in database */
-      status = sh_hash_get_it (filename, tmpFile);
+      status = sh_hash_get_it (filename, tmpFile, NULL);
       if (status != 0) {
 	goto out;
       }
@@ -3505,6 +3516,8 @@ static char * sh_unix_getinfo_xattr (char * path, int fd, struct stat * buf)
 	  collect = out;
 	}
   }
+#else
+  (void) buf;
 #endif
 
   if (sh_unix_check_selinux == S_TRUE)
@@ -3742,7 +3755,9 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
     {
       if (fileHash != NULL)
 	{
-	  if ((theFile->check_mask & MODI_CHK) == 0)
+	  if ((theFile->check_mask & MODI_CHK) == 0 ||
+	      sh_restrict_this(theFile->fullpath, (UINT64) fbuf.st_size, 
+			       (UINT64) fbuf.st_mode, rval_open))
 	    {
 	      sl_strlcpy(fileHash, SH_KEY_NULL, KEY_LEN+1);
 	    }
@@ -3795,7 +3810,9 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 
       if (fileHash != NULL)
 	{
-	  if ((theFile->check_mask & MODI_CHK) == 0)
+	  if ((theFile->check_mask & MODI_CHK) == 0 ||
+	      sh_restrict_this(theFile->fullpath, (UINT64) fbuf.st_size, 
+			       (UINT64) fbuf.st_mode, rval_open))
 	    {
 	      sl_strlcpy(fileHash, SH_KEY_NULL, KEY_LEN+1);
 	    }
@@ -3904,11 +3921,13 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
   theFile->c_attributes[ATTRBUF_USED] = '\0';
   theFile->attributes      =    0;
 
+#if (defined(__linux__) && (defined(HAVE_LINUX_EXT2_FS_H) || defined(HAVE_EXT2FS_EXT2_FS_H))) || defined(HAVE_STAT_FLAGS)
   if (theFile->c_mode[0] != 'c' && theFile->c_mode[0] != 'b' &&
       theFile->c_mode[0] != 'l' )
     sh_unix_getinfo_attr(theFile->fullpath, 
 			 &theFile->attributes, theFile->c_attributes, 
 			 fd, &buf);
+#endif
 #endif
 
 #if defined(USE_XATTR) && defined(USE_ACL)

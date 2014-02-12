@@ -46,12 +46,14 @@
 
 
 #define PORTMAP
+#ifdef  HAVE_RPC_RPC_H
 #include <rpc/rpc.h>
 #ifdef  HAVE_RPC_RPCENT_H
 #include <rpc/rpcent.h>
 #endif
 #include <rpc/pmap_clnt.h>
 #include <rpc/pmap_prot.h>
+#endif
 #include <netdb.h>
 
 /*
@@ -71,9 +73,23 @@
 
 /* TIME_WAIT ? 60-240 seconds */
 
+#if !defined(TEST_ONLY)
+
+#define FIL__ _("sh_portcheck.c")
+#include "samhain.h"
+#include "sh_error.h"
+#include "sh_mem.h"
+#include "sh_calls.h"
+#include "sh_utils.h"
+#include "sh_modules.h"
+#define SH_NEED_GETHOSTBYXXX
+#include "sh_static.h"
+#include "sh_pthread.h"
+#include "sh_ipvx.h"
+
 /* the size of an interface string 
  */
-#define SH_INTERFACE_SIZE 16
+#define SH_INTERFACE_SIZE SH_IP_BUF
 
 #define SH_PORT_NOT 0
 #define SH_PORT_REQ 1
@@ -105,38 +121,27 @@ struct sh_portentry {
 static struct sh_portentry * portlist_tcp = NULL;
 static struct sh_portentry * portlist_udp = NULL;
 
-struct sh_port {
-  int              port;
-  struct in_addr   haddr;
-  struct sh_port * next;
-};
-
-static struct sh_port * blacklist_tcp = NULL;
-static struct sh_port * blacklist_udp = NULL;
 
 #define SH_PORTCHK_INTERVAL 300
 
 static int sh_portchk_check_udp = 1;
 static int sh_portchk_active    = 1;
 static int sh_portchk_interval  = SH_PORTCHK_INTERVAL;
-#if !defined(TEST_ONLY)
 
-#define FIL__ _("sh_portcheck.c")
-#include "samhain.h"
-#include "sh_error.h"
-#include "sh_mem.h"
-#include "sh_calls.h"
-#include "sh_utils.h"
-#include "sh_modules.h"
-#define SH_NEED_GETHOSTBYXXX
-#include "sh_static.h"
-#include "sh_pthread.h"
+struct sh_port {
+  int                  port;
+  struct sh_sockaddr * paddr;
+  struct sh_port     * next;
+};
+
+static struct sh_port * blacklist_tcp = NULL;
+static struct sh_port * blacklist_udp = NULL;
 
 SH_MUTEX_STATIC(mutex_port_check, PTHREAD_MUTEX_INITIALIZER);
 
 static int sh_portchk_severity  = SH_ERR_SEVERE;
 
-extern char * sh_port2proc_query(int proto, struct in_addr * saddr, int sport,
+extern char * sh_port2proc_query(int proto, struct sh_sockaddr * saddr, int sport,
 				 unsigned long * pid, char * user, size_t userlen);
 extern int sh_port2proc_prepare();
 extern void sh_port2proc_finish();
@@ -165,7 +170,7 @@ static int sh_portchk_add_interface (const char * str);
 
 /* verify whether port/interface is blacklisted (do not check)
  */
-static int sh_portchk_is_blacklisted(int port, struct in_addr haddr, int proto);
+static int sh_portchk_is_blacklisted(int port, struct sh_sockaddr * haddr, int proto);
 
 #ifndef TEST_ONLY
 
@@ -283,6 +288,7 @@ static int portchk_debug = 0;
 
 #endif
 
+#ifdef  HAVE_RPC_RPC_H
 static char * sh_getrpcbynumber (int number, char * buf, size_t len)
 {
   FILE * fp;
@@ -323,6 +329,7 @@ static char * sh_getrpcbynumber (int number, char * buf, size_t len)
     }
   return NULL;
 }
+#endif
 
 static char * sh_getservbyport (int port, const char * proto_in, char * buf, size_t len)
 {
@@ -374,7 +381,7 @@ static char * sh_getservbyport (int port, const char * proto_in, char * buf, siz
 }
 
 static void sh_portchk_add_to_list (int proto, 
-				    int port, struct in_addr haddr, 
+				    int port, struct sh_sockaddr * paddr, 
 				    char * service,
 				    int flag, int status)
 {
@@ -385,7 +392,7 @@ static void sh_portchk_add_to_list (int proto,
 	    port, SH_PROTO_STR(proto), flag, status, service ? service : _("undef"));
 
   new->port = port;
-  sl_strlcpy (new->interface, inet_ntoa(haddr), SH_INTERFACE_SIZE);
+  sh_ipvx_ntoa(new->interface, SH_INTERFACE_SIZE, paddr);
   new->status = status;
   new->flag   = flag;
 
@@ -454,6 +461,7 @@ static struct sh_port * sh_portchk_kill_blacklist (struct sh_port * head)
       if (head->next)
 	sh_portchk_kill_blacklist (head->next);
 
+      SH_FREE(head->paddr);
       SH_FREE(head);
     }
   return NULL;
@@ -555,17 +563,17 @@ static void sh_portchk_check_list (struct sh_portentry ** head, int proto, int r
 
 
 static struct sh_portentry * sh_portchk_get_from_list (int proto, int port, 
-						       struct in_addr haddr, char * service)
+						       struct sh_sockaddr * paddr, char * service)
 {
   struct sh_portentry * portlist;
-  char iface_all[8];
+  char str_addr[SH_IP_BUF];
 
-  sl_strlcpy (iface_all, _("0.0.0.0"), sizeof(iface_all));
-  
   if (proto == IPPROTO_TCP)
     portlist = portlist_tcp;
   else
     portlist = portlist_udp;
+
+  sh_ipvx_ntoa(str_addr, sizeof(str_addr), paddr);
 
   if (service)
     {
@@ -573,8 +581,8 @@ static struct sh_portentry * sh_portchk_get_from_list (int proto, int port,
 	{
 	  if (portlist->service && 
 	      0 == strcmp(service, portlist->service) &&
-	      (0 == strcmp(portlist->interface, inet_ntoa(haddr)) ||
-	       0 == strcmp(portlist->interface, iface_all)))
+	      ( 0 == strcmp(portlist->interface, str_addr) ||
+	        sh_ipvx_isany(paddr) ))
 	    return portlist;
 	  portlist = portlist->next;
 	}
@@ -584,8 +592,8 @@ static struct sh_portentry * sh_portchk_get_from_list (int proto, int port,
       while (portlist) 
 	{
 	  if (port == portlist->port &&
-	      (0 == strcmp(portlist->interface, inet_ntoa(haddr)) ||
-	       0 == strcmp(portlist->interface, iface_all)))
+	      (0 == strcmp(portlist->interface, str_addr)  ||
+	       sh_ipvx_isany(paddr) ))
 	    return portlist;
 	  portlist = portlist->next;
 	}
@@ -594,13 +602,13 @@ static struct sh_portentry * sh_portchk_get_from_list (int proto, int port,
 }
       
 
-static void sh_portchk_cmp_to_list (int proto, int port, struct in_addr haddr, char * service)
+static void sh_portchk_cmp_to_list (int proto, int port, struct sh_sockaddr * paddr, char * service)
 {
   struct sh_portentry * portent;
   char errbuf[256];
 
   
-  portent = sh_portchk_get_from_list (proto, port, haddr, service);
+  portent = sh_portchk_get_from_list (proto, port, paddr, service);
 
   if (service)
     {
@@ -609,14 +617,17 @@ static void sh_portchk_cmp_to_list (int proto, int port, struct in_addr haddr, c
 	  char * path;
 	  unsigned long qpid;
 	  char   user[USER_MAX];
+	  char   saddr[SH_IP_BUF];
+
+	  sh_ipvx_ntoa(saddr, sizeof(saddr), paddr);
 
 	  snprintf (errbuf, sizeof(errbuf), _("port: %s:%d/%s (%s)"), 
-		    inet_ntoa(haddr), port, SH_PROTO_STR(proto), service);
+		    saddr, port, SH_PROTO_STR(proto), service);
 #ifdef TEST_ONLY
 	  fprintf(stderr, _("open port: %s:%d/%s (%s)\n"), 
-		  inet_ntoa(haddr), port, SH_PROTO_STR(proto), service);
+		  saddr, port, SH_PROTO_STR(proto), service);
 #else
-	  path = sh_port2proc_query(proto, &haddr, port, &qpid, user, sizeof(user));
+	  path = sh_port2proc_query(proto, paddr, port, &qpid, user, sizeof(user));
 	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle(sh_portchk_severity, FIL__, __LINE__, 0, 
 			  MSG_PORT_NEW, errbuf, path, qpid, user);
@@ -626,20 +637,23 @@ static void sh_portchk_cmp_to_list (int proto, int port, struct in_addr haddr, c
 	  /* 
 	   * was not there, thus it is not in 'required' or 'optional' list
 	   */
-	  sh_portchk_add_to_list (proto, port, haddr, service, SH_PORT_NOT, SH_PORT_ISOK);
+	  sh_portchk_add_to_list (proto, port, paddr, service, SH_PORT_NOT, SH_PORT_ISOK);
 	}
       else if (portent->status == SH_PORT_MISS && portent->flag != SH_PORT_IGN)
 	{
 	  char * path;
 	  unsigned long qpid;
 	  char   user[USER_MAX];
+	  char   saddr[SH_IP_BUF];
+
+	  sh_ipvx_ntoa(saddr, sizeof(saddr), paddr);
 
 	  snprintf (errbuf, sizeof(errbuf), _("port: %s:%d/%s (%s), was %d/%s"), 
-		    inet_ntoa(haddr), port, SH_PROTO_STR(proto), service, portent->port, SH_PROTO_STR(proto));
+		    saddr, port, SH_PROTO_STR(proto), service, portent->port, SH_PROTO_STR(proto));
 #ifdef TEST_ONLY
 	  fprintf(stderr, _("service: %s\n"), errbuf);
 #else
-	  path = sh_port2proc_query(proto, &haddr, port, &qpid, user, sizeof(user));
+	  path = sh_port2proc_query(proto, paddr, port, &qpid, user, sizeof(user));
 	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle(sh_portchk_severity, FIL__, __LINE__, 0, 
 			  MSG_PORT_RESTART, errbuf, path, qpid, user);
@@ -654,13 +668,16 @@ static void sh_portchk_cmp_to_list (int proto, int port, struct in_addr haddr, c
 	  char * path;
 	  unsigned long qpid;
 	  char   user[USER_MAX];
+	  char   saddr[SH_IP_BUF];
+
+	  sh_ipvx_ntoa(saddr, sizeof(saddr), paddr);
 
 	  snprintf (errbuf, sizeof(errbuf), _("port: %s:%d/%s (%s), was %d/%s"), 
-		    inet_ntoa(haddr), port, SH_PROTO_STR(proto), service, portent->port, SH_PROTO_STR(proto));
+		    saddr, port, SH_PROTO_STR(proto), service, portent->port, SH_PROTO_STR(proto));
 #ifdef TEST_ONLY
 	  fprintf(stderr, _("service: %s\n"), errbuf);
 #else
-	  path = sh_port2proc_query(proto, &haddr, port, &qpid, user, sizeof(user));
+	  path = sh_port2proc_query(proto, paddr, port, &qpid, user, sizeof(user));
 	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle(sh_portchk_severity, FIL__, __LINE__, 0, 
 			  MSG_PORT_NEWPORT, errbuf, path, qpid, user);
@@ -682,14 +699,17 @@ static void sh_portchk_cmp_to_list (int proto, int port, struct in_addr haddr, c
 	  char * path;
 	  unsigned long qpid;
 	  char   user[USER_MAX];
+	  char   saddr[SH_IP_BUF];
+
+	  sh_ipvx_ntoa(saddr, sizeof(saddr), paddr);
 
 	  snprintf (errbuf, sizeof(errbuf), _("port: %s:%d/%s (%s)"), 
-		    inet_ntoa(haddr), port, SH_PROTO_STR(proto), check_services(port, proto));
+		    saddr, port, SH_PROTO_STR(proto), check_services(port, proto));
 #ifdef TEST_ONLY
 	  fprintf(stderr, _("open port: %s:%d/%s (%s)\n"), 
-		  inet_ntoa(haddr), port, SH_PROTO_STR(proto), check_services(port, proto));
+		  saddr, port, SH_PROTO_STR(proto), check_services(port, proto));
 #else
-	  path = sh_port2proc_query(proto, &haddr, port, &qpid, user, sizeof(user));
+	  path = sh_port2proc_query(proto, paddr, port, &qpid, user, sizeof(user));
 	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle(sh_portchk_severity, FIL__, __LINE__, 0, 
 			  MSG_PORT_NEW, errbuf, path, qpid, user);
@@ -699,20 +719,23 @@ static void sh_portchk_cmp_to_list (int proto, int port, struct in_addr haddr, c
 
 	  /* was not there, thus it is not in 'required' or 'optional' list
 	   */
-	  sh_portchk_add_to_list (proto, port, haddr, service, SH_PORT_NOT, SH_PORT_ISOK);
+	  sh_portchk_add_to_list (proto, port, paddr, service, SH_PORT_NOT, SH_PORT_ISOK);
 	}
       else if (portent->status == SH_PORT_MISS && portent->flag != SH_PORT_IGN)
 	{
 	  char * path;
 	  unsigned long qpid;
 	  char   user[USER_MAX];
+	  char   saddr[SH_IP_BUF];
+
+	  sh_ipvx_ntoa(saddr, sizeof(saddr), paddr);
 
 	  snprintf (errbuf, sizeof(errbuf), _("port: %s:%d/%s (%s)"), 
-		    inet_ntoa(haddr), port, SH_PROTO_STR(proto), check_services(port, proto));
+		    saddr, port, SH_PROTO_STR(proto), check_services(port, proto));
 #ifdef TEST_ONLY
 	  fprintf(stderr, _("port   : %s\n"), errbuf);
 #else
-	  path = sh_port2proc_query(proto, &haddr, port, &qpid, user, sizeof(user));
+	  path = sh_port2proc_query(proto, paddr, port, &qpid, user, sizeof(user));
 	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle(sh_portchk_severity, FIL__, __LINE__, 0, 
 			  MSG_PORT_RESTART, errbuf, path, qpid, user);
@@ -755,6 +778,7 @@ static char * check_services (int port, int proto)
 static char * check_rpc_list (int port, struct sockaddr_in * address, 
 			      unsigned long prot)
 {
+#ifdef  HAVE_RPC_RPC_H
   struct pmaplist * head;
   char *r;
   static char buf[256];
@@ -785,31 +809,30 @@ static char * check_rpc_list (int port, struct sockaddr_in * address,
 	}
       while (head != NULL);
     }
-
+#else
+  (void) port;
+  (void) address;
+  (void) prot;
+#endif
   return NULL;
 }
 
-static int check_port_udp_internal (int fd, int port, struct in_addr haddr)
+static int check_port_udp_internal (int fd, int port, struct sh_sockaddr * paddr)
 {
-  struct sockaddr_in sinr;
-  /* struct in_addr     haddr; */
   int                retval;
-  char             * p;
+  char             * p = NULL;
   char               buf[8];
 #ifndef TEST_ONLY
   char               errmsg[256];
   int                nerr;
 #endif
   char errbuf[SH_ERRBUF_SIZE];
+  char ipbuf[SH_IP_BUF];
 
-  /* inet_aton(interface, &haddr); */
-
-  sinr.sin_family = AF_INET;
-  sinr.sin_port   = htons (port);
-  sinr.sin_addr   = haddr;
+  sh_ipvx_set_port(paddr, port);
 
   do {
-    retval = connect(fd, (struct sockaddr *) &sinr, sizeof(sinr));
+    retval = connect(fd, sh_ipvx_sockaddr_cast(paddr), SH_SSP_LEN(paddr));
   } while (retval < 0 && (errno == EINTR || errno == EINPROGRESS));
 
   if (retval == -1)
@@ -818,9 +841,11 @@ static int check_port_udp_internal (int fd, int port, struct in_addr haddr)
       if (portchk_debug)
 	perror(_("connect"));
 #else
+      sh_ipvx_ntoa(ipbuf, sizeof(ipbuf), paddr);
+
       nerr = errno;
       sl_snprintf(errmsg, sizeof(errmsg), _("check port: %5d/udp on %15s: %s"),
-		  port, inet_ntoa(haddr), sh_error_message(errno, errbuf, sizeof(errbuf)));
+		  port, ipbuf, sh_error_message(errno, errbuf, sizeof(errbuf)));
       SH_MUTEX_LOCK(mutex_thread_nolog);
       sh_error_handle((-1), FIL__, __LINE__, nerr, MSG_E_SUBGEN, 
 		      errmsg, _("connect"));
@@ -835,9 +860,10 @@ static int check_port_udp_internal (int fd, int port, struct in_addr haddr)
 
       if (retval == -1 && errno == ECONNREFUSED)
 	{
+	  sh_ipvx_ntoa(ipbuf, sizeof(ipbuf), paddr);
 	  if (portchk_debug)
 	    fprintf(stderr, _("check port: %5d/udp on %15s established/time_wait\n"),
-		    port, inet_ntoa(haddr));
+		    port, ipbuf);
 	}
       else 
 	{
@@ -849,17 +875,21 @@ static int check_port_udp_internal (int fd, int port, struct in_addr haddr)
 
 	  if (retval == -1 && errno == ECONNREFUSED)
 	    {
+	      sh_ipvx_ntoa(ipbuf, sizeof(ipbuf), paddr);
 	      if (portchk_debug)
 		fprintf(stderr, _("check port: %5d/udp on %15s established/time_wait\n"),
-			port, inet_ntoa(haddr));
+			port, ipbuf);
 	    }
 	  else if (retval != -1)
 	    {
 	      /* Try to get service name from portmap
 	       */
-	      p = check_rpc_list (port, &sinr, IPPROTO_UDP);
+	      if (paddr->ss_family == AF_INET)
+		{
+		  p = check_rpc_list (port, (struct sockaddr_in *) sh_ipvx_sockaddr_cast(paddr), IPPROTO_UDP);
+		}
 	      
-	      sh_portchk_cmp_to_list (IPPROTO_UDP, port, haddr, p ? p : NULL);
+	      sh_portchk_cmp_to_list (IPPROTO_UDP, port, paddr, p ? p : NULL);
 	      
 	      /* If not an RPC service, try to get name from /etc/services
 	       */
@@ -867,8 +897,11 @@ static int check_port_udp_internal (int fd, int port, struct in_addr haddr)
 		p = check_services(port, IPPROTO_UDP);
 	      
 	      if (portchk_debug)
-		fprintf(stderr, _("check port: %5d/udp on %15s open %s\n"), 
-			port, inet_ntoa(haddr), p);
+		{
+		  sh_ipvx_ntoa(ipbuf, sizeof(ipbuf), paddr);
+		  fprintf(stderr, _("check port: %5d/udp on %15s open %s\n"), 
+			  port, ipbuf, p);
+		}
 	      
 	    }
 	}
@@ -877,34 +910,32 @@ static int check_port_udp_internal (int fd, int port, struct in_addr haddr)
   return 0;
 }
 
-static int check_port_tcp_internal (int fd, int port, struct in_addr haddr)
+static int check_port_tcp_internal (int fd, int port, struct sh_sockaddr * paddr)
 {
-  struct sockaddr_in sinr;
-  /* struct in_addr     haddr; */
   int                retval;
   int                flags;
-  char             * p;
+  char             * p = NULL;
 #ifndef TEST_ONLY
   char               errmsg[256];
   int                nerr;
 #endif
   char errbuf[SH_ERRBUF_SIZE];
+  char ipbuf[SH_IP_BUF];
 
-  /* inet_aton(interface, &haddr); */
-
-  sinr.sin_family = AF_INET;
-  sinr.sin_port   = htons (port);
-  sinr.sin_addr   = haddr;
+  sh_ipvx_set_port(paddr, port);
 
   do {
-    retval = connect(fd, (struct sockaddr *) &sinr, sizeof(sinr));
+    retval = connect(fd, sh_ipvx_sockaddr_cast(paddr), SH_SSP_LEN(paddr));
   } while (retval < 0 && (errno == EINTR || errno == EINPROGRESS));
 
   if (retval == -1 && errno == ECONNREFUSED)
     {
       if (portchk_debug)
-	fprintf(stderr, _("check port: %5d on %15s established/time_wait\n"),
-		port, inet_ntoa(haddr));
+	{
+	  sh_ipvx_ntoa(ipbuf, sizeof(ipbuf), paddr);
+	  fprintf(stderr, _("check port: %5d on %15s established/time_wait\n"),
+		  port, ipbuf);
+	}
     }
   else if (retval == -1)
     {
@@ -912,9 +943,10 @@ static int check_port_tcp_internal (int fd, int port, struct in_addr haddr)
       if (portchk_debug)
 	perror(_("connect"));
 #else
+      sh_ipvx_ntoa(ipbuf, sizeof(ipbuf), paddr);
       nerr = errno;
       sl_snprintf(errmsg, sizeof(errmsg), _("check port: %5d/tcp on %15s: %s"),
-		  port, inet_ntoa(haddr), sh_error_message(errno, errbuf, sizeof(errbuf)));
+		  port, ipbuf, sh_error_message(errno, errbuf, sizeof(errbuf)));
       SH_MUTEX_LOCK(mutex_thread_nolog);
       sh_error_handle((-1), FIL__, __LINE__, nerr, MSG_E_SUBGEN, 
 		      errmsg, _("connect"));
@@ -925,9 +957,12 @@ static int check_port_tcp_internal (int fd, int port, struct in_addr haddr)
     {
       /* Try to get service name from portmap
        */
-      p = check_rpc_list (port, &sinr, IPPROTO_TCP);
+      if (paddr->ss_family == AF_INET)
+	{
+	  p = check_rpc_list (port, (struct sockaddr_in *) sh_ipvx_sockaddr_cast(paddr), IPPROTO_TCP);
+	}
 
-      sh_portchk_cmp_to_list (IPPROTO_TCP, port, haddr, p ? p : NULL);
+      sh_portchk_cmp_to_list (IPPROTO_TCP, port, paddr, p ? p : NULL);
 
       /* If not an RPC service, try to get name from /etc/services
        */
@@ -935,8 +970,11 @@ static int check_port_tcp_internal (int fd, int port, struct in_addr haddr)
 	p = check_services(port, IPPROTO_TCP);
 
       if (portchk_debug)
-	fprintf(stderr, _("check port: %5d on %15s open %s\n"), 
-		port, inet_ntoa(haddr), p);
+	{
+	  sh_ipvx_ntoa(ipbuf, sizeof(ipbuf), paddr);
+	  fprintf(stderr, _("check port: %5d on %15s open %s\n"), 
+		  port, ipbuf, p);
+	}
 
 #if !defined(O_NONBLOCK)
 #if defined(O_NDELAY)
@@ -1001,7 +1039,7 @@ static int check_port_tcp_internal (int fd, int port, struct in_addr haddr)
 #define SH_IFACE_MAX 16
 
 struct portchk_interfaces {
-  struct in_addr iface[SH_IFACE_MAX];
+  struct sh_sockaddr iface[SH_IFACE_MAX];
   int            used;
 };
 
@@ -1016,9 +1054,15 @@ static char * portchk_hostname = sh.host.name;
 
 static int sh_portchk_init_internal (void)
 {
-  struct hostent * hent;
   volatile int     i; /* might be clobbered by ‘longjmp’ or ‘vfork’*/
   char errbuf[256];
+#if defined(USE_IPVX)
+  struct addrinfo hints;
+  struct addrinfo *res;
+#else
+  struct hostent * hent;
+#endif
+  char ipbuf[SH_IP_BUF];
 
   if (portchk_debug)
     fprintf(stderr, _("checking ports on: %s\n"), portchk_hostname ? portchk_hostname : _("NULL"));
@@ -1035,22 +1079,47 @@ static int sh_portchk_init_internal (void)
       iface_list.used   = 0;
       iface_initialized = 1;
     }
-	    
+
+#if !defined(USE_IPVX)
   SH_MUTEX_LOCK(mutex_resolv);
   hent = sh_gethostbyname(portchk_hostname);
   i = 0;
   while (hent && hent->h_addr_list[i] && (iface_list.used < SH_IFACE_MAX))
     {
-      memcpy (&(iface_list.iface[iface_list.used].s_addr), hent->h_addr_list[i], sizeof(in_addr_t));
+      struct sockaddr_in sin;
+
+      memcpy(&(sin.sin_addr.s_addr), hent->h_addr_list[i], sizeof(in_addr_t));
+      sh_ipvx_save(&(iface_list.iface[iface_list.used]), 
+		   AF_INET, (struct sockaddr *)&sin);
       ++iface_list.used;
       ++i;
     }
   SH_MUTEX_UNLOCK(mutex_resolv);
+#else
+  memset(&hints, '\0', sizeof(hints));
+  hints.ai_family = PF_UNSPEC;
+  hints.ai_flags  = AI_ADDRCONFIG;
+
+  if (0 == getaddrinfo(portchk_hostname, NULL, &hints, &res))
+    {
+      struct addrinfo *p = res;
+
+      while ((p != NULL) && (iface_list.used < SH_IFACE_MAX))
+	{
+	  sh_ipvx_save(&(iface_list.iface[iface_list.used]), 
+		       p->ai_family, p->ai_addr);
+	  ++iface_list.used;
+	  p = p->ai_next;
+	}
+      freeaddrinfo(res);
+    } 
+#endif
 
   for (i = 0; i < iface_list.used; ++i)
     {
-      sl_snprintf(errbuf, sizeof(errbuf), _("interface: %s"), 
-		  inet_ntoa(iface_list.iface[i]));
+      sh_ipvx_ntoa(ipbuf, sizeof(ipbuf), &(iface_list.iface[i]));
+      sl_snprintf(errbuf, sizeof(errbuf), _("interface: %s"), ipbuf);
+
       SH_MUTEX_LOCK(mutex_thread_nolog);
       sh_error_handle(SH_ERR_INFO, FIL__, __LINE__, 0, MSG_E_SUBGEN, 
 		      errbuf, _("sh_portchk_init"));
@@ -1126,26 +1195,33 @@ int sh_portchk_timer (time_t tcurrent)
 }
 #endif
 
-static int check_port_generic (int port, int type, int protocol)
+static int check_port_generic (int port, int domain, int type, int protocol)
 {
   volatile int     i    =  0;
   int              sock = -1;
   int              flag =  1; /* non-zero to enable an option */
-  struct in_addr   haddr;
+  struct sh_sockaddr   paddr;
   char errbuf[SH_ERRBUF_SIZE];
 
   /* Check all interfaces for this host
    */
   while (i < iface_list.used)
     {
-      haddr.s_addr = iface_list.iface[i].s_addr;
+      memcpy(&paddr, &(iface_list.iface[i]), sizeof(paddr));
 
-      if (0 != sh_portchk_is_blacklisted(port, haddr, protocol))
+      if (paddr.ss_family != domain)
 	{
-	  ++i; continue;
+	  ++i;
+	  continue;
 	}
 
-      if ((sock = socket(AF_INET, type, protocol)) < 0 )
+      if (0 != sh_portchk_is_blacklisted(port, &paddr, protocol))
+	{
+	  ++i; 
+	  continue;
+	}
+
+      if ((sock = socket(paddr.ss_family, type, protocol)) < 0 )
 	{
 	  ++i;
 #ifdef TEST_ONLY
@@ -1177,9 +1253,9 @@ static int check_port_generic (int port, int type, int protocol)
 
 
       if (protocol == IPPROTO_TCP)
-	check_port_tcp_internal(sock, port, haddr);
+	check_port_tcp_internal(sock, port, &paddr);
       else
-	check_port_udp_internal(sock, port, haddr);
+	check_port_udp_internal(sock, port, &paddr);
 
       ++i;
     }
@@ -1189,19 +1265,19 @@ static int check_port_generic (int port, int type, int protocol)
 
 
 
-static int check_port_udp (int port)
+static int check_port_udp (int port, int domain)
 {
-  return check_port_generic(port, SOCK_DGRAM, IPPROTO_UDP);
+  return check_port_generic(port, domain, SOCK_DGRAM, IPPROTO_UDP);
 }
 
-static int check_port_tcp (int port)
+static int check_port_tcp (int port, int domain)
 {
-  return check_port_generic(port, SOCK_STREAM, IPPROTO_TCP);
+  return check_port_generic(port, domain, SOCK_STREAM, IPPROTO_TCP);
 }
 
 
-
-static int sh_portchk_scan_ports_generic (int min_port, int max_port_arg, int type, int protocol)
+static int sh_portchk_scan_ports_generic (int min_port, int max_port_arg, 
+					  int domain, int type, int protocol)
 {
   /*
   int min_port = 1024;
@@ -1214,8 +1290,14 @@ static int sh_portchk_scan_ports_generic (int min_port, int max_port_arg, int ty
   int sock   = -1;
   int flag   = 1; /* non-zero to enable an option */
 
-  struct sockaddr_in addr;
-  int addrlen      = sizeof(addr);
+  struct sockaddr_in  addr4;
+  struct sockaddr_in6 addr6;
+
+  int addrlen4      = sizeof(addr4);
+  int addrlen6      = sizeof(addr6);
+
+  struct in6_addr anyaddr = IN6ADDR_ANY_INIT; 
+
   char errbuf[SH_ERRBUF_SIZE];
 
   if (min_port == -1)
@@ -1225,7 +1307,7 @@ static int sh_portchk_scan_ports_generic (int min_port, int max_port_arg, int ty
 
   for (port = min_port; port <= max_port; ++port) 
     {
-      if ((sock = socket(AF_INET, type, protocol)) < 0 )
+      if ((sock = socket(domain, type, protocol)) < 0 )
 	{
 #ifdef TEST_ONLY
 	  if (portchk_debug)
@@ -1253,11 +1335,20 @@ static int sh_portchk_scan_ports_generic (int min_port, int max_port_arg, int ty
 	  continue;
 	}
 
-      addr.sin_family      = AF_INET;
-      addr.sin_port        = htons(port);
-      addr.sin_addr.s_addr = INADDR_ANY;
-
-      retval = bind (sock, (struct sockaddr *) &addr, addrlen);
+      if (domain == AF_INET)
+	{
+	  addr4.sin_family      = AF_INET;
+	  addr4.sin_port        = htons(port);
+	  addr4.sin_addr.s_addr = INADDR_ANY;
+	  retval = bind (sock, (struct sockaddr *) &addr4, addrlen4);
+	}
+      else
+	{
+	  addr6.sin6_family       = AF_INET6;
+	  addr6.sin6_port         = htons(port);
+	  memcpy(&(addr6.sin6_addr.s6_addr), &anyaddr, sizeof(anyaddr));
+	  retval = bind (sock, (struct sockaddr *) &addr6, addrlen6);
+	}
 
       if (retval == 0)
 	{
@@ -1272,9 +1363,9 @@ static int sh_portchk_scan_ports_generic (int min_port, int max_port_arg, int ty
 	      /* try to connect to the port
 	       */
 	      if (protocol == IPPROTO_TCP)
-		check_port_tcp(port);
+		check_port_tcp(port, domain);
 	      else
-		check_port_udp(port);
+		check_port_udp(port, domain);
 	    }
 	  else
 	    {
@@ -1296,12 +1387,22 @@ static int sh_portchk_scan_ports_generic (int min_port, int max_port_arg, int ty
 
 static int sh_portchk_scan_ports_tcp (int min_port, int max_port)
 {
-  return sh_portchk_scan_ports_generic (min_port, max_port, SOCK_STREAM, IPPROTO_TCP);
+#if defined(USE_IPVX)
+  sh_portchk_scan_ports_generic (min_port, max_port, AF_INET6, 
+				 SOCK_STREAM, IPPROTO_TCP);
+#endif
+  return sh_portchk_scan_ports_generic (min_port, max_port, AF_INET, 
+					SOCK_STREAM, IPPROTO_TCP);
 }
  
 static int sh_portchk_scan_ports_udp (int min_port, int max_port)
 {
-  return sh_portchk_scan_ports_generic (min_port, max_port, SOCK_DGRAM, IPPROTO_UDP);
+#if defined(USE_IPVX)
+  sh_portchk_scan_ports_generic (min_port, max_port, AF_INET6, 
+				 SOCK_DGRAM, IPPROTO_UDP);
+#endif
+  return sh_portchk_scan_ports_generic (min_port, max_port, AF_INET,
+					SOCK_DGRAM, IPPROTO_UDP);
 }
 
 /* Subroutine to add an interface
@@ -1310,7 +1411,7 @@ static void * sh_dummy_str    = NULL; /* fix clobbered by.. warning */
 
 static int sh_portchk_add_interface (const char * str)
 {
-  struct in_addr   haddr;
+  struct sh_sockaddr saddr;
   char errbuf[256];
   char buf[64];
 
@@ -1328,26 +1429,29 @@ static int sh_portchk_add_interface (const char * str)
 
     if (*str)
       {
+	char ipbuf[SH_IP_BUF];
 	unsigned int i = 0;
-	while (*str && i < (sizeof(buf)-1) && *str != ',' && *str != ' ' && *str != '\t')
+	while (*str && i < (sizeof(buf)-1) && 
+	       *str != ',' && *str != ' ' && *str != '\t')
 	  {
 	    buf[i] = *str; ++str; ++i;
 	  }
 	buf[i] = '\0';
 
-	if (0 == inet_aton(buf, &haddr))
+	if (0 == sh_ipvx_aton(buf, &saddr))
 	  return -1;
 
 	if (iface_list.used == SH_IFACE_MAX)
 	  return -1;
 
-	sl_snprintf(errbuf, sizeof(errbuf), _("interface: %s"), inet_ntoa(haddr));
+	sh_ipvx_ntoa(ipbuf, sizeof(ipbuf), &saddr);
+	sl_snprintf(errbuf, sizeof(errbuf), _("interface: %s"), ipbuf);
 	SH_MUTEX_LOCK(mutex_thread_nolog);
 	sh_error_handle(SH_ERR_INFO, FIL__, __LINE__, 0, MSG_E_SUBGEN, 
 			errbuf, _("sh_portchk_add_interface"));
 	SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	
-	memcpy (&(iface_list.iface[iface_list.used].s_addr), &(haddr.s_addr), sizeof(in_addr_t));
+	memcpy (&(iface_list.iface[iface_list.used]), &(saddr), sizeof(saddr));
 	++iface_list.used;
       }
   } while (*str);
@@ -1357,7 +1461,8 @@ static int sh_portchk_add_interface (const char * str)
 
 /* verify whether port/interface is blacklisted (do not check)
  */
-static int sh_portchk_is_blacklisted(int port, struct in_addr haddr, int proto)
+static int sh_portchk_is_blacklisted(int port, struct sh_sockaddr * saddr, 
+				     int proto)
 {
   struct sh_port * head;
 
@@ -1370,7 +1475,8 @@ static int sh_portchk_is_blacklisted(int port, struct in_addr haddr, int proto)
     {
       if (head->port == port)
 	{
-	  if ((head->haddr.s_addr == 0) || (head->haddr.s_addr == haddr.s_addr))
+	  if (sh_ipvx_isany(head->paddr) || 
+	      0 == sh_ipvx_cmp(head->paddr, saddr))
 	    return 1;
 	  else
 	    return 0;
@@ -1381,7 +1487,7 @@ static int sh_portchk_is_blacklisted(int port, struct in_addr haddr, int proto)
 }
 
 
-static int sh_portchk_blacklist(int port, struct in_addr haddr, int proto)
+static int sh_portchk_blacklist(int port, struct sh_sockaddr * saddr, int proto)
 {
   struct sh_port * black;
   struct sh_port * head;
@@ -1395,13 +1501,16 @@ static int sh_portchk_blacklist(int port, struct in_addr haddr, int proto)
 
   while (black)
     {
-      if (black->port == port && head->haddr.s_addr == haddr.s_addr)
+      if (black->port == port && 
+	  0 == sh_ipvx_cmp(head->paddr, saddr))
 	return -1;
       black = black->next;
     }
+
   black = SH_ALLOC (sizeof(struct sh_port));
+  black->paddr = SH_ALLOC (sizeof(struct sh_sockaddr));
   black->port  = port;
-  black->haddr.s_addr = haddr.s_addr;
+  memcpy(black->paddr, saddr, sizeof(struct sh_sockaddr));
   black->next  = head;
 
   if (proto == IPPROTO_TCP)
@@ -1414,17 +1523,18 @@ static int sh_portchk_blacklist(int port, struct in_addr haddr, int proto)
  
 /* Subroutine to add a required or optional port/service
  */
-static int sh_portchk_add_required_port_generic (char * service, char * interface, int type)
+static int sh_portchk_add_required_port_generic (char * service, 
+						 char * interface, int type)
 {
   char buf[256];
   int proto;
   char * p;
   char * endptr;
   unsigned long int  port;
-  struct in_addr   haddr;
+  struct sh_sockaddr   saddr;
   struct sh_portentry * portent;
 
-  if (0 == inet_aton(interface, &haddr))
+  if (0 == sh_ipvx_aton(interface, &saddr))
     return -1;
 
   sl_strlcpy (buf, service, sizeof(buf));
@@ -1445,13 +1555,13 @@ static int sh_portchk_add_required_port_generic (char * service, char * interfac
   /* Blacklisted ports
    */
   if (*endptr == '\0' && port <= 65535 && type == SH_PORT_BLACKLIST)
-    return (sh_portchk_blacklist(port, haddr, proto));
+    return (sh_portchk_blacklist(port, &saddr, proto));
 
   if (*endptr != '\0')
     {  
-      portent = sh_portchk_get_from_list (proto, -1, haddr, buf);
+      portent = sh_portchk_get_from_list (proto, -1, &saddr, buf);
       if (!portent)
-	sh_portchk_add_to_list (proto,   -1, haddr,  buf, type, SH_PORT_UNKN);
+	sh_portchk_add_to_list (proto,   -1, &saddr,  buf, type, SH_PORT_UNKN);
       else
 	{
 #ifdef TEST_ONLY
@@ -1467,9 +1577,9 @@ static int sh_portchk_add_required_port_generic (char * service, char * interfac
     }
   else if (port <= 65535)
     {
-      portent = sh_portchk_get_from_list (proto, port, haddr, NULL);
+      portent = sh_portchk_get_from_list (proto, port, &saddr, NULL);
       if (!portent)
-	sh_portchk_add_to_list (proto, port, haddr, NULL, type, SH_PORT_UNKN);
+	sh_portchk_add_to_list (proto, port, &saddr, NULL, type, SH_PORT_UNKN);
       else
 	{
 #ifdef TEST_ONLY
@@ -1659,11 +1769,12 @@ int sh_portchk_check ()
 void Test_portcheck_lists (CuTest *tc)
 {
 #if defined(SH_USE_PORTCHECK) && (defined(SH_WITH_CLIENT) || defined(SH_STANDALONE))
-  struct in_addr   haddr_local;
+  struct sh_sockaddr    haddr_local;
   struct sh_portentry * portent;
   char   buf[256];
   char * p;
 
+#ifdef HAVE_RPC_RPC_H
   p = sh_getrpcbynumber(0, buf, sizeof(buf));
   CuAssertTrue(tc, p == NULL);
 
@@ -1676,25 +1787,28 @@ void Test_portcheck_lists (CuTest *tc)
   CuAssertPtrNotNull(tc, p);
   CuAssertTrue(tc, 0 == strcmp(p, "ypbind"));
   CuAssertTrue(tc, 0 == strcmp(buf, "ypbind"));
+#endif
 
-  p = sh_getservbyport(0, SH_PROTO_STR(IPPROTO_TCP), buf, sizeof(buf));
+  p = sh_getservbyport(0, SH_PROTO_STR(IPPROTO_UDP), buf, sizeof(buf));
   CuAssertTrue(tc, p == NULL);
 
+#if !defined(HOST_IS_CYGWIN)
   p = sh_getservbyport(22, SH_PROTO_STR(IPPROTO_TCP), buf, sizeof(buf));
   CuAssertPtrNotNull(tc, p);
   CuAssertTrue(tc, 0 == strcmp(p, "ssh"));
   CuAssertTrue(tc, 0 == strcmp(buf, "ssh"));
+#endif
 
   p = sh_getservbyport(13, SH_PROTO_STR(IPPROTO_UDP), buf, sizeof(buf));
   CuAssertPtrNotNull(tc, p);
   CuAssertTrue(tc, 0 == strcmp(p, "daytime"));
   CuAssertTrue(tc, 0 == strcmp(buf, "daytime"));
 
-  CuAssertTrue(tc, 0 != inet_aton("127.0.0.1", &haddr_local));
+  CuAssertTrue(tc, 0 != sh_ipvx_aton("127.0.0.1", &haddr_local));
 
-  sh_portchk_add_to_list (IPPROTO_TCP,  8000, haddr_local, NULL, SH_PORT_NOT, SH_PORT_UNKN);
+  sh_portchk_add_to_list (IPPROTO_TCP,  8000, &haddr_local, NULL, SH_PORT_NOT, SH_PORT_UNKN);
 
-  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, haddr_local, NULL);
+  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, &haddr_local, NULL);
   CuAssertPtrNotNull(tc, portent);
 
   CuAssertTrue(tc, portent->port == 8000);
@@ -1706,72 +1820,72 @@ void Test_portcheck_lists (CuTest *tc)
 
   CuAssertTrue(tc, NULL == portlist_tcp);
 
-  sh_portchk_add_to_list (IPPROTO_TCP,  8000, haddr_local, NULL, SH_PORT_REQ, SH_PORT_UNKN);
-  sh_portchk_add_to_list (IPPROTO_TCP,  8001, haddr_local, NULL, SH_PORT_NOT, SH_PORT_UNKN);
-  sh_portchk_add_to_list (IPPROTO_TCP,  8002, haddr_local, NULL, SH_PORT_REQ, SH_PORT_UNKN);
-  sh_portchk_add_to_list (IPPROTO_TCP,  8003, haddr_local, NULL, SH_PORT_NOT, SH_PORT_UNKN);
-  sh_portchk_add_to_list (IPPROTO_TCP,  8004, haddr_local, NULL, SH_PORT_IGN, SH_PORT_UNKN);
-  sh_portchk_add_to_list (IPPROTO_TCP,    -1, haddr_local, "foo1", SH_PORT_NOT, SH_PORT_UNKN);
-  sh_portchk_add_to_list (IPPROTO_TCP,    -1, haddr_local, "foo2", SH_PORT_REQ, SH_PORT_UNKN);
-  sh_portchk_add_to_list (IPPROTO_TCP,    -1, haddr_local, "foo3", SH_PORT_NOT, SH_PORT_UNKN);
-  sh_portchk_add_to_list (IPPROTO_TCP,    -1, haddr_local, "foo4", SH_PORT_REQ, SH_PORT_UNKN);
-  sh_portchk_add_to_list (IPPROTO_TCP,    -1, haddr_local, "foo5", SH_PORT_IGN, SH_PORT_UNKN);
+  sh_portchk_add_to_list (IPPROTO_TCP,  8000, &haddr_local, NULL, SH_PORT_REQ, SH_PORT_UNKN);
+  sh_portchk_add_to_list (IPPROTO_TCP,  8001, &haddr_local, NULL, SH_PORT_NOT, SH_PORT_UNKN);
+  sh_portchk_add_to_list (IPPROTO_TCP,  8002, &haddr_local, NULL, SH_PORT_REQ, SH_PORT_UNKN);
+  sh_portchk_add_to_list (IPPROTO_TCP,  8003, &haddr_local, NULL, SH_PORT_NOT, SH_PORT_UNKN);
+  sh_portchk_add_to_list (IPPROTO_TCP,  8004, &haddr_local, NULL, SH_PORT_IGN, SH_PORT_UNKN);
+  sh_portchk_add_to_list (IPPROTO_TCP,    -1, &haddr_local, "foo1", SH_PORT_NOT, SH_PORT_UNKN);
+  sh_portchk_add_to_list (IPPROTO_TCP,    -1, &haddr_local, "foo2", SH_PORT_REQ, SH_PORT_UNKN);
+  sh_portchk_add_to_list (IPPROTO_TCP,    -1, &haddr_local, "foo3", SH_PORT_NOT, SH_PORT_UNKN);
+  sh_portchk_add_to_list (IPPROTO_TCP,    -1, &haddr_local, "foo4", SH_PORT_REQ, SH_PORT_UNKN);
+  sh_portchk_add_to_list (IPPROTO_TCP,    -1, &haddr_local, "foo5", SH_PORT_IGN, SH_PORT_UNKN);
 
   sh_portchk_check_list (&portlist_tcp, IPPROTO_TCP, SH_PORT_NOREPT);
 
   CuAssertPtrNotNull(tc, portlist_tcp);
 
-  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, haddr_local, NULL);
+  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, &haddr_local, NULL);
   CuAssertPtrNotNull(tc, portent);
 
-  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8001, haddr_local, NULL);
+  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8001, &haddr_local, NULL);
   CuAssertTrue(tc, NULL == portent);
 
-  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8002, haddr_local, NULL);
+  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8002, &haddr_local, NULL);
   CuAssertPtrNotNull(tc, portent);
 
-  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8003, haddr_local, NULL);
+  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8003, &haddr_local, NULL);
   CuAssertTrue(tc, NULL == portent);
 
-  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8004, haddr_local, NULL);
+  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8004, &haddr_local, NULL);
   CuAssertPtrNotNull(tc, portent);
 
-  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, haddr_local, "foo1");
+  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, &haddr_local, "foo1");
   CuAssertTrue(tc, NULL == portent);
 
-  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, haddr_local, "foo2");
+  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, &haddr_local, "foo2");
   CuAssertPtrNotNull(tc, portent);
   CuAssertTrue(tc, 0 == strcmp(portent->service, "foo2"));
 
-  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, haddr_local, "foo3");
+  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, &haddr_local, "foo3");
   CuAssertTrue(tc, NULL == portent);
 
-  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, haddr_local, "foo4");
+  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, &haddr_local, "foo4");
   CuAssertPtrNotNull(tc, portent);
   CuAssertTrue(tc, 0 == strcmp(portent->service, "foo4"));
 
-  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, haddr_local, "foo5");
+  portent = sh_portchk_get_from_list(IPPROTO_TCP,  8000, &haddr_local, "foo5");
   CuAssertPtrNotNull(tc, portent);
   CuAssertTrue(tc, 0 == strcmp(portent->service, "foo5"));
 
-  CuAssertTrue(tc, 0 == sh_portchk_blacklist(666, haddr_local, IPPROTO_TCP));
-  CuAssertTrue(tc, 0 != sh_portchk_blacklist(666, haddr_local, IPPROTO_TCP));
-  CuAssertTrue(tc, 0 == sh_portchk_blacklist(667, haddr_local, IPPROTO_TCP));
-  CuAssertTrue(tc, 0 == sh_portchk_blacklist(668, haddr_local, IPPROTO_TCP));
-  CuAssertTrue(tc, 0 == sh_portchk_blacklist(666, haddr_local, IPPROTO_UDP));
-  CuAssertTrue(tc, 0 != sh_portchk_blacklist(666, haddr_local, IPPROTO_UDP));
-  CuAssertTrue(tc, 0 == sh_portchk_blacklist(667, haddr_local, IPPROTO_UDP));
-  CuAssertTrue(tc, 0 == sh_portchk_blacklist(668, haddr_local, IPPROTO_UDP));
+  CuAssertTrue(tc, 0 == sh_portchk_blacklist(666, &haddr_local, IPPROTO_TCP));
+  CuAssertTrue(tc, 0 != sh_portchk_blacklist(666, &haddr_local, IPPROTO_TCP));
+  CuAssertTrue(tc, 0 == sh_portchk_blacklist(667, &haddr_local, IPPROTO_TCP));
+  CuAssertTrue(tc, 0 == sh_portchk_blacklist(668, &haddr_local, IPPROTO_TCP));
+  CuAssertTrue(tc, 0 == sh_portchk_blacklist(666, &haddr_local, IPPROTO_UDP));
+  CuAssertTrue(tc, 0 != sh_portchk_blacklist(666, &haddr_local, IPPROTO_UDP));
+  CuAssertTrue(tc, 0 == sh_portchk_blacklist(667, &haddr_local, IPPROTO_UDP));
+  CuAssertTrue(tc, 0 == sh_portchk_blacklist(668, &haddr_local, IPPROTO_UDP));
 
-  CuAssertTrue(tc, 0 != sh_portchk_is_blacklisted(668, haddr_local, IPPROTO_UDP));
-  CuAssertTrue(tc, 0 != sh_portchk_is_blacklisted(667, haddr_local, IPPROTO_UDP));
-  CuAssertTrue(tc, 0 != sh_portchk_is_blacklisted(666, haddr_local, IPPROTO_UDP));
-  CuAssertTrue(tc, 0 == sh_portchk_is_blacklisted(665, haddr_local, IPPROTO_UDP));
+  CuAssertTrue(tc, 0 != sh_portchk_is_blacklisted(668, &haddr_local, IPPROTO_UDP));
+  CuAssertTrue(tc, 0 != sh_portchk_is_blacklisted(667, &haddr_local, IPPROTO_UDP));
+  CuAssertTrue(tc, 0 != sh_portchk_is_blacklisted(666, &haddr_local, IPPROTO_UDP));
+  CuAssertTrue(tc, 0 == sh_portchk_is_blacklisted(665, &haddr_local, IPPROTO_UDP));
 
-  CuAssertTrue(tc, 0 != sh_portchk_is_blacklisted(668, haddr_local, IPPROTO_TCP));
-  CuAssertTrue(tc, 0 != sh_portchk_is_blacklisted(667, haddr_local, IPPROTO_TCP));
-  CuAssertTrue(tc, 0 != sh_portchk_is_blacklisted(666, haddr_local, IPPROTO_TCP));
-  CuAssertTrue(tc, 0 == sh_portchk_is_blacklisted(665, haddr_local, IPPROTO_TCP));
+  CuAssertTrue(tc, 0 != sh_portchk_is_blacklisted(668, &haddr_local, IPPROTO_TCP));
+  CuAssertTrue(tc, 0 != sh_portchk_is_blacklisted(667, &haddr_local, IPPROTO_TCP));
+  CuAssertTrue(tc, 0 != sh_portchk_is_blacklisted(666, &haddr_local, IPPROTO_TCP));
+  CuAssertTrue(tc, 0 == sh_portchk_is_blacklisted(665, &haddr_local, IPPROTO_TCP));
 #else
   (void) tc; /* fix compiler warning */
 #endif

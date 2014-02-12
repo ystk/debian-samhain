@@ -1,9 +1,321 @@
 
 
+/* x86_64 sys_call_table for kernel 2.4.x
+ * generated from 2.6.33 unistd_64.h
+ * grep ^__SYSCALL unistd_64.h | \
+ *   sed s/.*,[[:blank:]]// | sed 's/)//' | \
+ *   awk 'BEGIN{n = 0;}{ printf "    %-32s /%c %03d %c/\n", \
+ *                              sprintf("\"%s\",", $1), "*", n, "*"; ++n; }'
+ *
+ */
+char * syscalls_64[] = {
+    "sys_read",                      /* 000 */
+    "sys_write",                     /* 001 */
+    "sys_open",                      /* 002 */
+    "sys_close",                     /* 003 */
+    "sys_newstat",                   /* 004 */
+    "sys_newfstat",                  /* 005 */
+    "sys_newlstat",                  /* 006 */
+    "sys_poll",                      /* 007 */
+    "sys_lseek",                     /* 008 */
+    "sys_mmap",                      /* 009 */
+    "sys_mprotect",                  /* 010 */
+    "sys_munmap",                    /* 011 */
+    "sys_brk",                       /* 012 */
+    "sys_rt_sigaction",              /* 013 */
+    "sys_rt_sigprocmask",            /* 014 */
+    "stub_rt_sigreturn",             /* 015 */
+    "sys_ioctl",                     /* 016 */
+    "sys_pread64",                   /* 017 */
+    "sys_pwrite64",                  /* 018 */
+    "sys_readv",                     /* 019 */
+    "sys_writev",                    /* 020 */
+    "sys_access",                    /* 021 */
+    "sys_pipe",                      /* 022 */
+    "sys_select",                    /* 023 */
+    "sys_sched_yield",               /* 024 */
+    "sys_mremap",                    /* 025 */
+    "sys_msync",                     /* 026 */
+    "sys_mincore",                   /* 027 */
+    "sys_madvise",                   /* 028 */
+    "sys_shmget",                    /* 029 */
+    "sys_shmat",                     /* 030 */
+    "sys_shmctl",                    /* 031 */
+    "sys_dup",                       /* 032 */
+    "sys_dup2",                      /* 033 */
+    "sys_pause",                     /* 034 */
+    "sys_nanosleep",                 /* 035 */
+    "sys_getitimer",                 /* 036 */
+    "sys_alarm",                     /* 037 */
+    "sys_setitimer",                 /* 038 */
+    "sys_getpid",                    /* 039 */
+    "sys_sendfile64",                /* 040 */
+    "sys_socket",                    /* 041 */
+    "sys_connect",                   /* 042 */
+    "sys_accept",                    /* 043 */
+    "sys_sendto",                    /* 044 */
+    "sys_recvfrom",                  /* 045 */
+    "sys_sendmsg",                   /* 046 */
+    "sys_recvmsg",                   /* 047 */
+    "sys_shutdown",                  /* 048 */
+    "sys_bind",                      /* 049 */
+    "sys_listen",                    /* 050 */
+    "sys_getsockname",               /* 051 */
+    "sys_getpeername",               /* 052 */
+    "sys_socketpair",                /* 053 */
+    "sys_setsockopt",                /* 054 */
+    "sys_getsockopt",                /* 055 */
+    "stub_clone",                    /* 056 */
+    "stub_fork",                     /* 057 */
+    "stub_vfork",                    /* 058 */
+    "stub_execve",                   /* 059 */
+    "sys_exit",                      /* 060 */
+    "sys_wait4",                     /* 061 */
+    "sys_kill",                      /* 062 */
+    "sys_uname",                     /* 063 */
+    "sys_semget",                    /* 064 */
+    "sys_semop",                     /* 065 */
+    "sys_semctl",                    /* 066 */
+    "sys_shmdt",                     /* 067 */
+    "sys_msgget",                    /* 068 */
+    "sys_msgsnd",                    /* 069 */
+    "sys_msgrcv",                    /* 070 */
+    "sys_msgctl",                    /* 071 */
+    "sys_fcntl",                     /* 072 */
+    "sys_flock",                     /* 073 */
+    "sys_fsync",                     /* 074 */
+    "sys_fdatasync",                 /* 075 */
+    "sys_truncate",                  /* 076 */
+    "sys_ftruncate",                 /* 077 */
+    "sys_getdents",                  /* 078 */
+    "sys_getcwd",                    /* 079 */
+    "sys_chdir",                     /* 080 */
+    "sys_fchdir",                    /* 081 */
+    "sys_rename",                    /* 082 */
+    "sys_mkdir",                     /* 083 */
+    "sys_rmdir",                     /* 084 */
+    "sys_creat",                     /* 085 */
+    "sys_link",                      /* 086 */
+    "sys_unlink",                    /* 087 */
+    "sys_symlink",                   /* 088 */
+    "sys_readlink",                  /* 089 */
+    "sys_chmod",                     /* 090 */
+    "sys_fchmod",                    /* 091 */
+    "sys_chown",                     /* 092 */
+    "sys_fchown",                    /* 093 */
+    "sys_lchown",                    /* 094 */
+    "sys_umask",                     /* 095 */
+    "sys_gettimeofday",              /* 096 */
+    "sys_getrlimit",                 /* 097 */
+    "sys_getrusage",                 /* 098 */
+    "sys_sysinfo",                   /* 099 */
+    "sys_times",                     /* 100 */
+    "sys_ptrace",                    /* 101 */
+    "sys_getuid",                    /* 102 */
+    "sys_syslog",                    /* 103 */
+    "sys_getgid",                    /* 104 */
+    "sys_setuid",                    /* 105 */
+    "sys_setgid",                    /* 106 */
+    "sys_geteuid",                   /* 107 */
+    "sys_getegid",                   /* 108 */
+    "sys_setpgid",                   /* 109 */
+    "sys_getppid",                   /* 110 */
+    "sys_getpgrp",                   /* 111 */
+    "sys_setsid",                    /* 112 */
+    "sys_setreuid",                  /* 113 */
+    "sys_setregid",                  /* 114 */
+    "sys_getgroups",                 /* 115 */
+    "sys_setgroups",                 /* 116 */
+    "sys_setresuid",                 /* 117 */
+    "sys_getresuid",                 /* 118 */
+    "sys_setresgid",                 /* 119 */
+    "sys_getresgid",                 /* 120 */
+    "sys_getpgid",                   /* 121 */
+    "sys_setfsuid",                  /* 122 */
+    "sys_setfsgid",                  /* 123 */
+    "sys_getsid",                    /* 124 */
+    "sys_capget",                    /* 125 */
+    "sys_capset",                    /* 126 */
+    "sys_rt_sigpending",             /* 127 */
+    "sys_rt_sigtimedwait",           /* 128 */
+    "sys_rt_sigqueueinfo",           /* 129 */
+    "sys_rt_sigsuspend",             /* 130 */
+    "stub_sigaltstack",              /* 131 */
+    "sys_utime",                     /* 132 */
+    "sys_mknod",                     /* 133 */
+    "sys_ni_syscall",                /* 134 */
+    "sys_personality",               /* 135 */
+    "sys_ustat",                     /* 136 */
+    "sys_statfs",                    /* 137 */
+    "sys_fstatfs",                   /* 138 */
+    "sys_sysfs",                     /* 139 */
+    "sys_getpriority",               /* 140 */
+    "sys_setpriority",               /* 141 */
+    "sys_sched_setparam",            /* 142 */
+    "sys_sched_getparam",            /* 143 */
+    "sys_sched_setscheduler",        /* 144 */
+    "sys_sched_getscheduler",        /* 145 */
+    "sys_sched_get_priority_max",    /* 146 */
+    "sys_sched_get_priority_min",    /* 147 */
+    "sys_sched_rr_get_interval",     /* 148 */
+    "sys_mlock",                     /* 149 */
+    "sys_munlock",                   /* 150 */
+    "sys_mlockall",                  /* 151 */
+    "sys_munlockall",                /* 152 */
+    "sys_vhangup",                   /* 153 */
+    "sys_modify_ldt",                /* 154 */
+    "sys_pivot_root",                /* 155 */
+    "sys_sysctl",                    /* 156 */
+    "sys_prctl",                     /* 157 */
+    "sys_arch_prctl",                /* 158 */
+    "sys_adjtimex",                  /* 159 */
+    "sys_setrlimit",                 /* 160 */
+    "sys_chroot",                    /* 161 */
+    "sys_sync",                      /* 162 */
+    "sys_acct",                      /* 163 */
+    "sys_settimeofday",              /* 164 */
+    "sys_mount",                     /* 165 */
+    "sys_umount",                    /* 166 */
+    "sys_swapon",                    /* 167 */
+    "sys_swapoff",                   /* 168 */
+    "sys_reboot",                    /* 169 */
+    "sys_sethostname",               /* 170 */
+    "sys_setdomainname",             /* 171 */
+    "stub_iopl",                     /* 172 */
+    "sys_ioperm",                    /* 173 */
+    "sys_ni_syscall",                /* 174 */
+    "sys_init_module",               /* 175 */
+    "sys_delete_module",             /* 176 */
+    "sys_ni_syscall",                /* 177 */
+    "sys_ni_syscall",                /* 178 */
+    "sys_quotactl",                  /* 179 */
+    "sys_nfsservctl",                /* 180 */
+    "sys_ni_syscall",                /* 181 */
+    "sys_ni_syscall",                /* 182 */
+    "sys_ni_syscall",                /* 183 */
+    "sys_ni_syscall",                /* 184 */
+    "sys_ni_syscall",                /* 185 */
+    "sys_gettid",                    /* 186 */
+    "sys_readahead",                 /* 187 */
+    "sys_setxattr",                  /* 188 */
+    "sys_lsetxattr",                 /* 189 */
+    "sys_fsetxattr",                 /* 190 */
+    "sys_getxattr",                  /* 191 */
+    "sys_lgetxattr",                 /* 192 */
+    "sys_fgetxattr",                 /* 193 */
+    "sys_listxattr",                 /* 194 */
+    "sys_llistxattr",                /* 195 */
+    "sys_flistxattr",                /* 196 */
+    "sys_removexattr",               /* 197 */
+    "sys_lremovexattr",              /* 198 */
+    "sys_fremovexattr",              /* 199 */
+    "sys_tkill",                     /* 200 */
+    "sys_time",                      /* 201 */
+    "sys_futex",                     /* 202 */
+    "sys_sched_setaffinity",         /* 203 */
+    "sys_sched_getaffinity",         /* 204 */
+    "sys_ni_syscall",                /* 205 */
+    "sys_io_setup",                  /* 206 */
+    "sys_io_destroy",                /* 207 */
+    "sys_io_getevents",              /* 208 */
+    "sys_io_submit",                 /* 209 */
+    "sys_io_cancel",                 /* 210 */
+    "sys_ni_syscall",                /* 211 */
+    "sys_lookup_dcookie",            /* 212 */
+    "sys_epoll_create",              /* 213 */
+    "sys_ni_syscall",                /* 214 */
+    "sys_ni_syscall",                /* 215 */
+    "sys_remap_file_pages",          /* 216 */
+    "sys_getdents64",                /* 217 */
+    "sys_set_tid_address",           /* 218 */
+    "sys_restart_syscall",           /* 219 */
+    "sys_semtimedop",                /* 220 */
+    "sys_fadvise64",                 /* 221 */
+    "sys_timer_create",              /* 222 */
+    "sys_timer_settime",             /* 223 */
+    "sys_timer_gettime",             /* 224 */
+    "sys_timer_getoverrun",          /* 225 */
+    "sys_timer_delete",              /* 226 */
+    "sys_clock_settime",             /* 227 */
+    "sys_clock_gettime",             /* 228 */
+    "sys_clock_getres",              /* 229 */
+    "sys_clock_nanosleep",           /* 230 */
+    "sys_exit_group",                /* 231 */
+    "sys_epoll_wait",                /* 232 */
+    "sys_epoll_ctl",                 /* 233 */
+    "sys_tgkill",                    /* 234 */
+    "sys_utimes",                    /* 235 */
+    "sys_ni_syscall",                /* 236 */
+    "sys_mbind",                     /* 237 */
+    "sys_set_mempolicy",             /* 238 */
+    "sys_get_mempolicy",             /* 239 */
+    "sys_mq_open",                   /* 240 */
+    "sys_mq_unlink",                 /* 241 */
+    "sys_mq_timedsend",              /* 242 */
+    "sys_mq_timedreceive",           /* 243 */
+    "sys_mq_notify",                 /* 244 */
+    "sys_mq_getsetattr",             /* 245 */
+    "sys_kexec_load",                /* 246 */
+    "sys_waitid",                    /* 247 */
+    "sys_add_key",                   /* 248 */
+    "sys_request_key",               /* 249 */
+    "sys_keyctl",                    /* 250 */
+    "sys_ioprio_set",                /* 251 */
+    "sys_ioprio_get",                /* 252 */
+    "sys_inotify_init",              /* 253 */
+    "sys_inotify_add_watch",         /* 254 */
+    "sys_inotify_rm_watch",          /* 255 */
+    "sys_migrate_pages",             /* 256 */
+    "sys_openat",                    /* 257 */
+    "sys_mkdirat",                   /* 258 */
+    "sys_mknodat",                   /* 259 */
+    "sys_fchownat",                  /* 260 */
+    "sys_futimesat",                 /* 261 */
+    "sys_newfstatat",                /* 262 */
+    "sys_unlinkat",                  /* 263 */
+    "sys_renameat",                  /* 264 */
+    "sys_linkat",                    /* 265 */
+    "sys_symlinkat",                 /* 266 */
+    "sys_readlinkat",                /* 267 */
+    "sys_fchmodat",                  /* 268 */
+    "sys_faccessat",                 /* 269 */
+    "sys_pselect6",                  /* 270 */
+    "sys_ppoll",                     /* 271 */
+    "sys_unshare",                   /* 272 */
+    "sys_set_robust_list",           /* 273 */
+    "sys_get_robust_list",           /* 274 */
+    "sys_splice",                    /* 275 */
+    "sys_tee",                       /* 276 */
+    "sys_sync_file_range",           /* 277 */
+    "sys_vmsplice",                  /* 278 */
+    "sys_move_pages",                /* 279 */
+    "sys_utimensat",                 /* 280 */
+    "sys_epoll_pwait",               /* 281 */
+    "sys_signalfd",                  /* 282 */
+    "sys_timerfd_create",            /* 283 */
+    "sys_eventfd",                   /* 284 */
+    "sys_fallocate",                 /* 285 */
+    "sys_timerfd_settime",           /* 286 */
+    "sys_timerfd_gettime",           /* 287 */
+    "sys_accept4",                   /* 288 */
+    "sys_signalfd4",                 /* 289 */
+    "sys_eventfd2",                  /* 290 */
+    "sys_epoll_create1",             /* 291 */
+    "sys_dup3",                      /* 292 */
+    "sys_pipe2",                     /* 293 */
+    "sys_inotify_init1",             /* 294 */
+    "sys_preadv",                    /* 295 */
+    "sys_pwritev",                   /* 296 */
+    "sys_rt_tgsigqueueinfo",         /* 297 */
+    "sys_perf_event_open",           /* 298 */
+    "sys_recvmmsg",                  /* 299 */
+    NULL
+};
+
 /* i386 sys_call_table for kernel 2.4.x
  */
-char * callz_2p4[] = {
-    "sys_ni_syscall",    /* 0 - old setup() system call*/
+char * syscalls_32[] = {
+    "sys_restart_syscall",    /* 0 - old setup() system call*/
     "sys_exit",
     "sys_fork",
     "sys_read",
@@ -20,7 +332,7 @@ char * callz_2p4[] = {
     "sys_mknod",
     "sys_chmod",        /* 15 */
     "sys_lchown16",
-    "sys_ni_syscall",                /* old break syscall holder */
+    "sys_break",
     "sys_stat",
     "sys_lseek",
     "sys_getpid",        /* 20 */
@@ -34,11 +346,11 @@ char * callz_2p4[] = {
     "sys_fstat",
     "sys_pause",
     "sys_utime",        /* 30 */
-    "sys_ni_syscall",                /* old stty syscall holder */
-    "sys_ni_syscall",                /* old gtty syscall holder */
+    "sys_stty",
+    "sys_gtty",
     "sys_access",
     "sys_nice",
-    "sys_ni_syscall",    /* 35 */        /* old ftime syscall holder */
+    "sys_ftime",        /* 35 */
     "sys_sync",
     "sys_kill",
     "sys_rename",
@@ -47,7 +359,7 @@ char * callz_2p4[] = {
     "sys_dup",
     "sys_pipe",
     "sys_times",
-    "sys_ni_syscall",                /* old prof syscall holder */
+    "sys_prof",
     "sys_brk",        /* 45 */
     "sys_setgid16",
     "sys_getgid16",
@@ -55,13 +367,13 @@ char * callz_2p4[] = {
     "sys_geteuid16",
     "sys_getegid16",    /* 50 */
     "sys_acct",
-    "sys_umount",                    /* recycled never used  phys() */
-    "sys_ni_syscall",                /* old lock syscall holder */
+    "sys_umount2",
+    "sys_lock",
     "sys_ioctl",
     "sys_fcntl",        /* 55 */
-    "sys_ni_syscall",                /* old mpx syscall holder */
+    "sys_mpx",
     "sys_setpgid",
-    "sys_ni_syscall",                /* old ulimit syscall holder */
+    "sys_ulimit",
     "sys_olduname",
     "sys_umask",        /* 60 */
     "sys_chroot",
@@ -79,7 +391,7 @@ char * callz_2p4[] = {
     "sys_sigpending",
     "sys_sethostname",
     "sys_setrlimit",    /* 75 */
-    "sys_old_getrlimit",
+    "sys_getrlimit",
     "sys_getrusage",
     "sys_gettimeofday",
     "sys_settimeofday",
@@ -101,7 +413,7 @@ char * callz_2p4[] = {
     "sys_fchown16",        /* 95 */
     "sys_getpriority",
     "sys_setpriority",
-    "sys_ni_syscall",                /* old profil syscall holder */
+    "sys_profil",
     "sys_statfs",
     "sys_fstatfs",        /* 100 */
     "sys_ioperm",
@@ -112,10 +424,10 @@ char * callz_2p4[] = {
     "sys_newstat",
     "sys_newlstat",
     "sys_newfstat",
-    "sys_uname",
+    "sys_olduname",
     "sys_iopl",        /* 110 */
     "sys_vhangup",
-    "sys_ni_syscall",    /* old idle system call */
+    "sys_idle",
     "sys_vm86old",
     "sys_wait4",
     "sys_swapoff",        /* 115 */
@@ -140,7 +452,7 @@ char * callz_2p4[] = {
     "sys_bdflush",
     "sys_sysfs",        /* 135 */
     "sys_personality",
-    "sys_ni_syscall",    /* for afs_syscall */
+    "sys_afs_syscall",
     "sys_setfsuid16",
     "sys_setfsgid16",
     "sys_llseek",        /* 140 */
@@ -152,7 +464,7 @@ char * callz_2p4[] = {
     "sys_writev",
     "sys_getsid",
     "sys_fdatasync",
-    "sys_sysctl",
+    "sys__sysctl",
     "sys_mlock",        /* 150 */
     "sys_munlock",
     "sys_mlockall",
@@ -167,14 +479,14 @@ char * callz_2p4[] = {
     "sys_sched_rr_get_interval",
     "sys_nanosleep",
     "sys_mremap",
-    "sys_setresuid16",
-    "sys_getresuid16",    /* 165 */
+    "sys_setresuid",
+    "sys_getresuid",    /* 165 */
     "sys_vm86",
     "sys_query_module",
     "sys_poll",
     "sys_nfsservctl",
-    "sys_setresgid16",    /* 170 */
-    "sys_getresgid16",
+    "sys_setresgid",    /* 170 */
+    "sys_getresgid",
     "sys_prctl",
     "sys_rt_sigreturn",
     "sys_rt_sigaction",
@@ -194,38 +506,38 @@ char * callz_2p4[] = {
     "sys_getpmsg",        /* streams1 */
     "sys_putpmsg",        /* streams2 */
     "sys_vfork",      /* 190 */
-    "sys_getrlimit",
+    "sys_ugetrlimit",
     "sys_mmap2",
     "sys_truncate64",
     "sys_ftruncate64",
     "sys_stat64",        /* 195 */
     "sys_lstat64",
     "sys_fstat64",
-    "sys_lchown",
-    "sys_getuid",
-    "sys_getgid",        /* 200 */
-    "sys_geteuid",
-    "sys_getegid",
-    "sys_setreuid",
-    "sys_setregid",
-    "sys_getgroups",    /* 205 */
-    "sys_setgroups",
-    "sys_fchown",
-    "sys_setresuid",
-    "sys_getresuid",
-    "sys_setresgid",    /* 210 */
-    "sys_getresgid",
-    "sys_chown",
-    "sys_setuid",
-    "sys_setgid",
-    "sys_setfsuid",        /* 215 */
-    "sys_setfsgid",
+    "sys_lchown32",
+    "sys_getuid32",
+    "sys_getgid32",        /* 200 */
+    "sys_geteuid32",
+    "sys_getegid32",
+    "sys_setreuid32",
+    "sys_setregid32",
+    "sys_getgroups32",    /* 205 */
+    "sys_setgroups32",
+    "sys_fchown32",
+    "sys_setresuid32",
+    "sys_getresuid32",
+    "sys_setresgid32",    /* 210 */
+    "sys_getresgid32",
+    "sys_chown32",
+    "sys_setuid32",
+    "sys_setgid32",
+    "sys_setfsuid32",        /* 215 */
+    "sys_setfsgid32",
     "sys_pivot_root",
     "sys_mincore",
     "sys_madvise",
     "sys_getdents64",    /* 220 */
     "sys_fcntl64",
-    "sys_tux",     /* reserved for TUX */
+    "sys_tux",     /* reserved for TUX, unused */
     "sys_security",
     "sys_gettid",
     "sys_readahead",     /* 225 */
@@ -276,208 +588,75 @@ char * callz_2p4[] = {
     "sys_tgkill",             /* 270 */
     "sys_utimes",
     "sys_fadvise64_64",
-    "sys_vserver",
+    "sys_vserver",            /* last 2.4 */
+    "sys_mbind",
+    "sys_get_mempolicy",      /* 275 */
+    "sys_set_mempolicy",
+    "sys_mq_open",
+    "sys_mq_unlink",
+    "sys_mq_timedsend",
+    "sys_mq_timedreceive",    /* 280 */
+    "sys_mq_notify",
+    "sys_mq_getsetattr",
+    "sys_kexec_load",
+    "sys_waitid",
+    "sys_sys_setaltroot",     /* 285 */
+    "sys_add_key",
+    "sys_request_key",
+    "sys_keyctl",
+    "sys_ioprio_set",
+    "sys_ioprio_get",         /* 290 */
+    "sys_inotify_init",
+    "sys_inotify_add_watch",
+    "sys_inotify_rm_watch",
+    "sys_migrate_pages",
+    "sys_openat",             /* 295 */
+    "sys_mkdirat",
+    "sys_mknodat",
+    "sys_fchownat",
+    "sys_futimesat",
+    "sys_fstatat64",          /* 300 */
+    "sys_unlinkat",
+    "sys_renameat",
+    "sys_linkat",
+    "sys_symlinkat",
+    "sys_readlinkat",         /* 305 */
+    "sys_fchmodat",
+    "sys_faccessat",
+    "sys_pselect6",
+    "sys_ppoll",
+    "sys_unshare",            /* 310 */
+    "sys_set_robust_list",
+    "sys_get_robust_list",
+    "sys_splice",
+    "sys_sync_file_range",
+    "sys_tee",                /* 315 */
+    "sys_vmsplice",
+    "sys_move_pages",
+    "sys_getcpu",
+    "sys_epoll_pwait",
+    "sys_utimensat",          /* 320 */
+    "sys_signalfd",
+    "sys_timerfd_create",
+    "sys_eventfd",
+    "sys_fallocate",          /* last 2.6.24 */
+    "sys_timerfd_settime",    /* 325 */
+    "sys_timerfd_gettime",
+    "sys_signalfd4",
+    "sys_eventfd2",
+    "sys_epoll_create1",
+    "sys_dup3",               /* 330 */
+    "sys_pipe2",
+    "sys_inotify_init1",      /* end 2.6.27 */
+    "sys_preadv",
+    "sys_pwritev",            /* end 2.6.30 */
+    "sys_rt_tgsigqueueinfo",  /* 335 */
+    "sys_perf_event_open",    /* end 2.6.31 */
+    "sys_recvmmsg",
     NULL
 };
 
 
-
-/* i386 sys_call_table for kernel 2.2.x
- */
-char * callz_2p2[]={
-  "sys_ni_syscall",        /* 0 */
-  "sys_exit",
-  "sys_fork",
-  "sys_read",
-  "sys_write",
-  "sys_open",              /* 5 */
-  "sys_close",
-  "sys_waitpid", 
-  "sys_creat",
-  "sys_link",
-  "sys_unlink",              /* 10 */
-  "sys_execve",
-  "sys_chdir",
-  "sys_time",
-  "sys_mknod",
-  "sys_chmod",              /* 15 */
-  "sys_lchown",
-  "sys_ni_syscall",
-  "sys_stat",
-  "sys_lseek",
-  "sys_getpid",              /* 20 */
-  "sys_mount",
-  "sys_oldumount", 
-  "sys_setuid",
-  "sys_getuid",
-  "sys_stime",              /* 25 */
-  "sys_ptrace",
-  "sys_alarm",
-  "sys_fstat",
-  "sys_pause",
-  "sys_utime",              /* 30 */
-  "sys_ni_syscall",
-  "sys_ni_syscall",
-  "sys_access",
-  "sys_nice",
-  "sys_ni_syscall",              /* 35 */
-  "sys_sync",
-  "sys_kill",
-  "sys_rename",
-  "sys_mkdir",
-  "sys_rmdir",              /* 40 */
-  "sys_dup",
-  "sys_pipe",
-  "sys_times",
-  "sys_ni_syscall",
-  "sys_brk",              /* 45 */
-  "sys_setgid",
-  "sys_getgid",
-  "sys_signal",
-  "sys_geteuid",
-  "sys_getegid",              /* 50 */
-  "sys_acct",
-  "sys_umount",
-  "sys_ni_syscall",
-  "sys_ioctl",
-  "sys_fcntl",              /* 55 */
-  "sys_ni_syscall",
-  "sys_setpgid",
-  "sys_ni_syscall",
-  "sys_olduname",
-  "sys_umask",              /* 60 */
-  "sys_chroot",
-  "sys_ustat",
-  "sys_dup2",
-  "sys_getppid",
-  "sys_getpgrp",              /* 65 */
-  "sys_setsid",
-  "sys_sigaction",
-  "sys_sgetmask",
-  "sys_ssetmask",
-  "sys_setreuid",              /* 70 */
-  "sys_setregid",
-  "sys_sigsuspend",
-  "sys_sigpending",
-  "sys_sethostname",
-  "sys_setrlimit",              /* 75 */
-  "sys_getrlimit",
-  "sys_getrusage",
-  "sys_gettimeofday",
-  "sys_settimeofday",
-  "sys_getgroups",              /* 80 */
-  "sys_setgroups",
-  "old_select",
-  "sys_symlink",
-  "sys_lstat",
-  "sys_readlink",              /* 85 */
-  "sys_uselib",
-  "sys_swapon",
-  "sys_reboot",
-  "old_readdir",
-  "old_mmap",              /* 90 */
-  "sys_munmap",
-  "sys_truncate",
-  "sys_ftruncate",
-  "sys_fchmod",
-  "sys_fchown",              /* 95 */
-  "sys_getpriority",
-  "sys_setpriority",
-  "sys_ni_syscall",
-  "sys_statfs",
-  "sys_fstatfs",              /* 100 */
-  "sys_ioperm",
-  "sys_socketcall",
-  "sys_syslog",
-  "sys_setitimer",
-  "sys_getitimer",              /* 105 */
-  "sys_newstat",
-  "sys_newlstat",
-  "sys_newfstat",
-  "sys_uname",
-  "sys_iopl",              /* 110 */
-  "sys_vhangup",
-  "sys_idle",
-  "sys_vm86old",
-  "sys_wait4",
-  "sys_swapoff",              /* 115 */
-  "sys_sysinfo",
-  "sys_ipc",
-  "sys_fsync",
-  "sys_sigreturn",
-  "sys_clone",              /* 120 */
-  "sys_setdomainname",
-  "sys_newuname",
-  "sys_modify_ldt",
-  "sys_adjtimex",
-  "sys_mprotect",              /* 125 */
-  "sys_sigprocmask",
-  "sys_create_module",
-  "sys_init_module",
-  "sys_delete_module",
-  "sys_get_kernel_syms", /* 130 */
-  "sys_quotactl",
-  "sys_getpgid",
-  "sys_fchdir",
-  "sys_bdflush",
-  "sys_sysfs",              /* 135 */
-  "sys_personality",
-  "sys_ni_syscall",
-  "sys_setfsuid",
-  "sys_setfsgid",
-  "sys_llseek",              /* 140 */
-  "sys_getdents",
-  "sys_select",
-  "sys_flock",
-  "sys_msync",
-  "sys_readv",              /* 145 */
-  "sys_writev",
-  "sys_getsid",
-  "sys_fdatasync",
-  "sys_sysctl",
-  "sys_mlock",              /* 150 */
-  "sys_munlock",
-  "sys_mlockall",
-  "sys_munlockall",
-  "sys_sched_setparam", 
-  "sys_sched_getparam",  /* 155 */
-  "sys_sched_setscheduler",
-  "sys_sched_getscheduler",
-  "sys_sched_yield",
-  "sys_sched_get_priority_max",
-  "sys_sched_get_priority_min", /* 160 */
-  "sys_sched_rr_get_interval",
-  "sys_nanosleep",
-  "sys_mremap",
-  "sys_setresuid",
-  "sys_getresuid",              /* 165 */
-  "sys_vm86",
-  "sys_query_module",
-  "sys_poll",
-  "sys_nfsservctl", 
-  "sys_setresgid",              /* 170 */
-  "sys_getresgid",
-  "sys_prctl",
-  "sys_rt_sigreturn",
-  "sys_rt_sigaction",
-  "sys_rt_sigprocmask", /* 175 */
-  "sys_rt_sigpending",
-  "sys_rt_sigtimedwait",
-  "sys_rt_sigqueueinfo",
-  "sys_rt_sigsuspend",
-  "sys_pread",              /* 180 */
-  "sys_pwrite",
-  "sys_chown",
-  "sys_getcwd",
-  "sys_capget",
-  "sys_capset",              /* 185 */
-  "sys_sigaltstack",
-  "sys_sendfile",
-  "sys_ni_syscall",
-  "sys_ni_syscall",
-  "sys_vfork",              /* 190 */
-  NULL
-};
 
 /* i386 sys_call_table for openbsd
  */

@@ -100,7 +100,11 @@ int sh_error_logverify (const char * s);
 void sh_error_dbg_switch(void);
 
 #ifdef SH_WITH_SERVER
+
 void sh_error_set_peer(const char * str);
+#ifdef HAVE_LIBPRELUDE
+void sh_error_set_peer_ip(const char * str);
+#endif
 int  set_flag_sep_log (const char * str);
 #endif
 
@@ -119,6 +123,10 @@ void sh_error_enable_unsafe (int flag);
 /* set syslog facility 
  */
 int  sh_log_set_facility (const char * c);
+
+/* map heartbeat messages 
+ */
+int sh_log_set_stamp_priority (const char * c);
 
 /* define message header
  */

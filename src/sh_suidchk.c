@@ -192,6 +192,9 @@ static void set_defaults (void)
 
 /* Recursively descend into the directory to make sure that
  * there is no symlink in the path.
+ *
+ * Use retry_lstat_ns() here because we cannot chdir the subprocess
+ * that does the lstat().
  */
 static int do_truncate_int (char * path, int depth)
 {
@@ -225,7 +228,7 @@ static int do_truncate_int (char * path, int depth)
   if (q)
     {
       *q = '\0';
-      if (0 != retry_lstat(FIL__, __LINE__, path, &one))
+      if (0 != retry_lstat_ns(FIL__, __LINE__, path, &one))
 	{ 
 	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle ((-1), FIL__, __LINE__, errno,
@@ -259,7 +262,7 @@ static int do_truncate_int (char * path, int depth)
 	  return -1;
 	}
       *q = '/';
-      if (0 != retry_lstat(FIL__, __LINE__, ".", &two))
+      if (0 != retry_lstat_ns(FIL__, __LINE__, ".", &two))
 	{ 
 	  sh_error_handle ((-1), FIL__, __LINE__, errno,
 			   MSG_SUID_ERROR,
@@ -287,7 +290,7 @@ static int do_truncate_int (char * path, int depth)
        */
       if (*path == '\0')
 	return -1;
-      if (0 != retry_lstat(FIL__, __LINE__, path, &one))
+      if (0 != retry_lstat_ns(FIL__, __LINE__, path, &one))
 	{
 	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle ((-1), FIL__, __LINE__, errno,

@@ -139,6 +139,10 @@ case "$1" in
 	    /bin/rm -f ${PIDFILE}
 	fi
 	#
+	# Preloaded kernel module
+	#
+	@sh_insmod_pre@
+	#
 	case "$DISTRO" in
 	debian)
 		echo -n "Starting ${NAME}"

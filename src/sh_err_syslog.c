@@ -130,7 +130,28 @@ int  sh_log_set_facility (const char * c)
   SL_RETURN(-1, _("sh_log_set_facility"));
 }
   
-  
+static int sh_stamp_priority = LOG_ERR;
+
+/* set priority for heartbeat messages
+ */
+int  sh_log_set_stamp_priority (const char * c)
+{
+  int retval = 0;
+
+  if      (0 == strcmp(c, _("LOG_DEBUG")))   { sh_stamp_priority = LOG_DEBUG; }
+  else if (0 == strcmp(c, _("LOG_INFO")))    { sh_stamp_priority = LOG_INFO;  }
+  else if (0 == strcmp(c, _("LOG_NOTICE")))  { sh_stamp_priority = LOG_NOTICE;}
+  else if (0 == strcmp(c, _("LOG_WARNING"))) { sh_stamp_priority = LOG_WARNING;}
+  else if (0 == strcmp(c, _("LOG_ERR")))     { sh_stamp_priority = LOG_ERR;   }
+  else if (0 == strcmp(c, _("LOG_CRIT")))    { sh_stamp_priority = LOG_CRIT;  }
+  else if (0 == strcmp(c, _("LOG_ALERT")))   { sh_stamp_priority = LOG_ALERT; }
+#ifdef LOG_EMERG
+  else if (0 == strcmp(c, _("LOG_EMERG")))   { sh_stamp_priority = LOG_EMERG; }
+#endif
+  else { retval = -1; }
+
+  return retval;
+}  
 
 /* syslog error message
  */
@@ -153,7 +174,7 @@ int  sh_log_syslog (int  severity, /*@null@*/char *errmsg)
   else if (severity == SH_ERR_INFO)   priority = LOG_INFO;
   else if (severity == SH_ERR_NOTICE) priority = LOG_NOTICE;
   else if (severity == SH_ERR_WARN)   priority = LOG_WARNING;
-  else if (severity == SH_ERR_STAMP)  priority = LOG_ERR;
+  else if (severity == SH_ERR_STAMP)  priority = sh_stamp_priority;
   else if (severity == SH_ERR_ERR)    priority = LOG_ERR;
   else if (severity == SH_ERR_SEVERE) priority = LOG_CRIT;
   else if (severity == SH_ERR_FATAL)  priority = LOG_ALERT;

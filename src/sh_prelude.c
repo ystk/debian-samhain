@@ -218,14 +218,31 @@ static idmef_impact_severity_t map_severity (int sam_sev)
 static char *do_get_value(char *ptr, char delim_start, char delim_end)
 {
         char *ret = NULL;
-        
+#if defined(SH_WITH_SERVER)
+        int    delim_start_count = 0;
+        int    found = 0;
+#endif                
+
         ptr = strchr(ptr, delim_start);
         if ( ! ptr )
                 return NULL;
 
         ret = ++ptr;
-
+#if defined(SH_WITH_SERVER)
+        while ((*ptr != '\0') && (!found)){
+		if (*ptr == delim_end) {
+		        if (delim_start_count == 0)
+			        found = 1;
+			delim_start_count--;
+		}
+		else if (*ptr == delim_start) 
+		        delim_start_count++;
+		ptr++;
+        }
+        ptr = (found) ? ptr-1 : NULL ;
+#else
         ptr = strchr(ptr, delim_end);
+#endif
         if ( ! ptr )
                 return NULL;
         
@@ -554,6 +571,7 @@ static void get_file_infos(idmef_target_t *target, char *msg,
 		}
 
 		free(uid);
+		/* Don't free(ptr) because of prelude_string_set_nodup(str, ptr) */
         }
 
  get_group:
@@ -596,6 +614,7 @@ static void get_file_infos(idmef_target_t *target, char *msg,
 		}
 
 		free(gid);
+		/* Don't free(ptr) because of prelude_string_set_nodup(str, ptr) */
         }
 
  mode_free:
@@ -682,7 +701,15 @@ static int map_policy_to_class(char *msg, unsigned long msgid, idmef_impact_t *i
                                 _("could not format Samhain message"), _("map_policy_to_class"));
                 return -1;
         }
-        
+
+#if defined(SH_WITH_SERVER)
+        /* when using yule, theres a msg=<... msg=<...> >*/
+	while ( (msg = get_value(ptr, _("msg"), NULL)) ) {
+	        free(ptr);
+		ptr = msg;
+	}
+#endif        
+
         ret = prelude_string_cat(out, ptr);
         free(ptr);
         
@@ -1114,8 +1141,37 @@ static int get_login_info(char *msg, idmef_alert_t *alert)
 }
 
 
+static int node_set_address(idmef_node_t *node, const char *addr)
+{
+        int ret;
+	prelude_string_t *prelude_str;
+	idmef_address_t *idmef_addr;
+
+	ret = prelude_string_new(&prelude_str);
+	if ( ret < 0 ) 
+                goto err;
+      
+	ret = prelude_string_set_ref(prelude_str, addr);
+	if ( ret < 0 ) 
+                goto err;
+
+	ret = idmef_address_new(&idmef_addr);
+	if ( ret < 0 ) 
+                goto err;
+      
+	idmef_address_set_category(idmef_addr, IDMEF_ADDRESS_CATEGORY_IPV4_ADDR);
+	idmef_address_set_address(idmef_addr, prelude_str);
+	idmef_node_set_address(node, idmef_addr, 0);
+
+	return 0;
+ err:
+        return -1;
+}
+
+                                          
+
 static int samhain_alert_prelude(int priority, int sh_class, 
-				 char *message, unsigned long msgid)
+				 char *message, unsigned long msgid, char * inet_peer_ip)
 {
         int ret;
         idmef_time_t *time;
@@ -1128,6 +1184,9 @@ static int samhain_alert_prelude(int priority, int sh_class,
         idmef_target_t *target;
         idmef_confidence_t *confidence;
         prelude_string_t *str;
+#if defined(SH_WITH_SERVER)
+        idmef_node_t *node;
+#endif
                 
         if ( !client || sh_class == STAMP)
                 return 0;
@@ -1161,12 +1220,26 @@ static int samhain_alert_prelude(int priority, int sh_class,
                 goto err;
 
         idmef_target_set_decoy(target, IDMEF_TARGET_DECOY_NO);
+
+#if defined(SH_WITH_SERVER)
+        if ( inet_peer_ip != NULL){
+                ret = idmef_target_new_node(target, &node);
+		if ( ret < 0 )
+                          goto err;
         
+		ret = node_set_address(node, inet_peer_ip); 
+		if ( ret < 0 )
+                          goto err;
+                          
+		idmef_target_set_node(target, idmef_node_ref(node));
+        }
+        else
+#endif        
         if ( idmef_analyzer_get_node(prelude_client_get_analyzer(client)) ) {
                 idmef_node_ref(idmef_analyzer_get_node(prelude_client_get_analyzer(client)));
                 idmef_target_set_node(target, idmef_analyzer_get_node(prelude_client_get_analyzer(client)));
         }
-        
+
         if ( strstr(message, _("path=")) ) {
 #if defined(SH_WITH_CLIENT) || defined(SH_STANDALONE)
                 if ( msgid != MSG_FI_ADD && msgid != MSG_FI_ADD2 )
@@ -1247,7 +1320,7 @@ static int samhain_alert_prelude(int priority, int sh_class,
 }
 
 
-int sh_prelude_alert(int priority, int sh_class, char *message, long msgflags, unsigned long msgid)
+int sh_prelude_alert(int priority, int sh_class, char *message, long msgflags, unsigned long msgid, char *inet_peer_ip)
 {
         int ret;
         
@@ -1256,7 +1329,7 @@ int sh_prelude_alert(int priority, int sh_class, char *message, long msgflags, u
         if ( initialized < 1 )
                 return -1;
         
-        ret = samhain_alert_prelude(priority, sh_class, message, msgid);
+        ret = samhain_alert_prelude(priority, sh_class, message, msgid, inet_peer_ip);
         if ( ret < 0 ) {
                 sh_error_handle((-1), FIL__, __LINE__, -1, MSG_E_SUBGEN,
                                 _("Problem with IDMEF for prelude-ids support: alert lost"), 

@@ -519,7 +519,22 @@ static FILE * sh_popen (sourcetable_t  *source, char * command)
   char   arg0[80];
   char   arg1[80];
 
+#if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETPWNAM_R)
+  struct passwd    pwd;
+  char           * buffer;
+  struct passwd *  tempres;
+#else
+  struct passwd * tempres;
+#endif
+
   SL_ENTER(_("sh_popen"));
+
+#if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETPWNAM_R)
+  buffer = SH_ALLOC(SH_PWBUF_SIZE);
+  sh_getpwnam_r(DEFAULT_IDENT, &pwd, buffer, SH_PWBUF_SIZE, &tempres);
+#else
+  tempres = sh_getpwnam(DEFAULT_IDENT);
+#endif
 
   strncpy (arg0, _("/bin/sh"), sizeof(arg0));
   arg[0] = arg0;
@@ -595,14 +610,6 @@ static FILE * sh_popen (sourcetable_t  *source, char * command)
       i = 0; 
       if (0 == geteuid()) 
 	{
-#if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETPWNAM_R)
-	  struct passwd    pwd;
-	  char           * buffer = SH_ALLOC(SH_PWBUF_SIZE);
-	  struct passwd *  tempres;
-	  sh_getpwnam_r(DEFAULT_IDENT, &pwd, buffer, SH_PWBUF_SIZE, &tempres);
-#else
-	  struct passwd * tempres = sh_getpwnam(DEFAULT_IDENT);
-#endif
   
 	  if (NULL != tempres) {
 	    i = setgid(tempres->pw_gid); 
@@ -618,9 +625,6 @@ static FILE * sh_popen (sourcetable_t  *source, char * command)
 	  } else {
 	    i = -1;
 	  }
-#if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETPWNAM_R)
-	  SH_FREE(buffer);
-#endif
 	}
       
       /* some problem ...
@@ -643,26 +647,30 @@ static FILE * sh_popen (sourcetable_t  *source, char * command)
       _exit(EXIT_FAILURE);
     }
 
-    /* parent
-     */
-    if (envp[0] != NULL) 
-      free(envp[0]);
+  /* parent
+   */
+#if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETPWNAM_R)
+  SH_FREE(buffer);
+#endif
 
-    sl_close_fd (FIL__, __LINE__, pipedes[STDOUT_FILENO]);
-    retry_fcntl (FIL__, __LINE__, pipedes[STDIN_FILENO], F_SETFD, FD_CLOEXEC);
-
-    outf = fdopen (pipedes[STDIN_FILENO], "r");
-
-    if (outf == NULL) 
-      {
-        aud_kill (FIL__, __LINE__, source->pid, SIGKILL);
-	sl_close_fd (FIL__, __LINE__, pipedes[STDOUT_FILENO]);
-        waitpid (source->pid, NULL, 0);
-        source->pid = 0;
-	SL_RETURN(NULL, _("sh_popen"));
-      }
-
-    SL_RETURN(outf, _("sh_popen"));
+  if (envp[0] != NULL) 
+    free(envp[0]);
+  
+  sl_close_fd (FIL__, __LINE__, pipedes[STDOUT_FILENO]);
+  retry_fcntl (FIL__, __LINE__, pipedes[STDIN_FILENO], F_SETFD, FD_CLOEXEC);
+  
+  outf = fdopen (pipedes[STDIN_FILENO], "r");
+  
+  if (outf == NULL) 
+    {
+      aud_kill (FIL__, __LINE__, source->pid, SIGKILL);
+      sl_close_fd (FIL__, __LINE__, pipedes[STDOUT_FILENO]);
+      waitpid (source->pid, NULL, 0);
+      source->pid = 0;
+      SL_RETURN(NULL, _("sh_popen"));
+    }
+  
+  SL_RETURN(outf, _("sh_popen"));
 }
 
 

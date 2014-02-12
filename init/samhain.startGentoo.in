@@ -8,6 +8,7 @@ depend() {
 
 start() {
 	ebegin "Starting @install_name@"
+	@sh_insmod_pre@
 	/sbin/start-stop-daemon --start --quiet  --exec @sbindir@/@install_name@
 	eend $?
 	@sh_insmod_cmd@

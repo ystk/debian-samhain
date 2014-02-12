@@ -400,6 +400,9 @@ static void sh_getopt_print_options (void)
 	  SH_DEFAULT_PORT, DEFAULT_IDENT); 
   ++num;
 #endif
+#if defined(USE_IPVX)
+  fputs (_(", IPv6 supported"), stdout);
+#endif
 
   fputs (_(", compiled-in options:"), stdout);
 
@@ -463,6 +466,10 @@ static void sh_getopt_print_options (void)
 #if defined(HAVE_LIBZ)
   if (num > 0) fputc ('\n', stdout);
   fputs (_(" optionally store full text for files"), stdout); ++num;
+#endif
+#if !defined(SH_COMPILE_STATIC) && defined(__linux__) && defined(HAVE_AUPARSE_H) && defined(HAVE_AUPARSE_LIB)
+  if (num > 0) fputc ('\n', stdout);
+  fputs (_(" optionally report auditd record of changed file"), stdout); ++num;
 #endif
 #if defined(USE_XATTR)
   if (num > 0) fputc ('\n', stdout);

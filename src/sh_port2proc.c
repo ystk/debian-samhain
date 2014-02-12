@@ -23,6 +23,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 
 #ifdef HAVE_DIRENT_H
@@ -47,6 +49,9 @@
 
 /* #define DEBUG_P2P 1 */
 
+#include "samhain.h"
+#include "sh_utils.h"
+
 /****************************************************************************
  *
  *  >>> COMMON CODE <<<
@@ -54,10 +59,9 @@
  ****************************************************************************/
 #if defined(__linux__) || defined(__FreeBSD__)
  
-#include "samhain.h"
 #include "sh_error_min.h"
-#include "sh_utils.h"
 #include "sh_pthread.h"
+#include "sh_ipvx.h"
 
 #define FIL__  _("sh_port2proc.c")
 
@@ -321,7 +325,8 @@ void sh_port2proc_finish()
 
 /* returns the command and fills the 'user' array 
  */
-static char * port2proc_query(char * file, int proto, struct in_addr * saddr, int sport, 
+static char * port2proc_query(char * file, int proto, int domain,
+			      struct sh_sockaddr * saddr, int sport, 
 			      unsigned long * pid, char * user, size_t userlen)
 {
   FILE * fd;
@@ -333,17 +338,21 @@ static char * port2proc_query(char * file, int proto, struct in_addr * saddr, in
 #ifdef DEBUG_P2P
   {
     char errmsg[256];
+    char siface[SH_IP_BUF];
+    sh_ipvx_ntoa(siface, sizeof(siface), saddr);
     sl_snprintf(errmsg, sizeof(errmsg), 
 		"query, file=%s, proto=%d, port=%d, iface=%s\n",
-		file, proto, sport, inet_ntoa(*saddr));
+		file, proto, sport, siface);
     fprintf(stderr, "%s", errmsg);
   }
 #endif
 
   if (fd)
     {
-      unsigned int n, iface, port, inode, istatus;
+      unsigned int n, i, port, niface, inode, istatus;
       char line[512];
+      char ip_port[128];
+      char iface[SH_IP_BUF];
 
       while (NULL != fgets(line, sizeof(line), fd))
 	{
@@ -354,21 +363,65 @@ static char * port2proc_query(char * file, int proto, struct in_addr * saddr, in
 	  }
 #endif
 
-	  if (5 == sscanf(line, 
-			  "%u: %X:%X %*X:%*X %X %*X:%*X %*X:%*X %*X %*d %*d %u %*s",
-			  &n, &iface, &port, &istatus, &inode))
+	  if (4 == sscanf(line, 
+			  "%u: %127s %*X:%*X %X %*X:%*X %*X:%*X %*X %*d %*d %u %*s",
+			  &n, ip_port, &istatus, &inode))
 	    {
-	      struct in_addr haddr;
+	      struct sockaddr_in  addr4;
+	      struct sockaddr_in6 addr6;
+	      struct sh_sockaddr  ss;
+	      
+	      char * p;
 
-	      haddr.s_addr = (unsigned long)iface;
+	      ip_port[127] = '\0';
+
+	      p = strchr(ip_port, ':');
+
+	      if (p)
+		{
+		  *p = '\0'; ++p;
+		  port = (unsigned int) strtoul(p, NULL, 16);
+		  sl_strlcpy(iface, ip_port, sizeof(iface));
+		}
+	      else
+		{
+		  continue;
+		}
+
+	      niface = 0;
+
+	      switch (domain) 
+		{
+		case AF_INET:
+		  addr4.sin_addr.s_addr = (int) strtol(iface, NULL, 16);
+		  niface = (unsigned int) addr4.sin_addr.s_addr;
+		  sh_ipvx_save(&ss, AF_INET, (struct sockaddr *)&addr4);
+		  break;
+
+		case AF_INET6:
+		  sscanf(iface, 
+			 "%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx", 
+			 &addr6.sin6_addr.s6_addr[3], &addr6.sin6_addr.s6_addr[2], &addr6.sin6_addr.s6_addr[1], &addr6.sin6_addr.s6_addr[0], 
+			 &addr6.sin6_addr.s6_addr[7], &addr6.sin6_addr.s6_addr[6], &addr6.sin6_addr.s6_addr[5], &addr6.sin6_addr.s6_addr[4], 
+			 &addr6.sin6_addr.s6_addr[11], &addr6.sin6_addr.s6_addr[10], &addr6.sin6_addr.s6_addr[9], &addr6.sin6_addr.s6_addr[8], 
+			 &addr6.sin6_addr.s6_addr[15], &addr6.sin6_addr.s6_addr[14], &addr6.sin6_addr.s6_addr[13], &addr6.sin6_addr.s6_addr[12]);
+		  
+		  for (i = 0; i < 16; ++i)
+		    {
+		      if (0 != (unsigned int) addr6.sin6_addr.s6_addr[i]) 
+			++niface;
+		    }
+		  sh_ipvx_save(&ss, AF_INET6, (struct sockaddr *)&addr6);
+		  break;
+		}
 
 #ifdef DEBUG_P2P
 	      {
-		char a[32];
-		char b[32];
+		char a[SH_IP_BUF];
+		char b[SH_IP_BUF];
 
-		sl_strlcpy(a, inet_ntoa(haddr), sizeof(a));
-		sl_strlcpy(b, inet_ntoa(*saddr), sizeof(b));
+		sh_ipvx_ntoa(a, sizeof(a), &ss);
+		sh_ipvx_ntoa(b, sizeof(b), saddr);
 
 		fprintf(stderr, " -> inode %u, iface/port %s,%u, status %u, searching %s,%u, %u\n", 
 			inode, a, port, istatus, b, sport, 
@@ -387,7 +440,8 @@ static char * port2proc_query(char * file, int proto, struct in_addr * saddr, in
 	      }
 #endif
 
-	      if ((proto == IPPROTO_UDP || iface == 0 || haddr.s_addr == saddr->s_addr) && port == (unsigned int)sport)
+	      if ((proto == IPPROTO_UDP || niface == 0 || 0 == sh_ipvx_cmp(&ss, saddr)) && 
+		  port == (unsigned int)sport)
 		{
 		  struct sock_store * new = socklist;
 
@@ -440,26 +494,36 @@ static char * port2proc_query(char * file, int proto, struct in_addr * saddr, in
 
 /* returns the command and fills the 'user' array 
  */
-char * sh_port2proc_query(int proto, struct in_addr * saddr, int sport, 
+char * sh_port2proc_query(int proto, struct sh_sockaddr * saddr, int sport, 
 			  unsigned long * pid, char * user, size_t userlen)
 {
   char file[32];
-
+  char * ret;
+ 
   if (proto == IPPROTO_TCP)
     {
       sl_strlcpy(file, _("/proc/net/tcp"), sizeof(file));
-      return port2proc_query(file, proto, saddr, sport, pid, user, userlen);
+      ret = port2proc_query(file, proto, AF_INET, saddr, sport, pid, user, userlen);
+
+      if (ret[0] == '-' && ret[1] == '\0')
+	{
+	  SH_FREE(ret);
+	  sl_strlcpy(file, _("/proc/net/tcp6"), sizeof(file));
+	  ret = port2proc_query(file, proto, AF_INET6, saddr, sport, pid, user, userlen);
+	}
+      return ret;
     }
   else
     {
       char * ret;
       sl_strlcpy(file, _("/proc/net/udp"), sizeof(file));
-      ret = port2proc_query(file, proto, saddr, sport, pid, user, userlen);
+      ret = port2proc_query(file, proto, AF_INET, saddr, sport, pid, user, userlen);
+
       if (ret[0] == '-' && ret[1] == '\0')
 	{
 	  SH_FREE(ret);
 	  sl_strlcpy(file, _("/proc/net/udp6"), sizeof(file));
-	  ret = port2proc_query(file, proto, saddr, sport, pid, user, userlen);
+	  ret = port2proc_query(file, proto, AF_INET6, saddr, sport, pid, user, userlen);
 	}
       return ret;
     }
@@ -536,7 +600,7 @@ __FBSDID("$FreeBSD: src/usr.bin/sockstat/sockstat.c,v 1.13.2.1.4.1 2008/10/02 02
 #include <unistd.h>
 
 static int       opt_4 = 1;         /* Show IPv4 sockets */
-static int       opt_6 = 0;         /* Show IPv6 sockets */
+static int       opt_6 = 1;         /* Show IPv6 sockets */
 static int       opt_c = 0;         /* Show connected sockets */
 static int       opt_l = 1;         /* Show listening sockets */
 static int       opt_v = 0;         /* Verbose mode */
@@ -847,13 +911,15 @@ getprocname(pid_t pid)
         return (proc.ki_ocomm);
 }
 
-char * sh_port2proc_query(int proto, struct in_addr * saddr, int sport,
+char * sh_port2proc_query(int proto, struct sh_sockaddr * saddr, int sport,
 			  unsigned long * pid, char * user, size_t userlen)
 {
   int n, hash;
   struct xfile *xf;
-  struct in_addr * haddr;
+  struct in_addr  * haddr;
+  struct in6_addr * haddr6;
   struct sock * s;
+  struct in6_addr   anyaddr = IN6ADDR_ANY_INIT; 
 
   *pid = 0;
   
@@ -881,18 +947,36 @@ char * sh_port2proc_query(int proto, struct in_addr * saddr, int sport,
     if (s->proto != proto)
       continue;
 
-    if (s->family != AF_INET /* && s->family != AF_INET6 */)
+    if (s->family != AF_INET && s->family != AF_INET6)
       continue;
 
-    if (sport != ntohs(((struct sockaddr_in *)(&s->laddr))->sin_port))
+    if (s->family == AF_INET &&
+	(sport != ntohs(((struct sockaddr_in *)(&s->laddr))->sin_port)))
       continue;
 
-    haddr = &((struct sockaddr_in *)(&s->laddr))->sin_addr;
+    if (s->family == AF_INET6 &&
+	(sport != ntohs(((struct sockaddr_in6 *)(&s->laddr))->sin6_port)))
+      continue;
+
+    if (s->family == AF_INET)
+      haddr  = &((struct sockaddr_in  *)(&s->laddr))->sin_addr;
+    if (s->family == AF_INET6)
+      haddr6 = &((struct sockaddr_in6 *)(&s->laddr))->sin6_addr;
+    
 
     /* fprintf(stderr, "FIXME: %s\n", inet_ntoa(*haddr)); */
     /* fprintf(stderr, "FIXME: %s\n", inet_ntoa(*saddr)); */
 
-    if (haddr->s_addr == saddr->s_addr || inet_lnaof(*saddr) == INADDR_ANY || inet_lnaof(*haddr) == INADDR_ANY)
+    if ( (s->family == AF_INET && 
+	  (haddr->s_addr == (saddr->sin).sin_addr.s_addr || 
+	   sh_ipvx_isany(saddr) || 
+	   inet_lnaof(*haddr) == INADDR_ANY))
+	 ||
+	 (s->family == AF_INET6 &&
+	  (0 == memcmp(haddr6->s6_addr, &((saddr->sin6).sin6_addr.s6_addr), 16) ||
+	   0 == memcmp(haddr6->s6_addr, &(anyaddr.s6_addr), 16) ||
+	   sh_ipvx_isany(saddr) ))
+	 )
       {
 	struct sock_store try;
 	
@@ -968,7 +1052,11 @@ void sh_port2proc_finish()
 
 #else /* !defined(__linux__) && !defined(__FreeBSD__) */
 
-char * sh_port2proc_query(int proto, struct in_addr * saddr, int sport,
+#include "samhain.h"
+#include "sh_utils.h"
+#include "sh_ipvx.h"
+
+char * sh_port2proc_query(int proto, struct sh_sockaddr * saddr, int sport,
 			  unsigned long * pid, char * user, size_t userlen)
 {
   (void) proto;

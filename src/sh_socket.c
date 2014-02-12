@@ -556,7 +556,8 @@ int sh_socket_read (struct socket_cmd * srvcmd)
   struct socket_cmd * list_cmd;
   char message[SH_MAXMSG];
   struct sockaddr_un name;
-  int size;
+  ACCEPT_TYPE_ARG3 size = sizeof(name);
+
   int nbytes;
   int talkfd;
   int retry = 0;
@@ -635,9 +636,10 @@ int sh_socket_read (struct socket_cmd * srvcmd)
   /* the socket is non-blocking 
    * 'name' is the address of the sender socket
    */
-  size = sizeof (name);
-  talkfd = retry_accept(FIL__, __LINE__, 
-			pf_unix_fd, (struct sockaddr *) & name, &size);
+  do {
+    talkfd = accept(pf_unix_fd, (struct sockaddr *) &name, &size);
+  } while (talkfd < 0 && errno == EINTR);
+
   if ((talkfd < 0) && (errno == EAGAIN))
     {
       return 0;
@@ -680,7 +682,7 @@ int sh_socket_read (struct socket_cmd * srvcmd)
     else if (nbytes < 0)
       {
 	++retry;
-	retry_msleep(0, 1);
+	retry_msleep(0, 10);
       }
   } while ((nbytes < 0) && (retry < 3));
 

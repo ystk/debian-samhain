@@ -16,6 +16,8 @@ extern int sl_ok_adds (size_t a, size_t b);
 #define SL_FALSE 0
 
 #include <ctype.h>
+#include <errno.h>
+
 /* Split array at delim in at most nfields fields. 
  * Empty fields are returned as empty (zero-length) strings. 
  * Leading and trailing WS are removed from token. 
@@ -285,6 +287,17 @@ size_t sh_string_read_cont(sh_string * s, FILE * fp, size_t maxlen, char *cont)
   return sh_string_read_int(s, fp, maxlen, cont);
 }
 
+static char * sh_str_fgets (char *s, int size, FILE *fp)
+{
+  char * ret;
+  do {
+    clearerr(fp);
+    ret = fgets(s, size, fp);
+  } while (ret == NULL && ferror(fp) && errno == EAGAIN);
+
+  return ret;
+}
+
 size_t sh_string_read_int(sh_string * s, FILE * fp, size_t maxlen, char *start)
 {
 
@@ -292,7 +305,12 @@ size_t sh_string_read_int(sh_string * s, FILE * fp, size_t maxlen, char *start)
    */
   if (start)
     {
-      int first = fgetc(fp);
+      int first;
+
+      do {
+	clearerr(fp);
+	first = fgetc(fp);
+      } while (first == EOF && ferror(fp) && errno == EAGAIN);
 
       if (first == EOF)
 	{
@@ -312,7 +330,7 @@ size_t sh_string_read_int(sh_string * s, FILE * fp, size_t maxlen, char *start)
 
   /* case 1) EOF or error 
    */
-  if (fgets(s->str, s->siz, fp) == NULL)
+  if (sh_str_fgets(s->str, s->siz, fp) == NULL)
     {
       sh_string_truncate(s, 0);
       if (ferror(fp))
@@ -347,7 +365,7 @@ size_t sh_string_read_int(sh_string * s, FILE * fp, size_t maxlen, char *start)
         sh_string_grow(s, 0);
       }
     
-    if (fgets(&(s->str[s->len]), (s->siz - s->len), fp) == NULL) 
+    if (sh_str_fgets(&(s->str[s->len]), (s->siz - s->len), fp) == NULL) 
       {
         if (ferror(fp))
           {
@@ -541,7 +559,6 @@ sh_string * sh_string_replace(const sh_string * s,
   long   diff;
   int    i, curr, last;
 
-
   for (i = 0; i < ovecnum; ++i)
     {
       start = ovector[2*i];       /* offset of first char of substring       */
@@ -587,7 +604,7 @@ sh_string * sh_string_replace(const sh_string * s,
     {
       if (ovector[2*i] >= 0)
         {
-          curr = i;
+          curr = 2*i;
           break;
         }
     }
@@ -598,9 +615,17 @@ sh_string * sh_string_replace(const sh_string * s,
 
       /* First part, until start of first replacement 
        */
-      memcpy(p, s->str, (size_t)ovector[curr]); p += ovector[curr];
-      memcpy(p, replacement,    rlen);       p += rlen;
-      *p = '\0'; r->len += (ovector[curr] + rlen);
+      if (r->siz > (unsigned int)ovector[curr]) {
+	memcpy(p, s->str, (size_t)ovector[curr]); 
+	p += ovector[curr]; 
+	r->len += ovector[curr];
+      }
+      if (r->siz > (r->len + rlen)) {
+	memcpy(p, replacement,    rlen); 
+	p += rlen;
+	r->len += rlen;
+      }
+      *p = '\0';
 
       last = curr + 1;
 
@@ -617,18 +642,22 @@ sh_string * sh_string_replace(const sh_string * s,
             {
               len = (size_t) tlen;
 
-              if (tlen > 0)
+              if (tlen > 0 && r->siz > (r->len + len))
                 {
                   memcpy(p, &(s->str[ovector[last]]), (size_t)len);
                   p += len;
+		  r->len += len; 
                 }
               
               /* The replacement */
-              memcpy(p, replacement, rlen);       
-              p += rlen;
+	      if (r->siz > (r->len + rlen)) {
+		memcpy(p, replacement, rlen);       
+		p += rlen;
+		r->len += rlen;
+	      }
               
               /* null terminate */
-              *p = '\0'; r->len += (len + rlen);
+              *p = '\0';
 
               last = curr + 1;
             }
@@ -644,8 +673,12 @@ sh_string * sh_string_replace(const sh_string * s,
           if (tlen > 0)
             {
               len = (size_t)tlen;
-              memcpy(p, &(s->str[ovector[2*i -1]]), (size_t)len);
-              p += len; *p = '\0'; r->len += (len - 1);
+	      if (r->siz >= (r->len + len)) {
+		memcpy(p, &(s->str[ovector[2*i -1]]), (size_t)len);
+		p += (len - 1); 
+		r->len += (len - 1);
+		*p = '\0'; 
+	      }
             }
         }
 

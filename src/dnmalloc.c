@@ -308,13 +308,16 @@ static void default_assert_handler(const char *error,
   char * i1 = "assertion failed (";
   char * i3 = "): ";
   char * i5 = "\n";
+  int   res = 0;
 
   iov[0].iov_base = i1;               iov[0].iov_len = strlen(i1); 
   iov[1].iov_base = (char*) file;     iov[1].iov_len = strlen(file); 
   iov[2].iov_base = i3;               iov[2].iov_len = strlen(i3); 
   iov[3].iov_base = (char*) error;    iov[3].iov_len = strlen(error); 
-  iov[4].iov_base = i5;               iov[4].iov_len = strlen(i5); 
-  writev(STDERR_FILENO, iov, 5);
+  iov[4].iov_base = i5;               iov[4].iov_len = strlen(i5);
+  do {
+    res = writev(STDERR_FILENO, iov, 5);
+  } while (res < 0 && errno == EINTR);  
 #else
   fputs("assertion failed (", stderr);
   fputs(file, stderr);

@@ -134,10 +134,26 @@ h1, h2, h3, h4, h5, h6 {
 <div class="warnblock">
 <ul>
   <li>Almost all problems can only be diagnosed correctly by checking the 
-      <b>server</b> logs</li>
-  <li>If the server does not write logs, <b>fix this first</b>. For debugging, 
-      stop the server, then run it in the foreground with 
-      <tt>yule -p info --foreground</tt></li>
+      <b>server logs</b>.</li>
+  <li>
+    If the server does not write logs, <b>fix this first</b>. For debugging, 
+    stop the server, then run it in the foreground with 
+    <tt>yule -p info --foreground</tt>
+    <ul>
+      <li>
+	By default, the server logs to the file 
+	<tt>/var/log/yule/yule_log</tt>, and since the server drops 
+	root privileges on startup, the directory <tt>/var/log/yule</tt>
+	must be writable for the nonprivileged user the server runs 
+	as (the first existing out of: yule, daemon, nobody).
+      </li>
+      <li>
+	Logging to the logfile must be enabled in the
+	<tt>/etc/yulerc</tt> config file (e.g. LogSeverity=mark, or 
+	LogSeverity=info for enhanced verbosity).
+      </li>
+    </ul>
+  </li>
 </ul>
 </div>
 <p>
@@ -256,46 +272,58 @@ across one).
      try to cross-check on server</i>
      <p>
      <p>
-     This does not work for a number of people because (1) the
-     <tt>/etc/hosts</tt> file on the client machine has errors 
-     (yes, there are plenty machines with a completely 
-     messed up <tt>/etc/hosts</tt> file), (2) the
-     server cannot resolve the client address because the local DNS is
-     f***ed up, or (3) the client machine has multiple network interfaces, and
-     the interface used is not the one the client name resolves to.
+     This does not work for a number of people because
+     <ol>
+       <li>
+	 the
+	 <tt>/etc/hosts</tt> file on the client machine has errors 
+	 (yes, there are plenty machines with a completely 
+	 messed up <tt>/etc/hosts</tt> file),
+       </li>
+       <li>
+	 the
+	 server cannot resolve the client address because the local DNS is
+	 misconfigured, or 
+       </li>
+       <li> 
+	 the client machine has multiple network interfaces, and
+	 the interface used is not the one the client name resolves to.
+       </li>
+     </ol>
      </p>
 
-       <p>
+     <p>
        If the client uses the wrong interface on a multi-interface machine, 
        there is a config file option 
        <tt>SetBindAddress=</tt><i>IP address</i>
        that allows to choose the interface the client will use for
        outgoing connections.
-       </p>
-       <p>
+     </p>
+     <p>
        If you want to download the config file from the server, you
        should instead use the corresponding command line option
        <tt>--bind-address=</tt><i>IP address</i>
        to select the interface.
-       </p>
+     </p>
 
      <p>
-     If you encounter problems, you may (1) fix your 
-     <tt>/etc/hosts</tt> file(s), (2) fix your local DNS, or
-     (3) switch to the second method.
+       If you encounter problems, you may (1) fix your 
+       <tt>/etc/hosts</tt> file(s), (2) fix your local DNS, or
+       (3) switch to the second method.
      </p>
      <p>
-     Errors in name resolving/cross-checking can be avoided by setting a 
-     very low severity (lower than the logging threshold), e.g.
+       Error messages related to name resolving/cross-checking can be 
+       suppressed by setting a 
+       very low severity (lower than the logging threshold), e.g.
      </p>
      <p>
-     <tt>SeverityLookup=</tt><i>debug</i>
+       <tt>SeverityLookup=</tt><i>debug</i>
      </p>
      <p>
-     in the <i>Misc</i> section of the server configuration,
-     if you prefer running <i>unsafe</i> at any speed 
-     instead of fixing the problem (you have been warned). Doing so will
-     allow an attacker to pose as the client.
+       in the <i>Misc</i> section of the server configuration,
+       if you prefer running <i>unsafe</i> at any speed 
+       instead of fixing the problem (you have been warned). Doing so will
+       allow an attacker to pose as the client.
      </p>
   </li>
   <li>
@@ -324,7 +352,8 @@ across one).
 
 <p>
 The client does <i>not</i> tell the server the path to the requested
-file - it just requests a config or a database file. It's entirely the
+file - it just tells the <em>type</em> of the file, i.e. 
+either a configuration file or a database file. It is entirely the
 responsibility of the server to locate the correct file and send it.
 </p>
 <p>
@@ -355,6 +384,17 @@ same report the path where it would have expected the file (example):
 <p>
 To fix: put the file in the correct location, make sure the permissions
 are ok.
+<ul>
+  <li>
+    Note that <em>the server drops root privileges at startup</em> and
+    runs as an unprivileged user (the first existing out of: 
+    yule, daemon, nobody).
+  </li>
+  <li>
+    Also remember that to access a file, at least execute permission is required
+    <em>for every directory in the path</em>.
+  </li>
+</ul>
 </p>
 
 

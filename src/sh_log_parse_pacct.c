@@ -115,8 +115,12 @@ static void expand_flags(char flag, char * out)
 #ifdef ACOMPAT
   BIT(ACOMPAT, 'C');
 #endif
+#ifdef ACORE
   BIT(ACORE, 'D');
+#endif
+#ifdef AXSIG
   BIT(AXSIG, 'X');
+#endif
 
   out[i] = '\0';
   return;

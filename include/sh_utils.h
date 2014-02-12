@@ -93,7 +93,7 @@ int sh_util_flagval(const char * c, int * fval);
 
 /* ask if a file should be updated (returns S_TRUE/S_FALSE)
  */
-int sh_util_ask_update(char * path);
+int sh_util_ask_update(const char * path);
 int sh_util_set_interactive(const char * str);
 
 /* don't log output files

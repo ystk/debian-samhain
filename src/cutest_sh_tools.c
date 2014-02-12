@@ -5,6 +5,7 @@
 #include "CuTest.h"
 #include "samhain.h"
 #include "sh_tools.h"
+#include "sh_ipvx.h"
 
 void Test_sh_tools_safe_name_01(CuTest *tc) {
   /* xml specific */
@@ -105,13 +106,13 @@ void Test_sh_tools_safe_name_07(CuTest *tc) {
 void Test_is_numeric_01(CuTest *tc) {
   char* input  = strdup("hello world");
 
-  CuAssertTrue(tc, !is_numeric(input));
+  CuAssertTrue(tc, !sh_ipvx_is_numeric(input));
 
   input  = strdup("127.0.0.1");
-  CuAssertTrue(tc, is_numeric(input));
+  CuAssertTrue(tc, sh_ipvx_is_numeric(input));
   input  = strdup("127.0.0.de");
-  CuAssertTrue(tc, !is_numeric(input));
+  CuAssertTrue(tc, !sh_ipvx_is_numeric(input));
   input  = strdup("127");
-  CuAssertTrue(tc, is_numeric(input));
+  CuAssertTrue(tc, sh_ipvx_is_numeric(input));
 }
 

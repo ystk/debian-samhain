@@ -14,6 +14,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef SH_ENCRYPT
 
@@ -28,17 +29,19 @@ int rijndaelKeySched(word8 k[MAXKC][4], word8 W[MAXROUNDS+1][4][4], int ROUNDS) 
 	int j, r, t, rconpointer = 0;
 	word8 tk[MAXKC][4];
 	int KC = ROUNDS - 6;
+	word32 tmp;
 
 	for (j = KC-1; j >= 0; j--) {
-		*((word32*)tk[j]) = *((word32*)k[j]);
+	  memmove( &(tk[j]), &(k[j]), sizeof(word32));
 	}
 	r = 0;
 	t = 0;
+
 	/* copy values into round key array */
 	for (j = 0; (j < KC) && (r < ROUNDS + 1); ) {
 		for (; (j < KC) && (t < 4); j++, t++) {
-			*((word32*)W[r][t]) = *((word32*)tk[j]);
-		}
+		  memmove( &(W[r][t]), &(tk[j]), sizeof(word32));
+ 		}
 		if (t == 4) {
 			r++;
 			t = 0;
@@ -55,24 +58,27 @@ int rijndaelKeySched(word8 k[MAXKC][4], word8 W[MAXROUNDS+1][4][4], int ROUNDS) 
 
 		if (KC != 8) {
 			for (j = 1; j < KC; j++) {
-				*((word32*)tk[j]) ^= *((word32*)tk[j-1]);
+			  tmp = *((word32*)tk[j-1]);
+			  *((word32*)tk[j]) ^= tmp;
 			}
 		} else {
 			for (j = 1; j < KC/2; j++) {
-				*((word32*)tk[j]) ^= *((word32*)tk[j-1]);
+			  tmp = *((word32*)tk[j-1]);
+			  *((word32*)tk[j]) ^= tmp;
 			}
 			tk[KC/2][0] ^= S[tk[KC/2 - 1][0]];
 			tk[KC/2][1] ^= S[tk[KC/2 - 1][1]];
 			tk[KC/2][2] ^= S[tk[KC/2 - 1][2]];
 			tk[KC/2][3] ^= S[tk[KC/2 - 1][3]];
 			for (j = KC/2 + 1; j < KC; j++) {
-				*((word32*)tk[j]) ^= *((word32*)tk[j-1]);
+			        tmp = *((word32*)tk[j-1]);
+				*((word32*)tk[j]) ^= tmp;
 			}
 		}
 		/* copy values into round key array */
 		for (j = 0; (j < KC) && (r < ROUNDS + 1); ) {
 			for (; (j < KC) && (t < 4); j++, t++) {
-				*((word32*)W[r][t]) = *((word32*)tk[j]);
+			  memmove( &(W[r][t]), &(tk[j]), sizeof(word32));
 			}
 			if (t == 4) {
 				r++;

@@ -36,6 +36,17 @@ typedef struct
 int sh_ext_popen (sh_tas_t * task);
 
 /*
+ * -- generic simple safe popen; returns 0 on success, -1 otherwise,
+ *    executes shell command
+ */
+int sh_ext_popen_init (sh_tas_t * task, char * command);
+
+/*
+ * -- Execute command, return first line of output
+ */
+int sh_ext_system (char * command);
+
+/*
  * -- Execute command, return first line of output
  */
 char * sh_ext_popen_str (char * command);

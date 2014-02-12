@@ -376,7 +376,7 @@ int sh_error_logverify (const char * s)
 		      /*@-usedef@*/timestamp/*@+usedef@*/);
 	      key[0] = '\0';
 	      
-	      while (sl_strlen(key) < KEY_LEN ) 
+	      while (strlen(key) < KEY_LEN ) 
 		{ 
 		  if (key[0] != '\n' && key[0] != '\0')
 		    fprintf(stdout, "%s",_("New audit trail, enter key: "));

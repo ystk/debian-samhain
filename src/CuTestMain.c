@@ -2,10 +2,9 @@
 
 /* This is auto-generated code. Edit at your own peril. */
 
+#include "config.h"
 #include <stdio.h>
 #include "CuTest.h"
-#include "config.h"
-
 
 extern void Test_quote_string_ok (CuTest*);
 extern void Test_unquote_string_ok (CuTest*);
@@ -38,9 +37,13 @@ extern void Test_sl_snprintf (CuTest*);
 extern void Test_sl_strcasecmp (CuTest*);
 extern void Test_zAVLTree(CuTest*);
 extern void Test_entropy (CuTest*);
+extern void Test_file_dequote (CuTest*);
+extern void Test_login (CuTest*);
+extern void Test_login (CuTest*);
 extern void Test_portcheck_lists (CuTest*);
 extern void Test_processcheck_watchlist_ok (CuTest*);
 extern void Test_processcheck_listhandle_ok (CuTest*);
+extern void Test_restrict (CuTest*);
 extern void Test_srp (CuTest*);
 extern void Test_string (CuTest*);
 
@@ -82,9 +85,13 @@ int RunAllTests(void)
     SUITE_ADD_TEST(suite, Test_sl_strcasecmp );
     SUITE_ADD_TEST(suite, Test_zAVLTree);
     SUITE_ADD_TEST(suite, Test_entropy );
+    SUITE_ADD_TEST(suite, Test_file_dequote );
+    SUITE_ADD_TEST(suite, Test_login );
+    SUITE_ADD_TEST(suite, Test_login );
     SUITE_ADD_TEST(suite, Test_portcheck_lists );
     SUITE_ADD_TEST(suite, Test_processcheck_watchlist_ok );
     SUITE_ADD_TEST(suite, Test_processcheck_listhandle_ok );
+    SUITE_ADD_TEST(suite, Test_restrict );
     SUITE_ADD_TEST(suite, Test_srp );
     SUITE_ADD_TEST(suite, Test_string );
 

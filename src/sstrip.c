@@ -215,7 +215,7 @@ static int getmemorysize_32(Elf32_Ehdr const *ehdr, Elf32_Phdr const *phdrs,
 {
     Elf32_Phdr   const   *phdr;
     unsigned long	size, n;
-    int			i;
+    unsigned int	i;
 
     /* Start by setting the size to include the ELF header and the
      * complete program segment header table.
@@ -244,7 +244,7 @@ static int getmemorysize_64(Elf64_Ehdr const *ehdr, Elf64_Phdr const *phdrs,
 {
     Elf64_Phdr   const   *phdr;
     unsigned long  	  size, n;
-    int			  i;
+    unsigned int	  i;
 
     /* Start by setting the size to include the ELF header and the
      * complete program segment header table.
@@ -307,7 +307,7 @@ static int modifyheaders_32(Elf32_Ehdr *ehdr, Elf32_Phdr *phdrs,
 			    unsigned long newsize)
 {
     Elf32_Phdr   *phdr;
-    int	 	  i;
+    unsigned int  i;
 
     /* If the section header table is gone, then remove all references
      * to it in the ELF header.
@@ -339,7 +339,7 @@ static int modifyheaders_64(Elf64_Ehdr *ehdr, Elf64_Phdr *phdrs,
 			    unsigned long newsize)
 {
     Elf64_Phdr   *phdr;
-    int	 	  i;
+    unsigned int  i;
 
     /* If the section header table is gone, then remove all references
      * to it in the ELF header.
