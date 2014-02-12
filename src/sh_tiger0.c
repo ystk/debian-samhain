@@ -101,7 +101,7 @@ void tiger_dbg(sh_word32 res[6], int step,
  * implementation
  */
 
-/* static sh_byte buffer[PRIV_MAX + 72]; */
+/* static sh_byte buffer[PRIV_MAX + 72] __attribute__((aligned(4))); */
 
 #if defined(TIGER_64_BIT)
 static
@@ -1580,11 +1580,11 @@ int sh_tiger_hashtype (const char * c)
 
   if (0 == strcmp(c, _("TIGER192")))
     hash_type = 0;
-#ifdef USE_MD5
+#ifdef USE_SHA1
   else if (0 == strcmp(c, _("SHA1")))    
     hash_type = 1;
 #endif
-#ifdef USE_SHA1
+#ifdef USE_MD5
   else if (0 == strcmp(c, _("MD5")))    
     hash_type = 2;
 #endif

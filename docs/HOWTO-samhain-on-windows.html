@@ -272,6 +272,14 @@ options):<br />
 </li>
 <li>Configure:<br />
 &nbsp; &nbsp;<tt>$ ./configure --enable-xml-log=yes --with-tmp-dir=/usr/local/tmp --with-config-file=/usr/local/etc/samhainrc --with-log-file=/usr/local/log/samhain.log --with-pid-file=/usr/local/var/samhain.pid --with-state-dir=/usr/local/var</tt><br />
+<div class="block">
+<p>
+In my experience, the paths given in the 'configure' command should refer to
+the Cygwin filesystem view, i.e. <tt>/cygdrive/c/...</tt>, otherwise
+samhain may not work from a pure DOS shell, and may not run as a Windows 
+service [Rainer Wichmann].
+</p>
+</div>
 </li>
 <li>Make the binary:<br />
 &nbsp; &nbsp;<tt>$ make</tt><br />
@@ -390,6 +398,26 @@ Initialize the samhain baseline database first:<br />
 Reboot (it is Windows so ...)
 </li>
 </ul>
+<div class="block">
+<p>
+It seems that start/stop/restart the service does not work if samhain 
+is configured to run as a daemon, because the Windows service manager
+cannot track the forked daemon process.
+</p>
+<p>Therefore, if you run Samhain as a Windows service, it might be better
+to configure it as a 'normal' process which does not fork a daemon:
+<ul>
+  <li>
+    Set 'Daemon = no' in the samhainrc configuration file.
+  </li>
+  <li>
+    Edit the key HKEY_LOCAL_MACHINE-&gt;SYSTEM-&gt;CurrentControlSet-&gt;Services-&gt;Samhain->Parameters to add a string value named 'AppParameters', with
+    the value '--forever'.
+  </li>
+</ul>
+[Rainer Wichmann].
+</p>
+</div>
 <p>
 Also see <a href="http://support.microsoft.com/kb/q137890/">http://support.microsoft.com/kb/q137890/</a> for information regarding the creation of a 
 user-defined service.
@@ -404,6 +432,29 @@ Samhain as a service.
 
 <h2>Troubleshooting samhain</h2>
 
+<p>
+[Rainer Wichmann] I had some problems at first getting it to run as a 
+Windows service. Some tips:
+<ul>
+  <li>
+    Running samhain from a pure DOS shell (outside the Cygwin environment) 
+    helps to identify problems, in particular if it refuses to start
+    as a Windows service.
+  </li>
+  <li>
+    I found it neccessary to put the <tt>cygwin1.dll</tt> DLL into the
+    same directory as the <tt>samhain.exe</tt> executable. Also, you
+    can use the command <tt>ldd ./samhain.exe</tt> to identify further
+    Cygwin-specific DLL that may be required (if any).
+  </li>
+  <li>
+    Also, I found it neccessary to use Cygwin-style paths 
+    (<tt>/cygdrive/c/...</tt>) in the './configure ..' command when
+    compiling samhain.
+  </li>
+</ul>
+</p>
+    
 <p>
 [Tip from Jorge Morgado] If you, like me, have a Windows server not part of any domain and (for
 security reasons) you even turn off DNS resolution, you might probably get

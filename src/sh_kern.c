@@ -136,9 +136,9 @@ static unsigned long system_call_addr = 0;
 /* The address of the sys_call_table
  */
 #ifdef SH_SYS_CALL_TABLE
-static unsigned int  kaddr = SH_SYS_CALL_TABLE;
+static unsigned long  kaddr = SH_SYS_CALL_TABLE;
 #else
-static unsigned int  kaddr = 0;
+static unsigned long  kaddr = 0;
 #endif
 
 #ifdef PROC_ROOT_LOC
@@ -168,30 +168,39 @@ int sh_kern_null()
 #define SH_KERN_DBPOP  1
 
 char * sh_kern_db_syscall (int num, char * prefix,
-		   void * in_name, unsigned long * addr,
+			   void * in_name, unsigned long * addr,
 			   unsigned int * code1, unsigned int * code2,
 			   int * size, int direction)
 {
   char            path[128];
   char          * p = NULL;
-  unsigned long   x1 = 0, x2 = 0;
+
   unsigned char * name = (unsigned char *) in_name;
+  struct store2db save;
 
   sl_snprintf(path, 128, "K_%s_%04d", prefix, num);
 
+  memset(&save, '\0', sizeof(struct store2db));
+
   if (direction == SH_KERN_DBPUSH) 
     {
-      x1 = *code1;
-      x2 = *code2;
+      save.val0 = *addr;
+      save.val1 = *code1;
+      save.val2 = *code2;
+      save.str  = name;
+      save.size = (name == NULL) ? 0 : (*size);
 
-      sh_hash_push2db (path, *addr, x1, x2,
-		       name, (name == NULL) ? 0 : (*size));
+      sh_hash_push2db (path, &save);
     }
   else
     {
-      p = sh_hash_db2pop (path, addr,  &x1, &x2, size);
-      *code1 = (unsigned int) x1;
-      *code2 = (unsigned int) x2;
+      p = sh_hash_db2pop (path, &save);
+
+      *addr  = (unsigned long) save.val0;
+      *code1 = (unsigned int)  save.val1;
+      *code2 = (unsigned int)  save.val2;
+
+      *size  = (int)           save.size;
     }
   return p;
 }
@@ -267,6 +276,10 @@ static char * sh_kern_pathmsg (char * msg, size_t msg_len,
  
 #ifdef HOST_IS_LINUX
 
+#ifndef KERNEL_VERSION
+#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
+#endif
+
 /*
  * Interrupt Descriptor Table
  */
@@ -280,6 +293,10 @@ static unsigned char sh_idt_table[SH_MAXIDT * 8];
 
 static char * sh_strseg(unsigned short segment)
 {
+  static int flip = 0;
+  static char one[32];
+  static char two[32];
+
   switch (segment) {
 #ifdef __KERNEL_CS
   case __KERNEL_CS:
@@ -298,7 +315,18 @@ static char * sh_strseg(unsigned short segment)
     return _("USER_DS");
 #endif
   default:
-    return _("unknown");
+    if (flip == 0)
+      {
+	snprintf(one, sizeof(one), "%hX", segment);
+	flip = 1;
+	return one;
+      }
+    else
+      {
+	snprintf(two, sizeof(two), "%hX", segment);
+	flip = 0;
+	return two;
+      }
   }
 }
 
@@ -475,11 +503,6 @@ static int sh_kern_read_data (int fd, unsigned long addr,
   size_t    sz;
   char    * kmap;
 
-  /* first, try read()
-   */
-  if (0 == sh_kern_kmem_read (fd, addr, buf, len))
-    return 0;
-
   /* next, try mmap()
    */
   sz = getpagesize(); /* unistd.h */
@@ -491,9 +514,15 @@ static int sh_kern_read_data (int fd, unsigned long addr,
 
   if (kmap == MAP_FAILED)
     {
+      /* then, try read()
+       */
+      if (0 == sh_kern_kmem_read (fd, addr, buf, len))
+	return 0;
+
       memset(buf, '\0', len);
       return -1;
     }
+
   memcpy (buf, &kmap[roff], len);
   return munmap(kmap, len+sz);
 }
@@ -548,10 +577,6 @@ static void run_child(int kd, int mpipe[2])
 
   unsigned long kmem_call_table[SH_KERN_SIZ];
   unsigned int  kmem_code_table[SH_KERN_SIZ][2];
-
-  unsigned char  buf[6];
-  unsigned short idt_size;
-  unsigned long  idt_addr;
 
   unsigned char new_system_call_code[SH_KERN_SCC];
 
@@ -619,17 +644,22 @@ static void run_child(int kd, int mpipe[2])
        * Get the address and size of Interrupt Descriptor Table,
        * and read the content into the global array sh_idt_table[]
        */
-      __asm__ volatile ("sidt %0": "=m" (buf));
-      idt_size = *((unsigned short *) &buf[0]);
-      idt_addr = *((unsigned long *)  &buf[2]);
-      idt_size = (idt_size + 1)/8;
+      struct {
+	char pad[6];
+	unsigned short size;
+	unsigned long  addr;
+      } idt;
+
+      __asm__ volatile ("sidt %0": "=m" (idt.size));
+
+      idt.size = (idt.size + 1)/8;
       
-      if (idt_size > SH_MAXIDT)
-	idt_size = SH_MAXIDT;
+      if (idt.size > SH_MAXIDT)
+	idt.size = SH_MAXIDT;
       
       memset(sh_idt_table, '\0', SH_MAXIDT*8);
-      if (sh_kern_read_data (kd, idt_addr, 
-			     (unsigned char *) sh_idt_table, idt_size*8))
+      if (sh_kern_read_data (kd, idt.addr, 
+			     (unsigned char *) sh_idt_table, idt.size*8))
 	status = -5;
     }
 
@@ -657,11 +687,19 @@ static void run_child(int kd, int mpipe[2])
 			     (unsigned char *) &proc_root_dir, 
 			     sizeof(proc_root_dir)))
 	status = -7;
+    }
+/* 2.6.21 (((2) << 16) + ((6) << 8) + (21)) */
+#if SH_KERNEL_NUMBER < KERNEL_VERSION(2,6,21)
+  if(status == 0)
+    {
       if (sh_kern_read_data (kd, proc_root_iops, 
 			     (unsigned char *) &proc_root_inode, 
 			     sizeof(proc_root_inode)))
 	status = -8;
     }
+#else
+    memset(&proc_root_inode, '\0', sizeof(proc_root_inode));
+#endif
   
   /*
    * Write out data to the pipe
@@ -706,6 +744,12 @@ static int read_from_child(pid_t mpid, int * mpipe,
   int  status;
   long size;
   int  errcode;
+
+#ifdef WCONTINUED
+      int wflags = WNOHANG|WUNTRACED|WCONTINUED;
+#else
+      int wflags = WNOHANG|WUNTRACED;
+#endif
 
   /* Close reading side of pipe, and wait some milliseconds
    */
@@ -781,10 +825,10 @@ static int read_from_child(pid_t mpid, int * mpipe,
     }
 
   if (status < 0)
-    res = waitpid(mpid, NULL,    WNOHANG|WUNTRACED);
+    res = waitpid(mpid, NULL,    wflags);
   else 
     {
-      res = waitpid(mpid, &status, WNOHANG|WUNTRACED);
+      res = waitpid(mpid, &status, wflags);
       if (res == 0 && 0 != WIFEXITED(status))
 	status = WEXITSTATUS(status);
     }
@@ -1053,10 +1097,11 @@ static void check_pci()
  */
 static void check_proc_root (struct sh_kernel_info * kinfo)
 {
-  struct proc_dir_entry   proc_root_dir;
+  struct proc_dir_entry     proc_root_dir;
+  struct inode_operations * proc_root_inode_op = NULL;
 
 /* 2.6.21 (((2) << 16) + ((6) << 8) + (21)) */
-#if SH_KERNEL_NUMBER < 132629
+#if SH_KERNEL_NUMBER < KERNEL_VERSION(2,6,21)
   struct inode_operations proc_root_inode;
 
   memcpy (&proc_root_inode, &(kinfo->proc_root_inode), sizeof(struct inode_operations));
@@ -1071,10 +1116,21 @@ static void check_proc_root (struct sh_kernel_info * kinfo)
 #endif
 
   memcpy (&proc_root_dir,   &(kinfo->proc_root_dir),   sizeof(struct proc_dir_entry));
-  if (    (((unsigned int) * &proc_root_dir.proc_iops) != proc_root_iops)
-	    && (proc_root_dir.size != proc_root_iops)
-	    && (((unsigned int) * &proc_root_dir.proc_fops) != proc_root_iops)
-	    )
+
+  if (((unsigned long) * &proc_root_dir.proc_iops) == proc_root_iops)
+    {
+      proc_root_inode_op = (struct inode_operations *) &(proc_root_dir.proc_iops);
+    }
+  else if (proc_root_dir.size == proc_root_iops)
+    {
+      proc_root_inode_op = (struct inode_operations *) &(proc_root_dir.size);
+    }
+  else if ((unsigned long) * &proc_root_dir.proc_fops == proc_root_iops)
+    {
+      proc_root_inode_op = (struct inode_operations *) &(proc_root_dir.proc_fops);
+    }
+
+  if (!proc_root_inode_op)
     {
       sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_KERN_PROC,
 		       _("proc_root.proc_iops != proc_root_inode_operations"));
@@ -1354,6 +1410,11 @@ int sh_kern_check_internal ()
   
   kd = aud_open(FIL__, __LINE__, SL_YESPRIV, _("/dev/kmem"), O_RDONLY, 0);
   
+  if (kd < 0)
+    {
+      kd = aud_open(FIL__, __LINE__, SL_YESPRIV, _("/proc/kmem"), O_RDONLY, 0);
+    }
+
   if (kd < 0)
     {
       status = errno;

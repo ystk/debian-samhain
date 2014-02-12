@@ -610,6 +610,7 @@ int sh_prochk_set_maxpid(const char * str)
   if (*foo == '\0' && SL_TRUE == sl_ok_adds(value, 1)) {
     sh_prochk_maxpid = value + 1;
     userdef_maxpid   = 1;
+    retval = 0;
   }
 
   SL_RETURN((retval), _("sh_prochk_set_maxpid"));

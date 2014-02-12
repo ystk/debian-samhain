@@ -840,13 +840,24 @@ int sh_error_setseverity (const char * str_s)
 
 #ifdef SH_WITH_SERVER
 static char inet_peer[SH_MINIBUF] = { '\0' };
+#ifdef HAVE_LIBPRELUDE
+static char inet_peer_ip[SH_IP_BUF] = { '\0' };
+
+void sh_error_set_peer_ip(const char * str)
+{
+  if (str == NULL)
+    inet_peer_ip[0] = '\0';
+  else
+    sl_strlcpy(inet_peer_ip, str, sizeof(inet_peer_ip));
+}
+#endif
 
 void sh_error_set_peer(const char * str)
 {
   if (str == NULL)
     inet_peer[0] = '\0';
   else
-    sl_strlcpy(inet_peer, str, SH_MINIBUF);
+    sl_strlcpy(inet_peer, str, sizeof(inet_peer));
 }
 #endif
   
@@ -879,6 +890,9 @@ void sh_error_handle (int sev, const char * file, long line,
 #ifdef SH_WITH_SERVER
   int    class_inet = clt_class;      /* initialize from global */
   char   local_inet_peer[SH_MINIBUF];
+#ifdef HAVE_LIBPRELUDE
+  char   local_inet_peer_ip[SH_IP_BUF];
+#endif    
 #endif
 
 #if defined(SH_WITH_CLIENT) || defined(SH_WITH_SERVER)
@@ -923,11 +937,21 @@ void sh_error_handle (int sev, const char * file, long line,
    */
   if ((msg_id == MSG_TCP_MSG) && (inet_peer[0] != '\0'))
     {
-      sl_strlcpy(local_inet_peer, inet_peer, SH_MINIBUF);
+      sl_strlcpy(local_inet_peer, inet_peer, sizeof(local_inet_peer));
       sh_error_set_peer(NULL);
     }
   else
     local_inet_peer[0] = '\0';
+
+#ifdef HAVE_LIBPRELUDE
+  if ((msg_id == MSG_TCP_MSG) && (inet_peer_ip[0] != '\0'))
+    {
+      sl_strlcpy(local_inet_peer_ip, inet_peer_ip, sizeof(local_inet_peer_ip));
+      sh_error_set_peer_ip(NULL);
+    }
+  else
+    local_inet_peer_ip[0] = '\0';
+#endif
 
   clt_class = (-1);      /* reset global */
 #endif
@@ -1262,9 +1286,15 @@ void sh_error_handle (int sev, const char * file, long line,
 	      /*
 	       *  Reports first error after failure. Always tries.
 	       */
-	      (void) sh_prelude_alert (severity, (int) class, lmsg->msg,
-				       lmsg->status, msg_id);
-
+#if defined(HAVE_LIBPRELUDE) && defined(SH_WITH_SERVER) 
+	      (void) sh_prelude_alert (severity, (int) class, 
+				       lmsg->msg, lmsg->status, msg_id, 
+				       local_inet_peer_ip);
+#else
+	      (void) sh_prelude_alert (severity, (int) class, 
+				       lmsg->msg, lmsg->status, msg_id, 
+				       NULL);
+#endif
 	      prelude_block = 0;
 	    }
 	}
@@ -1300,7 +1330,7 @@ void sh_error_handle (int sev, const char * file, long line,
 		  if (local_inet_peer[0] == '\0')
 		    (void) sh_log_file (lmsg->msg, NULL);
 		  else
-		    (void) sh_log_file (lmsg->msg, local_inet_peer);
+                    (void) sh_log_file (lmsg->msg, local_inet_peer);
 		}
 #else
               (void) sh_log_file (lmsg->msg, NULL);

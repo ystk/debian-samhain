@@ -363,6 +363,9 @@
 /* Define if your struct utmp has ut_addr.    */
 #undef HAVE_UTADDR
 
+/* Define if your struct utmp has ut_addr_v6  */
+#undef HAVE_UTADDR_V6
+
 /* Define if your includes are broken.        */
 #undef HAVE_BROKEN_INCLUDES
 

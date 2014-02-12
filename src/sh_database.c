@@ -74,7 +74,7 @@ typedef struct dbins_ {
   char            key_id[16];
   char            module[8];
   char            syscall[16];
-  char            ip[16];     
+  char            ip[SH_IP_BUF];     
   char            tty[16];    
   char            peer[64];
   char            fromhost[64];
@@ -148,7 +148,7 @@ static my_attr attr_tab[] = {
   { NULL, N_("key_id"),      0,  16,   16, 0, offsetof(struct dbins_, key_id)  },
   { NULL, N_("module"),      0,  17,    8, 0, offsetof(struct dbins_, module)  },
   { NULL, N_("syscall"),     0,  19,   16, 0, offsetof(struct dbins_, syscall)  },
-  { NULL, N_("ip"),          0,  20,   16, 0, offsetof(struct dbins_, ip)  },
+  { NULL, N_("ip"),          0,  20,SH_IP_BUF, 0, offsetof(struct dbins_, ip)  },
   { NULL, N_("tty"),         0,  21,   16, 0, offsetof(struct dbins_, tty)  },
   { NULL, N_("peer"),        0,  22,   64, 0, offsetof(struct dbins_, peer)  },
   { NULL, N_("obj"),         0,  23, 1024, 0, offsetof(struct dbins_, obj)  },

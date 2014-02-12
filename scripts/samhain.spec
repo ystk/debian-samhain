@@ -6,7 +6,7 @@
 
 Summary: File integrity and host-based IDS
 Name: samhain
-Version: 2.6.2
+Version: 2.8.3a
 Release: 1
 License: GPL
 Group: System Environment/Base

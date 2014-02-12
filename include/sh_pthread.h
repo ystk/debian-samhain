@@ -10,6 +10,10 @@
 #define SH_MUTEX_STATIC(M,I)			static pthread_mutex_t M = I
 #define SH_MUTEX_EXTERN(M)			extern pthread_mutex_t M
 
+#define SH_SETSIGMASK(A, B, C)                  sh_pthread_setsigmask(A,B,C)
+
+int sh_pthread_setsigmask(int how, const void *set, void *oldset);
+
 /* pthread_mutex_unlock() has the wrong type (returns int), so
  * we need to wrap it in this function.
  */
@@ -18,13 +22,22 @@ extern void sh_pthread_mutex_unlock (void *arg);
 #define SH_MUTEX_LOCK(M)						   \
 	do {                                                               \
                 int oldtype;                                               \
+		int executeStack = 1;                                      \
 		pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &oldtype);  \
                 pthread_cleanup_push(sh_pthread_mutex_unlock, (void*)&(M));\
                 pthread_mutex_lock(&(M))
 
+#define SH_MUTEX_TRYLOCK(M)						   \
+	do {                                                               \
+                int oldtype;                                               \
+		int executeStack = 0;                                      \
+		pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &oldtype);  \
+                pthread_cleanup_push(sh_pthread_mutex_unlock, (void*)&(M));\
+                pthread_mutex_trylock(&(M));                               \
+		executeStack = 1
 
 #define SH_MUTEX_UNLOCK(M)						   \
-		pthread_cleanup_pop(1);                                    \
+		pthread_cleanup_pop(executeStack);                         \
                 pthread_setcanceltype(oldtype, NULL);                      \
 	} while (0)
 
@@ -132,12 +145,17 @@ void * sh_threaded_module_run(void *arg);
 
 #else
 
+#define SH_SETSIGMASK(A, B, C)                  sh_pthread_setsigmask(A,B,C)
+
+int sh_pthread_setsigmask(int how, const void *set, void *oldset);
+
 #define PTHREAD_MUTEX_INITIALIZER               NULL
 #define SH_MUTEX(M)				void *SH_MUTEX_DUMMY_ ## M
 #define SH_MUTEX_INIT(M,I)			extern void *SH_MUTEX_DUMMY_ ## M
 #define SH_MUTEX_STATIC(M,I)			extern void *SH_MUTEX_DUMMY_ ## M
 #define SH_MUTEX_EXTERN(M)			extern void *SH_MUTEX_DUMMY_ ## M
 #define SH_MUTEX_LOCK(M)			((void)0)
+#define SH_MUTEX_TRYLOCK(M)			((void)0)
 #define SH_MUTEX_UNLOCK(M)			((void)0)
 #define SH_MUTEX_LOCK_UNSAFE(M)			((void)0)
 #define SH_MUTEX_TRYLOCK_UNSAFE(M)		(0)

@@ -11,6 +11,18 @@
 # This is the debhelper compatability version to use.
 # export DH_COMPAT=5
 
+ifeq (linux,$(DEB_HOST_ARCH_OS))
+ifeq (ia64,$(DEB_HOST_ARCH))
+DNMALLOC = --disable-dnmalloc
+else ifeq (s390,$(DEB_HOST_ARCH))
+DNMALLOC = --disable-dnmalloc
+else
+DNMALLOC = --enable-dnmalloc
+endif
+else
+DNMALLOC = --disable-dnmalloc
+endif
+
 build: build-stamp
 build-stamp:
 	dh_testdir
@@ -19,6 +31,7 @@ build-stamp:
 		--with-config-file=/etc/samhain/samhainrc \
 		--with-state-dir=/var/state/samhain  \
 		--with-prelude \
+		$(DNMALLOC) \
 		--enable-network=no  \
 		--with-pid-file=/var/run/samhain/samhain.pid \
 		--with-log-file=/var/log/samhain/samhain.log 
@@ -46,8 +59,6 @@ install: build
 	$(MAKE) install install-boot DESTDIR=`pwd`/debian/samhain
 	# However, remove the rc.d links
 	-rm -rf `pwd`/debian/samhain/etc/rc?.d
-	# And remove /var/run dir, it is created by the init.d
-	rmdir debian/samhain/var/run/samhain
 
 	# We no longer copy it, it does not seem useful
 #	install -m 755 encode `pwd`/debian/samhain/usr/bin/samhain_encode

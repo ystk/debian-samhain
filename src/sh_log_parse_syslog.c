@@ -19,6 +19,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if defined(HOST_IS_SOLARIS)
+/* For 'struct timeval' in <sys/time.h> */
+#define __EXTENSIONS__
+#endif
+
 #include <sys/types.h>
 #include <time.h>
 

@@ -1,3 +1,46 @@
+samhain (2.8.3a-1) unstable; urgency=low
+
+  * New upstream release (Closes: #602678)
+    - Remove call to sstrip in Makefile.in
+  * debian/samhain.init: 
+    - Do not try to remove stale lockfile, its location was not 
+      correct (it was /var/log/samhain/samhain.lock) and samhain
+      will start nevertheless (Closes: 645678)
+    - When restarting, check if the daemon is running before attempting
+      to start it and complain if it's still there
+    - Add a 'status' call to check if the daemon is running.
+  [ Changes by Stephen Gran ]
+  * debian/rules:
+    - Disable dnmalloc where we know it doesn't work (Closes: #618728, #501232)
+      According to upstream documentation dnmalloc doesn't work AMD64
+      architectures including ia64 and freebsd-amd64
+      (http://www.la-samhna.de/samhain/manual/dnmalloc.html)
+  * debian/samhain.init, debian/samhain.logrotate.d:
+    - Switch back to /var/run/samhain, as /var/run is now a symlink to /run,
+      and samhain won't run if it's piddir is a symlink. 
+      (Closes: #645016, #631580)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@debian.org>  Fri, 28 Oct 2011 10:36:35 +0200
+
+samhain (2.6.2-2) unstable; urgency=low
+
+  * Change configuration so that the pidfile used is /var/run/samhain.pid
+    instead of /var/run/samhain/samhain.pid   
+  * Restore the NMU of version 2.2.3-6.1 in the debian/changelog history
+    and source (although the rmel alignment bug is currently commented
+    out) (Closes: #502820)
+  * Updated config.sub and config.guess (Closes: #539945)
+  * debian/rules changes:
+      - Use pidfile checks to stop the daemon  (Closes: #533859)
+      - Use LSB messages
+  * Add /var/log/samhain/supervise to the directories to remove when purging
+  (this directory was created in older versions of Samhain)
+  * Include translations to debconf templates:
+     - Danish translation, provided by Joe Dalton (Closes: #586240)
+     - Brazilian Portuguese, provided by Flamarion Jorge  (Closes: #619250)
+
+ -- Javier Fernandez-Sanguino Pen~a <jfs@debian.org>  Tue, 26 Apr 2011 00:08:29 +0200
+
 samhain (2.6.2-1) unstable; urgency=low
 
   * New upstream release.
@@ -41,6 +84,14 @@ samhain (2.4.6a-1) experimental; urgency=low
     #382617 reproduces.
 
  -- Javier Fernandez-Sanguino Pen~a <jfs@debian.org>  Sun, 28 Sep 2008 18:05:27 +0200
+
+samhain (2.2.3-6.1) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Fix armel alignment issues by aligning a buffer in the Tiger implementation
+    in src/sh_tiger0.c on a 32-bit boundary (Closes: #501231)
+
+ -- Paul Wise <pabs@debian.org>  Mon, 20 Oct 2008 11:52:16 +0800
 
 samhain (2.2.3-6) unstable; urgency=low
 

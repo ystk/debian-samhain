@@ -1,4 +1,112 @@
-2.6.2:
+2.8.3a:
+	* Fix two 'label at end of compound statement' errors on FreeBSD
+	  (reported by David E. Thiel)
+
+2.8.3:
+	* init scripts: load samhain_kmem.ko before samhain starts
+	* slib.c: eliminate mutex from sl_create_ticket()
+	* sh_entropy.c: move pthread usage out of child
+	* sh_hash.c, sh_pthread.c, sh_pthread.h: sh_hash_hashdelete()
+	  needs deadlock detection, may be called from within sh_hash_init() 
+	  via atexit handler on error condition
+	* sh_suidchk.c, sh_calls.c, sh_calls.h: need a nosub version of lstat()
+	  to use with relative path after chdir()
+	* samhain.c, sh_calls.c, sh_calls.h: only run (l)stat() in subprocess
+	  after reading config file (to allow disabling)
+	* sh_unix.c: run sh_sub_kill() in parent after forking the daemon
+	* fix zeroing of result from getnameinfo() (problem reported by Richard)
+	* fix spurious warnings about unsupported address family (reported
+	  by N Silverman)
+	* option to run lstat/stat in subprocess to avoid hanging on NFS mounts 
+	  (off by default)
+	* fix Windows/Cygwin compile error (reported by A. Schmidt)
+
+2.8.2:
+	* add function to skip checksumming
+	* Fix missing check for recursion depth >= 0 if not IgnoreAll
+	* Fix hardcoded path for temp directory in deployment scripts
+	* Fix bad compile on CentOS 4.8 with gcc 4.1.2
+	* Fix minor bug in check_samhain.pl (pointed out by J.-S. Eon long ago)
+
+2.8.1:
+	* Document handling of missing files with secondary schedule
+	* Fix incorrect handling of missing files when secondary schedule
+	  is used (reported by Sergey)
+	* Fix null pointer dereference in config parse handler for SetMailAlias
+	  (reported by Sergey)
+	* Fix incorrect memset() in sh_kern.c (passed struct by value...),
+	  reported by Roman and Stefan
+	* Fix 'make install' to create user-defined directory
+	* fix minor issues noticed by T. Luettgert (test code assumes port 
+	  0/tcp is unused, wrong ifdef order (without impact on compilation))
+	* fix compile error on AIX 5.3 with --enable-login-watch,
+	  reported by M. El Nahass (time.h missing in src/sh_login_track.c)
+
+2.8.0 (01-11-2010):
+	* Support IPv6
+	* Add registry checking
+	* Use auditd records to find out who did it
+
+2.7.2c (23-09-2010):
+        * Fix uppercase hostname problem in client/server communication
+
+
+2.7.2b (05-09-2010):
+	* Fix compile errors on Solaris 10 (reported by A. Saheba)
+
+2.7.2a (23-08-2010):
+	* rewrote rijndaelKeySched() in a more conservative way to fix
+	  compile problem on SLES 11.
+
+2.7.2 (16-08-2010):
+	* sh_utils.c: fixed an endianess issue that prevented cross-verification
+	  of email signatures (reported by A. Zangerl)
+	* sh_login_track.c: fix compiler warning (ignored return value 
+	  of fwrite)
+	* sh_readconf.c: fix comparison of SeverityUserX string 
+	  (reported by max__)
+	* sh_processcheck.c: sh_prochk_set_maxpid: set retval on success
+	  (reported by max__)
+	* fixed some compiler warnings on cygwin
+	* sh_extern.c: As reported by T. Luettgert, gcc 4.4.4 on Fedora 13 
+	  will throw a warning if execve is called with a NULL argv pointer. 
+	  Need to provide a dummy argp[].
+
+2.7.1 (07-06-2010):
+	* samhain_kmem.c: fix compile problems
+	* fix problems with config file parser: increase max. line length,
+	  support quoting/escaping of filenames (as in 'ls --quoting-style=c')
+	* check for pcre_dfa_exec (not available in old versions
+	  of libpcre, reported by Shinoj)
+	* patch to allow server to log client reports to prelude
+	  (by J. Ventura)
+
+2.7.0a (09-05-2010):
+	* fix /dev/kmem detection (reported by S. Clormann)
+	
+2.7.0 (01-05-2010):
+	* sh_utmp.c, sh_login_track.c: additional login checks
+	* sh_unix.c: use SIGTTIN as alternative for SIGABRT
+	  (SIGABRT seems not to work on AIX, reported by Peter)
+	* sh_utmp.c: fix compile error without pthreads (inotify_watch used)
+	* sh_kern.c, kern_head.c: fix some 64bit issues
+	* dnmalloc.c: fix compiler warning (ignored ret value)
+	* Fix LSB init script for kernel module
+	* samhain_kmem kernel module for /proc/kmem added
+
+2.6.4 (22-03-2010):
+        * Don't read proc_root_iops in sh_kern.c (Problem report
+          by H. R.)
+        * Logfile check can check output of shell commands
+        * Use data directory as default for logfile checkpoints
+        * Fix broken checkpoint save/restore for logfiles
+
+2.6.3 (10-03-2010):
+	* Fix bug in mail module, recipients incorrectly flagged
+	  as aliases, which breaks immediate mail for 'alert'
+	  (reported by Jesse)
+	
+2.6.2 (28-01-2010):
 	* Makefile.in: fix problem in deploy system caused
 	  by adding build number for debs in 2.5.9 (reported
 	  by roman)

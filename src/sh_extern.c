@@ -131,6 +131,8 @@ int sh_ext_popen (sh_tas_t * task)
   SL_ENTER(_("sh_ext_popen"));
 
   /* Linux, HP-UX and FreeBSD will happily accept envp = argp = NULL
+   * (newer Linuxes (gcc 4.4.4) warn on argp == NULL, but accept it,
+   * as reported by T. Luettgert)
    * Solaris (and probably some other Unices) 
    *         needs a valid *envp[] with envp[0] = NULL;
    *         and similarly for argp
@@ -419,7 +421,7 @@ int sh_ext_popen (sh_tas_t * task)
 		  fcntl  (pfd, F_SETFD, FD_CLOEXEC);
 		  do {
 		    val_return = execve (pname, 
-					 (task->argc == 0) ? NULL : task->argv, 
+					 (task->argc == 0) ? argp : task->argv, 
 					 (task->envc == 0) ? NULL : task->envv
 					 );
 		  } while (val_return < 0 && errno == EINTR);
@@ -566,6 +568,12 @@ int sh_ext_pclose (sh_tas_t * task)
   pid_t retval;
   char  infomsg[256];
 
+#ifdef WCONTINUED
+      int wflags = WNOHANG|WUNTRACED|WCONTINUED;
+#else
+      int wflags = WNOHANG|WUNTRACED;
+#endif
+
   SL_ENTER(_("sh_ext_pclose"));
 
   PDBG_OPEN;
@@ -583,7 +591,7 @@ int sh_ext_pclose (sh_tas_t * task)
       infomsg[0] = '\0';
 
     nochmal:
-      retval = waitpid(task->pid, &(task->exit_status), WNOHANG|WUNTRACED);
+      retval = waitpid(task->pid, &(task->exit_status), wflags);
       /*@-bufferoverflowhigh@*/
       if (task->pid == retval)
 	{
@@ -611,7 +619,7 @@ int sh_ext_pclose (sh_tas_t * task)
 	      task->exit_status = EXIT_FAILURE;
 	      (void) aud_kill (FIL__, __LINE__, task->pid, 9);
 	      (void) retry_msleep (0, 30);
-	      (void) waitpid (task->pid, NULL, WNOHANG|WUNTRACED);
+	      (void) waitpid (task->pid, NULL, wflags);
 	    }
 	  else
 	    {
@@ -808,6 +816,61 @@ void sh_ext_tas_free(sh_tas_t * tas)
   return;
 }
 
+int sh_ext_popen_init (sh_tas_t * task, char * command)
+{
+  int status;
+
+  sh_ext_tas_init(task);
+
+  (void) sh_ext_tas_add_envv (task, _("SHELL"), 
+			      _("/bin/sh")); 
+  (void) sh_ext_tas_add_envv (task, _("PATH"),  
+			      _("/sbin:/bin:/usr/sbin:/usr/bin:/usr/ucb")); 
+  (void) sh_ext_tas_add_envv (task, _("IFS"), " \n\t"); 
+  if (sh.timezone != NULL)
+    {
+      (void) sh_ext_tas_add_envv(task,  "TZ", sh.timezone);
+    }
+  
+  sh_ext_tas_command(task,  _("/bin/sh"));
+
+  (void) sh_ext_tas_add_argv(task,  _("/bin/sh"));
+  (void) sh_ext_tas_add_argv(task,  _("-c"));
+  (void) sh_ext_tas_add_argv(task,  command);
+  
+  task->rw = 'r';
+  task->fork_twice = S_FALSE;
+
+  status = sh_ext_popen(task);
+
+  return status;
+}
+
+/* Execute a system command */
+
+int sh_ext_system (char * command)
+{
+  sh_tas_t task;
+  int    status;
+
+  SL_ENTER(_("sh_ext_system"));
+
+  status = sh_ext_popen_init (&task, command);
+
+  if (status != 0)
+    {
+      sh_error_handle(SH_ERR_ERR, FIL__, __LINE__, status, MSG_E_SUBGEN, 
+                      _("Could not execute command"), _("sh_ext_system"));
+      SL_RETURN ((-1), _("sh_ext_system"));
+    }
+
+  /* close pipe and return exit status
+   */
+  (void) sh_ext_pclose(&task);
+  sh_ext_tas_free (&task);
+  SL_RETURN ((status), _("sh_ext_system"));
+}
+
 /* Execute command, return first line of output
  * ifconfig | grep -1 lo | tail -n 1 | sed s/.*inet addr:\([0-9.]*\)\(.*\)/\1/
  */
@@ -821,41 +884,20 @@ char * sh_ext_popen_str (char * command)
 
   SL_ENTER(_("sh_ext_popen_str"));
 
-  sh_ext_tas_init(&task);
-
-  (void) sh_ext_tas_add_envv (&task, _("SHELL"), 
-			      _("/bin/sh")); 
-  (void) sh_ext_tas_add_envv (&task, _("PATH"),  
-			      _("/sbin:/bin:/usr/sbin:/usr/bin:/usr/ucb")); 
-  (void) sh_ext_tas_add_envv (&task, _("IFS"), " \n\t"); 
-  if (sh.timezone != NULL)
-    {
-      (void) sh_ext_tas_add_envv(&task,  "TZ", sh.timezone);
-    }
-  
-  sh_ext_tas_command(&task,  _("/bin/sh"));
-
-  (void) sh_ext_tas_add_argv(&task,  _("/bin/sh"));
-  (void) sh_ext_tas_add_argv(&task,  _("-c"));
-  (void) sh_ext_tas_add_argv(&task,  command);
-  
-  task.rw = 'r';
-  task.fork_twice = S_FALSE;
-
-  status = sh_ext_popen(&task);
+  status = sh_ext_popen_init (&task, command);
 
   if (status != 0)
     {
       sh_error_handle(SH_ERR_ALL, FIL__, __LINE__, status, MSG_E_SUBGEN, 
-		      _("Could not open pipe"), _("sh_ext_popen_str"));
+                      _("Could not open pipe"), _("sh_ext_popen_str"));
       SL_RETURN ((NULL), _("sh_ext_popen_str"));
     }
 
-  /* ignore SIGPIPE (instead get EPIPE if connection is closed)
-   */
-  new_act.sa_handler = SIG_IGN;
-  (void) retry_sigaction (FIL__, __LINE__, SIGPIPE, &new_act, &old_act);
-
+   /* ignore SIGPIPE (instead get EPIPE if connection is closed)
+    */
+   new_act.sa_handler = SIG_IGN;
+   (void) retry_sigaction (FIL__, __LINE__, SIGPIPE, &new_act, &old_act);
+   
   /* read from the open pipe
    */
   if (task.pipe != NULL)

@@ -408,7 +408,7 @@ verbose=
 x_includes=NONE
 x_libraries=NONE
 DESTDIR=
-SH_ENABLE_OPTS="ssp db-reload xml-log message-queue login-watch process-check port-check mounts-check logfile-monitor userfiles debug ptrace static network udp nocl stealth micro-stealth install-name identity khide suidcheck base largefile mail external-scripts encrypt srp dnmalloc"
+SH_ENABLE_OPTS="ssp db-reload xml-log message-queue login-watch process-check port-check mounts-check logfile-monitor userfiles debug ptrace static network udp nocl stealth micro-stealth install-name identity khide suidcheck base largefile mail external-scripts encrypt srp dnmalloc ipv6"
 SH_WITH_OPTS="prelude libprelude-prefix database libwrap cflags libs console altconsole timeserver alttimeserver rnd egd-socket port logserver altlogserver kcheck gpg keyid checksum fp recipient sender trusted tmp-dir config-file log-file pid-file state-dir data-file html-file"
 
 # Installation directory options.
@@ -1195,8 +1195,14 @@ AC_DEFUN([GCC_PIE_CC],[
        CFLAGS="$pie_old_cflags"
       ])
     if test $pie_cv_cc = yes; then
+      case "$host_os" in
+      *cygwin*)
+      ;;
+      *)
       PIE_CFLAGS="-fPIE"
       PIE_LDFLAGS="-pie"
+      ;;
+      esac
     fi
   fi
 ])

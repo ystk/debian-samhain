@@ -1,0 +1,35 @@
+# Danish translation Samhain.
+# Copyright (C) 2010 Samhain & nedenstående oversættere.
+# This file is distributed under the same license as the Samhain package.
+# Joe Hansen <joedalton2@yahoo.dk>, 2010.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Samhain\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2010-02-20 10:31+0100\n"
+"PO-Revision-Date: 2010-06-17 17:30+01:00\n"
+"Last-Translator: Joe Hansen <joedalton2@yahoo.dk>\n"
+"Language-Team: Danish <debian-l10n-danish@lists.debian.org> \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#. Type: note
+#. Description
+#: ../templates:1001
+msgid "Samhain initialization"
+msgstr "Initialisering af Samhain"
+
+#. Type: note
+#. Description
+#: ../templates:1001
+msgid ""
+"The database used for Samhain will be initialized now. Any errors/messages "
+"regarding this initialization can be recovered from /var/log/samhain/samhain-"
+"init.log"
+msgstr ""
+"Databasen brugt til Samhain vil blive initialiseret nu. Alle fejl/beskeder "
+"angående denne initialisering kan ses i /var/log/samhain/samhain-"
+"init.log"
+

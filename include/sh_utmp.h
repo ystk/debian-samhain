@@ -18,6 +18,24 @@ int sh_utmp_set_logout_good    (const char * c);
 int sh_utmp_set_login_timer    (const char * c);
 
 extern sh_rconf sh_utmp_table[];
+
+/* >>           Login tracking             << */
+
+/* 'yes', 'no', 'paranoid'                    */
+int sh_login_set_siglevel      (const char * c);
+
+/* 'yes', 'no', 'domain'                      */
+int sh_login_set_checklevel    (const char * c);
+
+/* 'always' 'never' workdays(..) sunday(..)   */
+int sh_login_set_def_allow     (const char * c);
+
+/* user:'always' 'never' workdays(..)         */
+int sh_login_set_user_allow    (const char * c);
+
+/* Reset everything to defaults.              */
+void sh_login_reset (void);
+
 #endif
 
 /* #ifndef SH_UTMP_H */

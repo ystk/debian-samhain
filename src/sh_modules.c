@@ -16,6 +16,7 @@
 #include "sh_processcheck.h"
 #include "sh_portcheck.h"
 #include "sh_logmon.h"
+#include "sh_registry.h"
 
 sh_mtype modList[] = {
 #ifdef SH_USE_UTMP
@@ -150,6 +151,23 @@ sh_mtype modList[] = {
 
     N_("[Logmon]"),
     sh_log_check_table,
+    PTHREAD_MUTEX_INITIALIZER,
+  },
+#endif
+
+#ifdef USE_REGISTRY_CHECK
+  {
+    N_("REGISTRY"),
+    -1,
+    0,
+    sh_reg_check_init,
+    sh_reg_check_timer,
+    sh_reg_check_run,
+    sh_reg_check_cleanup,
+    sh_reg_check_reconf,
+
+    N_("[Registry]"),
+    sh_reg_check_table,
     PTHREAD_MUTEX_INITIALIZER,
   },
 #endif

@@ -1,4 +1,16 @@
+to 2.8.0 and higher: samhain supports IPv6 now, which means that the
+  size of the 'ip' column in the database must be increased from
+  VARCHAR(16) to VARCHAR(46).
 
+  BE SURE TO MAKE A BACKUP BEFORE THIS!
+
+  -- mysql: alter table samhain.log modify ip VARCHAR(46);
+
+  -- postgresql: alter table samhain.log alter column ip type varchar(46);
+
+  -- oracle: alter table samhain.log modify ip VARCHAR2(46);
+
+  
 to 2.4.4 and higher: it is possible now to store the full content of
   small files in the baseline database. To support this feature with
   logging to an RDBMS, the DB schema for Oracle needs to be adjusted

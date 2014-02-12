@@ -266,47 +266,47 @@ testrun2c ()
     #
     cp ./yule ./yule.orig
 
-	${TOP_SRCDIR}/configure --quiet  $TRUST --enable-debug --enable-network=server  --enable-xml-log --enable-login-watch --prefix=$PW_DIR --localstatedir=$PW_DIR --with-config-file=${RCFILE}2  --with-log-file=${LOGFILE}2 --with-pid-file=$PW_DIR/.samhain_lock2 --with-html-file=${HTML}2 --with-state-dir=$PW_DIR --with-port=49778 --with-database=mysql
-	#
+    ${TOP_SRCDIR}/configure --quiet  $TRUST --enable-debug --enable-network=server  --enable-xml-log --enable-login-watch --prefix=$PW_DIR --localstatedir=$PW_DIR --with-config-file=${RCFILE}2  --with-log-file=${LOGFILE}2 --with-pid-file=$PW_DIR/.samhain_lock2 --with-html-file=${HTML}2 --with-state-dir=$PW_DIR --with-port=49778 --with-database=mysql
+    #
+    if test x$? = x0; then
+	[ -z "$verbose" ] ||     log_msg_ok "configure..."; 
+	$MAKE  > /dev/null 2>>test_log
 	if test x$? = x0; then
-		[ -z "$verbose" ] ||     log_msg_ok "configure..."; 
-		$MAKE  > /dev/null 2>>test_log
-		if test x$? = x0; then
-		    [ -z "$verbose" ] || log_msg_ok "make..."; 
-		else
-		    [ -z "$quiet" ] &&   log_msg_fail "make..."; 
-		    return 1
-		fi
-
+	    [ -z "$verbose" ] || log_msg_ok "make..."; 
 	else
-		[ -z "$quiet" ] &&       log_msg_fail "configure...";
-		return 1
+	    [ -z "$quiet" ] &&   log_msg_fail "make..."; 
+	    return 1
 	fi
 
-	cp yule yule.2 || return 1
-	#
+    else
+	[ -z "$quiet" ] &&       log_msg_fail "configure...";
+	return 1
+    fi
+    
+    cp yule yule.2 || return 1
+    #
     cp ./yule.orig ./yule
-        #
-	SHPW=`cat ./testpw`
+    #
+    SHPW=`cat ./testpw`
+    
+    if test x"$SHPW" = x; then
+	[ -z "$quiet" ]   && log_msg_fail  "password not generated -- aborting"
+	return 1
+    fi
+    
+    rm -f ./testpw
+    
+    ./samhain_setpwd yule new $SHPW >/dev/null
+    
+    if test x$? = x0; then
+	[ -z "$verbose" ] || log_msg_ok    "./samhain_setpwd yule new $SHPW";
+    else
+	[ -z "$quiet" ]   && log_msg_fail  "./samhain_setpwd yule new $SHPW";
+	return 1
+    fi
 
-	if test x"$SHPW" = x; then
-	    [ -z "$quiet" ]   && log_msg_fail  "password not generated -- aborting"
-	    return 1
-	fi
 
-	rm -f ./testpw
-
-	./samhain_setpwd yule new $SHPW >/dev/null
-
-	if test x$? = x0; then
-	    [ -z "$verbose" ] || log_msg_ok    "./samhain_setpwd yule new $SHPW";
-	else
-	    [ -z "$quiet" ]   && log_msg_fail  "./samhain_setpwd yule new $SHPW";
-	    return 1
-	fi
-
-
-        $MAKE clean >/dev/null || return 1
+    $MAKE clean >/dev/null || return 1
     mv yule.new yule || return 1
     #
     ORIGINAL="DatabaseSeverity=none"

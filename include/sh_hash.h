@@ -35,6 +35,10 @@ char * sh_hash_size_format(void);
  */
 int hashreport_missing( char *fullpath, int level);
 
+/* remove internal db record for a file
+ */
+void sh_hash_remove (const char * path);
+
 /* write database to stdout
  */
 int sh_hash_pushdata_stdout (const char * str);
@@ -69,11 +73,12 @@ void sh_hash_init (void);
 
 /* Check whether a file is present in the database.
  */
-int sh_hash_have_it (char * newname);
+int sh_hash_have_it (const char * newname);
 
 /* Get a file if it is present in the database.
+ * If fileHash != NULL also return checksum.
  */
-int sh_hash_get_it (char * newname, file_type * tmpFile);
+int sh_hash_get_it (const char * newname, file_type * tmpFile, char * fileHash);
 
 /* Delete the database from memory.
  */
@@ -112,6 +117,10 @@ int sh_hash_compdata (int class, file_type * theFile, char * fileHash,
  */
 void sh_hash_unvisited (ShErrLevel level);
 
+/* Search for unvisited entries in the database, custom error handler.
+ */
+void sh_hash_unvisited_custom (char prefix, void(*handler)(const char * key));
+
 /* Set a file's status to 'visited'. This is required for
  * files that should be ignored, and may be present in the
  * database, but not on disk.
@@ -134,17 +143,27 @@ int hash_remove_tree (char * s);
  */
 int hash_full_tree (void); 
 
-/* Insert data
+/* Insert data.
+ * 'key' -> path
+ * 'str' -> binary with size 'size'
  */
-void sh_hash_push2db (char * key, unsigned long val1, 
-		      unsigned long val2, unsigned long val3,
-		      unsigned char * str, int size);
+struct store2db {
+  UINT64 val0;
+  UINT64 val1;
+  UINT64 val2;
+  UINT64 val3;
+  char   checksum[KEY_LEN+1];
+  unsigned char * str;
+  int size;
+};
+
+void sh_hash_push2db (const char * key, struct store2db * save);
+
 
 /* Retrieve data
  */
-char * sh_hash_db2pop (char * key, unsigned long * val1, 
-		       unsigned long * val2, unsigned long * val3,
-		       int * size);
+char * sh_hash_db2pop (const char * key,  struct store2db * get);
+
 
 /* Write out database
  */

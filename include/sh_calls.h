@@ -34,13 +34,20 @@
  */
 int sh_aud_set_functions(const char * str_s);
 
-
+#ifdef SH_IPVX_H
 long int retry_accept(const char * file, int line, 
-		      int fd, struct sockaddr *serv_addr, int * addrlen);
+		      int fd, struct sh_sockaddr *serv_addr, int * addrlen);
+#endif
+
+void sh_calls_enable_sub();
+int  sh_calls_set_sub (const char * str);
+
 long int retry_stat (const char * file, int line, 
 		     const char *file_name, struct stat *buf);
 long int retry_fstat(const char * file, int line, 
 		     int filed,             struct stat *buf);
+long int retry_lstat_ns(const char * file, int line, 
+			const char *file_name, struct stat *buf);
 long int retry_lstat(const char * file, int line, 
 		     const char *file_name, struct stat *buf);
 long int retry_fcntl(const char * file, int line, 

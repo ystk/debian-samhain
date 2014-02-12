@@ -4,7 +4,7 @@ depot
 # Product definition:
 product
   tag            samhain
-  revision       2.6.2
+  revision       2.8.3a
   is_patch       false
   title          samhain Client
   description    "Client for the samhain system"
@@ -31,7 +31,7 @@ product
   fileset
     tag          basic
     title        Core system
-    revision     2.6.2
+    revision     2.8.3a
     file_permissions -m 0700 -o root -g sys
  #
  # Files:
@@ -51,7 +51,7 @@ product
     file         -m 0555 -o bin -g bin .
     file         -m 0750 -o bin -g bin samhain
 #
-    directory    .uvar/state/samhain=uvar/state/samhain
+    directory    ./var/state/samhain=/var/state/samhain
     file         -m 0555 -o bin -g bin .
 #
     directory    ./var/log/samhain=/var/log/samhain

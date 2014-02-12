@@ -15,9 +15,9 @@
 #include <stdint.h>
 #endif
 
-#include <unistd.h>
-#include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
 
@@ -258,7 +258,7 @@ int dlog (int flag, const char * file, int line,  const char *fmt, ...)
     sl_strlcpy(tmp, fmt, 512);
   else
     sl_strlcpy(tmp, fmt, 256);
-  retval = sl_strlen(tmp);
+  retval = strlen(tmp);
   if (retval > 0 && tmp[retval-1] == '\n')
     tmp[retval-1] = '\0';
   retval = 0;
@@ -273,7 +273,7 @@ int dlog (int flag, const char * file, int line,  const char *fmt, ...)
 	sl_strlcat (msg, ".  ", 256);
       sprintf      (val, _("[%2d] "), trace_level);
       sl_strlcat   (msg,     val,   256);
-      sl_vsnprintf (&msg[sl_strlen(msg)], 255, tmp, ap);
+      sl_vsnprintf (&msg[strlen(msg)], 255, tmp, ap);
       sl_snprintf  (tmp, 255, _(" \t - File %c%s%c at line %d"), 
 		    0x22, file, 0x22, line);
       sl_strlcat   (msg,     tmp,   512);
@@ -1027,11 +1027,11 @@ int sl_strcasecmp(const char * one, const char * two)
       do {
 	if (*one && *two)
 	  {
-	    if (tolower(*one) == tolower(*two))
+	    if (tolower((int) *one) == tolower((int) *two))
 	      {
 		++one; ++two;
 	      }
-	    else if (tolower(*one) < tolower(*two))
+	    else if (tolower((int) *one) < tolower((int) *two))
 	      return -1;
 	    else
 	      return 1;
@@ -1594,9 +1594,6 @@ static char badfd_orig_file[64] = { '\0' };
 static int  badfd_orig_line = -1;
 static char badfd_orig_mesg[128];
 
-SH_MUTEX_STATIC(mutex_ticket, PTHREAD_MUTEX_INITIALIZER);
-
-static unsigned int nonce_counter = TOFFSET;
 
 char * sl_check_stale()
 {
@@ -1621,12 +1618,43 @@ char * sl_check_badfd()
   return badfd_orig_mesg;
 }
 
+typedef struct { volatile unsigned int atom; } atomic_t;
+static atomic_t nonce_counter = { TOFFSET };
+
+#if defined(__GNUC__) && (defined(__i486__) || defined(__x86_64__))
+/* from linux/include/asm-i386/atomic.h */
+static unsigned int atomic_add ( unsigned int i, atomic_t *var)
+{
+  unsigned int j = i;
+
+  __asm__ __volatile__ ("lock; xaddl %0, %1"
+			: "+r" (i), "+m" (var->atom)
+			: : "memory");
+  return j+i; 
+}
+#else
+SH_MUTEX_STATIC(mutex_ticket, PTHREAD_MUTEX_INITIALIZER);
+
+static unsigned int atomic_add ( unsigned int i, atomic_t *var)
+{
+  volatile unsigned int j;
+
+  SH_MUTEX_LOCK_UNSAFE(mutex_ticket);
+  var->atom += i;
+  j = var->atom;
+  SH_MUTEX_UNLOCK_UNSAFE(mutex_ticket);
+
+  return j;
+}
+#endif
+
 static
 SL_TICKET sl_create_ticket (unsigned int myindex) 
 {
   unsigned int high; /* index */ 
   unsigned int low;  /* nonce */
   SL_TICKET    retval = SL_EINTERNAL;
+  unsigned int nonce;/* nonce */
 
   SL_ENTER(_("sl_create_ticket"));
 
@@ -1647,30 +1675,30 @@ SL_TICKET sl_create_ticket (unsigned int myindex)
       goto out_ticket;
     }
 
-  SH_MUTEX_LOCK_UNSAFE(mutex_ticket);
+  nonce = atomic_add(1, &nonce_counter);
 
-  low = nonce_counter & 0xffff;
+  /* Wrap around the nonce counter.
+   * This is a dirty trick.
+   */
+  if (nonce > 0x7fff)
+    {
+      nonce_counter.atom = TOFFSET;
+      nonce = atomic_add(1, &nonce_counter);
+    }
+
+  low = nonce & 0xffff;
 
   /* Overflow -> nonce too big.
    */
-  if ((low != nonce_counter++) || low == 0)
+  if ((low != nonce) || low == 0)
     {
       retval = SL_EINTERNAL03;
       goto out_ticket;
     }
- 
-  /* Wrap around the nonce counter.
-   * This is a dirty trick.
-   */
-  if (nonce_counter > 0x7fff)
-    nonce_counter = TOFFSET;
 
   retval = (SL_TICKET) ((high << 16) | low);
 
  out_ticket:
-  ;
-
-  SH_MUTEX_UNLOCK_UNSAFE(mutex_ticket);
   SL_RETURN (retval, _("sl_create_ticket")); 
 }
 

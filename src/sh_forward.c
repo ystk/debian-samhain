@@ -120,6 +120,7 @@
 #include <arpa/inet.h>
 #endif
 
+#include "sh_ipvx.h"
 #include "samhain.h"
 #include "sh_tiger.h"
 #include "sh_utils.h"
@@ -238,7 +239,7 @@ const char * sh_strip_domain (char *name)
       /* check whether it is in dotted number format
        * --> last part must be kept
        */
-      if (0 != is_numeric(name))
+      if (0 != sh_ipvx_is_numeric(name))
 	{
 	  SL_RETURN( name, _("sh_strip_domain"));
 	  /*
@@ -2186,7 +2187,7 @@ typedef struct {
   unsigned long   FileSent;
   char            FileType[5];
 
-  struct sockaddr_in addr_peer;
+  struct sh_sockaddr addr_peer;
 } sh_conn_t;
 
 
@@ -2591,16 +2592,14 @@ int sh_forward_lookup_level (const char * c)
 #define MAXHOSTNAMELEN  127
 #endif
 
-int check_addr (const char * claim, struct sockaddr_in addr_peer)
+int check_addr (const char * claim, struct sh_sockaddr * addr_peer)
 {
   char               h_name[MAXHOSTNAMELEN + 1];
   char               h_peer[MAXHOSTNAMELEN + 1];
-  char               h_peer_IP[16];
-  char               tmp_peer_IP[16];
-  struct hostent   * he;
-  char            ** p = NULL;
-  int                i;
-  int                flag = 0;
+  char               h_peer_IP[SH_IP_BUF];
+  char               tmp_peer_IP[SH_IP_BUF];
+  char             * canonical;
+  char               numeric[SH_IP_BUF];
 
   SL_ENTER(_("check_addr"));
 
@@ -2613,23 +2612,14 @@ int check_addr (const char * claim, struct sockaddr_in addr_peer)
 
   /* Make sure we have the canonical name for the client
    */
-  he = sh_gethostbyname (claim);
-
-  if (he != NULL && he->h_name != NULL)
-    {
-      if (NULL == strchr(he->h_name, '.') && he->h_addr_list != NULL)
-	{
-	  he = sh_gethostbyaddr(he->h_addr_list[0], 
-				he->h_length, 
-				he->h_addrtype);
-	}
-    }
+  canonical = sh_ipvx_canonical(claim, numeric, sizeof(numeric));
 
   /* copy canonical name into h_name
    */
-  if (he != NULL && he->h_name != NULL)
+  if (canonical != NULL)
     {
-      sl_strlcpy(h_name, he->h_name, MAXHOSTNAMELEN + 1);
+      sl_strlcpy(h_name, canonical, MAXHOSTNAMELEN + 1);
+      SH_FREE(canonical);
     }
   else
     {
@@ -2641,30 +2631,25 @@ int check_addr (const char * claim, struct sockaddr_in addr_peer)
 
   /* get canonical name of socket peer
    */
-  he = sh_gethostbyaddr ((char *) &(addr_peer.sin_addr), 
-			 sizeof(addr_peer.sin_addr),
-			 AF_INET);
+  canonical = sh_ipvx_addrtoname(addr_peer);
 
-  if (he != NULL && he->h_name != NULL)
+  if (canonical)
     {
-      if (0 == sl_strcmp(he->h_name, _("localhost")))
+      if (0 == sl_strcmp(canonical, _("localhost")))
 	sl_strlcpy(h_peer, sh.host.name, MAXHOSTNAMELEN + 1);
       else
-	sl_strlcpy(h_peer, he->h_name, MAXHOSTNAMELEN + 1);
+	sl_strlcpy(h_peer, canonical, MAXHOSTNAMELEN + 1);
+      SH_FREE(canonical);
     }
   else
     {
-      sl_strlcpy(tmp_peer_IP,
-		 inet_ntoa (*(struct in_addr *) &(addr_peer.sin_addr)),
-		 16);
+      sh_ipvx_ntoa (tmp_peer_IP, sizeof(tmp_peer_IP), addr_peer);
       sh_error_handle(lookup_err, FIL__, __LINE__, 0, MSG_TCP_RESPEER,
 		      claim, tmp_peer_IP);
       SL_RETURN ((0), _("check_addr"));
     }
 
-  sl_strlcpy(h_peer_IP, 
-	     inet_ntoa (*(struct in_addr *) he->h_addr),
-	     16);
+  sh_ipvx_ntoa (h_peer_IP, sizeof(h_peer_IP), addr_peer);
 
 #if 0
   if (S_FALSE == DoReverseLookup)
@@ -2675,42 +2660,32 @@ int check_addr (const char * claim, struct sockaddr_in addr_peer)
 
   /* reverse lookup
    */
-  if (0 != sl_strncmp(_("127."), 
-		      inet_ntoa (*(struct in_addr *) &(addr_peer.sin_addr)),
-		      4))
+  if (0 == sh_ipvx_reverse_check_ok (h_peer, ServerPort, addr_peer))
     {
-      he = sh_gethostbyname(h_peer);
-      
-      if (he != NULL)
-	{
-	  for (p = he->h_addr_list; *p; ++p)
-	    {
-	      if (0 == memcmp (*p, &(addr_peer.sin_addr), 
-			       sizeof(addr_peer.sin_addr))) 
-		break;
-	    }
-	}
-      if (he == NULL || *p == NULL) 
-	{
-	  sl_strlcpy(tmp_peer_IP,
-		     inet_ntoa (*(struct in_addr *) &(addr_peer.sin_addr)),
-		     16);
-	  sh_error_handle(lookup_err, FIL__, __LINE__, 0, MSG_TCP_LOOKERS,
-			  claim, h_peer, tmp_peer_IP);
-	  SL_RETURN ((0), _("check_addr"));
-	}
+      sh_ipvx_ntoa (tmp_peer_IP, sizeof(tmp_peer_IP), addr_peer);
+
+      sh_error_handle(lookup_err, FIL__, __LINE__, 0, MSG_TCP_LOOKERS,
+		      claim, h_peer, tmp_peer_IP);
+      SL_RETURN ((0), _("check_addr"));
     }
 
-  sh_tolower(h_peer);
-  sh_tolower(h_name);
+  /* Check whether claim and peer are identical
+   */
+
+  sh_tolower(h_peer); /* Canonical name of what the peer is     */
+  sh_tolower(h_name); /* Canonical name of what the peer claims */
 
   if ((0 == sl_strcmp(h_peer, h_name)) || (0 == sl_strcmp(h_peer_IP, h_name)))
     {
       SL_RETURN ((0), _("check_addr"));
     }
+#if !defined(USE_IPVX)
   else
     {
-      i = 0;
+      struct hostent   * he = sh_gethostbyname(h_peer);
+      int                i = 0;
+      int                flag = 0;
+
       while (he->h_aliases[i] != NULL)
 	{
 	  if (0 == sl_strcmp(sh_tolower(he->h_aliases[i]), h_name))
@@ -2724,6 +2699,7 @@ int check_addr (const char * claim, struct sockaddr_in addr_peer)
 	sh_error_handle(lookup_err, FIL__, __LINE__, 0, MSG_TCP_LOOKUP,
 			claim, h_peer);
     }
+#endif
 
   SL_RETURN ((0), _("check_addr"));
 }
@@ -2741,71 +2717,46 @@ int set_socket_peer (const char * c)
 client_t * search_register(sh_conn_t * conn, int pos)
 {
   client_t * this_client;
-  char       peer_ip[16];
+  char       peer_ip[SH_IP_BUF];
+  char       numerical[SH_IP_BUF];
   char       peer_name[MAXHOSTNAMELEN+1];
   char     * search_string;
-  struct sockaddr_in peer_addr;
-  struct hostent   * he;
-  char    ** p = NULL;
+
+  struct sh_sockaddr peer_addr;
+  char             * canonical;
 
   SL_ENTER(_("search_register"));
 
   if (UseSocketPeer == S_TRUE)
     {
-      peer_addr = conn->addr_peer;
-      sl_strlcpy(peer_ip, 
-		 inet_ntoa (*(struct in_addr *) &(peer_addr.sin_addr)), 16);
+      memcpy(&peer_addr, &(conn->addr_peer), sizeof(struct sh_sockaddr));
+      sh_ipvx_ntoa (peer_ip, sizeof(peer_ip), &peer_addr);
 
       /* get canonical name of socket peer
        */
-      he = sh_gethostbyaddr ((char *) &(peer_addr.sin_addr), 
-			     sizeof(peer_addr.sin_addr),
-			     AF_INET);
+      canonical = sh_ipvx_canonical(peer_ip, numerical, sizeof(numerical));
 
-      if (he != NULL && he->h_name != NULL)
+      if (canonical != NULL)
 	{
-	  if (0 == sl_strcmp(he->h_name, _("localhost")))
+	  if (0 == sl_strcmp(canonical, _("localhost")))
 	    sl_strlcpy(peer_name, sh.host.name, MAXHOSTNAMELEN + 1);
 	  else
-	    sl_strlcpy(peer_name, he->h_name, MAXHOSTNAMELEN + 1);
-
-	  /* Reverse lookup 
-	   */
-	  if (0 != sl_strncmp(peer_ip, _("127."), 4))
-	    {
-	      he = sh_gethostbyname(peer_name);
-	      
-	      if (he != NULL)
-	      {
-		for (p = he->h_addr_list; *p; ++p)
-		  {
-		    if (0 == memcmp (*p, &(peer_addr.sin_addr), 
-				     sizeof(peer_addr.sin_addr))) 
-		      break;
-		  }
-	      }
-	      if (he == NULL || *p == NULL) 
-	      {
-		/*
-		sh_error_handle(lookup_err, FIL__, __LINE__, 0, 
-				MSG_TCP_LOOKERS,
-				conn->buf[pos], peer_name, peer_ip);
-		*/
-		sl_strlcpy(peer_name, peer_ip, MAXHOSTNAMELEN + 1);
-	      }
-	    }
+	    sl_strlcpy(peer_name, canonical,    MAXHOSTNAMELEN + 1);
+	  SH_FREE(canonical);
 	}
-      else
+
+      if (0 == sh_ipvx_reverse_check_ok (peer_name, ServerPort, &peer_addr))
 	{
 	  sl_strlcpy(peer_name, peer_ip, MAXHOSTNAMELEN + 1);
 	}
+
       search_string = peer_name;
     }
   else
     {
       search_string = &(conn->buf[pos]);
 
-      if (0 != check_addr (search_string, conn->addr_peer))
+      if (0 != check_addr (search_string, &(conn->addr_peer)))
 	{
 	  sh_error_handle((-1), FIL__, __LINE__, 0, MSG_TCP_BADCONN,
 			  _("Reverse lookup failed"), search_string);
@@ -3660,12 +3611,22 @@ void check_protocol(sh_conn_t * conn, int state)
 
 		  /* push client name to error routine
                    */
+#if defined(SH_WITH_SERVER) && defined(HAVE_LIBPRELUDE)
+		  {
+		    char peer_ip[SH_IP_BUF];
+		    sh_ipvx_ntoa(peer_ip, sizeof(peer_ip), conn->addr_peer); 
+		    sh_error_set_peer_ip( peer_ip );
+		  }                        
+#endif
                   sh_error_set_peer(sh_strip_domain (conn->peer));
 		  sh_error_handle(clt_sev, FIL__, __LINE__, 0, MSG_TCP_MSG,
 				  sh_strip_domain (conn->peer), 
 				  ptok);
                   sh_error_set_peer(NULL);
-
+#if defined(SH_WITH_SERVER) && defined(HAVE_LIBPRELUDE)
+                  sh_error_set_peer_ip(NULL);
+#endif
+                  
 		  TPT((0, FIL__, __LINE__, _("msg=<%s>\n"), ptok));
 		  SH_FREE(ptok);
 		  clt_class = (-1);
@@ -4677,7 +4638,7 @@ int sh_forward_accept (int sock, sh_conn_t * newconn)
 {
   int                errflag;
   int                rc;
-  struct sockaddr_in addr;
+  struct sh_sockaddr addr;
 #ifdef SH_USE_LIBWRAP
   struct request_info request;
   char                errbuf[128];
@@ -4690,8 +4651,7 @@ int sh_forward_accept (int sock, sh_conn_t * newconn)
 
   SL_ENTER(_("sh_forward_accept"));
 
-  rc = retry_accept(FIL__, __LINE__, sock, 
-		    (struct sockaddr *) &addr, &addrlen);
+  rc = retry_accept(FIL__, __LINE__, sock, &addr, &addrlen);
 
   if (rc >= 0)
     {
@@ -4707,13 +4667,13 @@ int sh_forward_accept (int sock, sh_conn_t * newconn)
 	}
 
 #ifdef SH_USE_LIBWRAP
-      sl_strlcpy(daemon, SH_INSTALL_NAME, 128);
+      sl_strlcpy(daemon, SH_INSTALL_NAME, sizeof(daemon));
       request_init(&request, RQ_DAEMON, daemon, RQ_FILE, rc, 0);
       fromhost(&request);
       if (!hosts_access(&request)) 
 	{
-	  sl_strlcpy(errbuf, _("Refused connection from "), 128);
-	  sl_strlcat(errbuf,   eval_client(&request), 128);
+	  sl_strlcpy(errbuf, _("Refused connection from "), sizeof(errbuf));
+	  sl_strlcat(errbuf,   eval_client(&request), sizeof(errbuf));
 
 	  sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN,
 			  errbuf, _("libwrap"));
@@ -4724,7 +4684,7 @@ int sh_forward_accept (int sock, sh_conn_t * newconn)
 	}
 #endif
 
-      memcpy (&(newconn->addr_peer), &addr, sizeof(struct sockaddr_in));
+      memcpy (&(newconn->addr_peer), &addr, sizeof(struct sh_sockaddr));
 
       /* prepare for usage of connection
        */
@@ -4774,7 +4734,7 @@ int sh_forward_set_port (const char * str)
   SL_RETURN( (retval), _("sh_forward_set_port"));
 }
 
-static struct in_addr server_interface;
+static struct sh_sockaddr server_interface;
 static int            use_server_interface = 0;
 
 int sh_forward_set_interface (const char * str)
@@ -4784,11 +4744,13 @@ int sh_forward_set_interface (const char * str)
       use_server_interface = 0;
       return 0;
     }
-  if (0 == /*@-unrecog@*/inet_aton(str, &server_interface)/*@+unrecog@*/) 
+
+  if (0 == sh_ipvx_aton(str, &server_interface)) 
     {
       use_server_interface = 0;
       return -1;
     }
+
   use_server_interface = 1;
   return 0;
 }
@@ -4875,82 +4837,184 @@ static   int  maxconn = 0;  /* maximum number of simultaneous connections */
 
 #ifdef INET_SYSLOG
 #define INET_SUSPEND_TIME 180		/* equal to 3 minutes */
-#define SH_MINSOCK 3
+#define SH_MINSOCK_DEFAULT 3
 int create_syslog_socket (int flag);
 static int recv_syslog_socket   (int fd);
-static int syslog_sock = -1;
+static int syslog_sock[SH_SOCKMAX] = { -1 };
+static int syslog_sock_n = 0;
 #else
-#define SH_MINSOCK 2
+#define SH_MINSOCK_DEFAULT 2
 #endif
 
+static int SH_MINSOCK = SH_MINSOCK_DEFAULT;
 extern int pf_unix_fd;
 
 /* the tcp socket, and the function to establish it
  */
-static int sh_tcp_sock = -1;
+static int sh_tcp_sock[SH_SOCKMAX] = { -1 };
+static int sh_tcp_sock_n = 0;
 
-int sh_create_tcp_socket (void)
+static int do_socket(int domain, int type, int protocol,
+		     struct sockaddr * sa, int salen)
 {
-  struct sockaddr_in addr;
-  int addrlen      = sizeof(addr);
-
-  int sock   = -1;
+  int sock = -1;
   int errnum = 0;
   int flag   = 1; /* non-zero to enable an option */
 
-  SL_ENTER(_("sh_create_tcp_socket"));
-
-  sh_forward_printerr (NULL, 0, server_port, __LINE__);
+  /* fprintf(stderr, "FIXME IPVX: bind addr %s (%d) :%d\n", 
+	  sh_ipvx_print_sockaddr (sa, domain), salen,
+	  sh_ipvx_get_port(sa, domain)); */
 
   /* create the socket, bind() it and listen()
    */
-  if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0 )
+  if ((sock = socket(domain, type, protocol)) < 0 )
     {
       errnum = errno; 
       sh_forward_printerr (_("socket"), errnum, server_port, __LINE__);
-      SL_RETURN((-1), _("sl_create_tcp_socket"));
+      return -1;
     }
   (void) retry_fcntl( FIL__, __LINE__, sock, F_SETFD, 1 );
-  
+ 
   if ( setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
 		  (void *) &flag, sizeof(flag)) < 0 )
     {
       errnum = errno;
       sh_forward_printerr (_("setsockopt"), errnum, server_port, __LINE__);
-      SL_RETURN((-1), _("sl_create_tcp_socket"));
+      sl_close_fd (FIL__, __LINE__, sock);
+      return -1;
     }
   
-  addr.sin_family      = AF_INET;
-  addr.sin_port        = htons(server_port);
-  if (use_server_interface == 0)
-    addr.sin_addr.s_addr = INADDR_ANY;
-  else
-    memcpy(&addr.sin_addr, &server_interface, sizeof(struct in_addr));
-  
-  if ( bind(sock, (struct sockaddr *) &addr, addrlen) < 0) 
+  if ( bind(sock, (struct sockaddr *) sa, salen) < 0) 
     {
-      errnum = errno;
-      sh_forward_printerr (_("bind"), errnum, server_port, __LINE__);
-      SL_RETURN((-1), _("sl_create_tcp_socket"));
+      if (errno != EADDRINUSE)
+	{
+	  errnum = errno;
+	  sh_forward_printerr (_("bind"), errnum, server_port, __LINE__);
+	  sl_close_fd (FIL__, __LINE__, sock);
+	  return -1;
+	}
+      else
+	{
+	  sl_close_fd (FIL__, __LINE__, sock);
+	  return -2;
+	}
     }
   
   if ( retry_fcntl( FIL__, __LINE__, sock, F_SETFL, O_NONBLOCK ) < 0 )
     {
       errnum = errno;
       sh_forward_printerr (_("fcntl"), errnum, server_port, __LINE__);
-      SL_RETURN((-1), _("sl_create_tcp_socket"));
+      sl_close_fd (FIL__, __LINE__, sock);
+      return -1;
     }
   
-  if ( listen(sock, 5) < 0)
+  if ( listen(sock, 64) < 0)
     {
       errnum = errno;
       sh_forward_printerr (_("listen"), errnum, server_port, __LINE__);
-      SL_RETURN((-1), _("sl_create_tcp_socket"));
+      sl_close_fd (FIL__, __LINE__, sock);
+      return -1;
     }
 
-  sh_tcp_sock = sock;
+  return sock;
+}
 
-  SL_RETURN((sock), _("sl_create_tcp_socket"));
+int sh_create_tcp_socket (void)
+{
+#if defined(USE_IPVX)
+  struct addrinfo *ai;
+  struct addrinfo *p;
+  struct addrinfo hints;
+  char            port[32];
+#else
+  struct sockaddr_in addr;
+  int addrlen      = sizeof(addr);
+#endif
+
+  int sock   = -1;
+
+  SL_ENTER(_("sh_create_tcp_socket"));
+
+  sh_forward_printerr (NULL, 0, server_port, __LINE__);
+
+#if defined(USE_IPVX)
+  if (use_server_interface == 0)
+    {
+      memset (&hints, '\0', sizeof (hints));
+      hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG;
+      hints.ai_socktype = SOCK_STREAM;
+      hints.ai_family   = AF_UNSPEC;
+      sl_snprintf(port, sizeof(port), "%d", server_port);
+
+      if (getaddrinfo (NULL, port, &hints, &ai) != 0)
+	{
+	  int errnum = errno;
+	  sh_forward_printerr (_("getaddrinfo"), errnum, server_port, __LINE__);
+	  sl_close_fd (FIL__, __LINE__, sock);
+	  SL_RETURN((-1), _("sl_create_tcp_socket"));
+	}
+      
+      p = ai;
+      
+      while (p != NULL && sh_tcp_sock_n < SH_SOCKMAX)
+	{
+	  sock = do_socket(p->ai_family, p->ai_socktype, p->ai_protocol,
+			   p->ai_addr, p->ai_addrlen);
+	  
+	  if (sock >= 0) {
+	    if (sh_tcp_sock_n < SH_SOCKMAX) {
+	      sh_tcp_sock[sh_tcp_sock_n] = sock;
+	      ++sh_tcp_sock_n;
+	    }
+	    else {
+	      sl_close_fd (FIL__, __LINE__, sock);
+	    }    
+	  } else if (sock == -1) {
+	    freeaddrinfo (ai);
+	    goto end;
+	  }
+	  p = p->ai_next;
+	}
+      
+      freeaddrinfo (ai);
+    }
+  else
+    {
+      sh_ipvx_set_port(&server_interface, server_port);
+
+      sock = do_socket(server_interface.ss_family, SOCK_STREAM, 0, 
+		       sh_ipvx_sockaddr_cast(&server_interface), 
+		       SH_SS_LEN(server_interface));
+      
+      if (sock >= 0) {
+	sh_tcp_sock[0] = sock;
+	sh_tcp_sock_n  = 1;
+      }
+    }	       
+#else
+  if (use_server_interface == 0)
+    addr.sin_addr.s_addr = INADDR_ANY;
+  else
+    memcpy(&addr, sh_ipvx_sockaddr_cast(&server_interface), addrlen);
+  addr.sin_family      = AF_INET;
+  addr.sin_port        = htons(server_port);
+  
+  sock = do_socket(AF_INET, SOCK_STREAM, 0, (struct sockaddr *) &addr, addrlen);
+
+  if (sock >= 0) {
+      sh_tcp_sock[0] = sock;
+      sh_tcp_sock_n  = 1;
+  }
+
+#endif
+
+#if defined(USE_IPVX)
+ end:
+#endif
+  if (sh_tcp_sock_n > 1)
+    SH_MINSOCK += (sh_tcp_sock_n - 1);
+
+  SL_RETURN((sh_tcp_sock_n), _("sl_create_tcp_socket"));
 }
 
 /*****************************************
@@ -4968,7 +5032,8 @@ void sh_receive()
   extern int  sh_log_file    (char * message, char * inet_peer);
 #endif
 
-  int                sock = -1;
+  /* Use volatile to circumvent a gcc4 problem on RH/CentOS 4.8 (?) */
+  volatile int       sock = -1;
   sh_conn_t        * cx;
   fd_set             readset;
   fd_set             writeset;
@@ -4977,7 +5042,7 @@ void sh_receive()
   int                errnum;
   int                nowconn;
   int                status;
-  int                high_fd;
+  int                high_fd = -1;
   register int       i;
   long               dummy = 0;
   unsigned long      time_now;
@@ -4993,6 +5058,12 @@ void sh_receive()
   struct  sigaction  old_act;
 
   int setsize_fd;
+
+  int sock_tcp[2];
+  int sock_unix;
+#ifdef INET_SYSLOG
+  int sock_log[2];
+#endif
   
   SL_ENTER(_("sh_receive"));
 
@@ -5008,7 +5079,8 @@ void sh_receive()
     {
       aud_exit(FIL__, __LINE__, EXIT_FAILURE);
     }
-  sock = sh_tcp_sock;
+
+  sock = sh_tcp_sock[0];
 
   /* ****************************************************************
    *
@@ -5024,6 +5096,7 @@ void sh_receive()
    * The POSIX lower limit on open files seems to be eight. 
    */
   maxconn    = get_open_max() - 6;
+
   /* ugly fix for FreeBSD compiler warning; casting FD_SETSIZE in the
    * conditional expression does not suppress the warning... */
   setsize_fd = (int)FD_SETSIZE;
@@ -5072,29 +5145,51 @@ void sh_receive()
   
   /* conns[0] is the listen() socket. Always in read mode.
    */
-  conns[0].fd    = sock;
-  conns[0].state = CONN_READING;
-  high_fd = sock;
+  sock = 0;
+
+  sock_tcp[0] = 0;
+  while (sock < sh_tcp_sock_n)
+    {
+      conns[sock].fd    = sh_tcp_sock[sock];
+      conns[sock].state = CONN_READING;
+      high_fd = (sh_tcp_sock[sock] > high_fd) ? sh_tcp_sock[sock] : high_fd;
+      ++sock;
+    }
+  sock_tcp[1] = sock;
   
-  conns[1].fd    = pf_unix_fd;
-  conns[1].state = CONN_READING;
+  conns[sock].fd    = pf_unix_fd;
+  conns[sock].state = CONN_READING;
   high_fd = (pf_unix_fd > high_fd) ? pf_unix_fd : high_fd;
-  
+
+  sock_unix = sock;
+
+  ++sock;
+
 #ifdef INET_SYSLOG
-  conns[2].fd = -1;
+  conns[sock].fd = -1;
+
   if ( sh_forward_printerr_final(1) < 0)
     {
       SH_FREE(conns);
       conns = NULL;
       aud_exit(FIL__, __LINE__, EXIT_FAILURE);
     }
-  sock = syslog_sock;
 
-  if (sock >= 0)
+  sock_log[0] = sock;
+  sock_log[1] = sock;
+
+  if (syslog_sock_n > 0)
     {
-      conns[2].fd    = sock;
-      conns[2].state = CONN_READING;
-      high_fd = (high_fd > conns[2].fd) ? high_fd : conns[2].fd;
+      int s2;
+      for (s2 = 0; s2 < syslog_sock_n; ++s2)
+	{
+	  conns[sock].fd    = syslog_sock[s2];
+	  conns[sock].state = CONN_READING;
+	  high_fd = (high_fd > conns[sock].fd) ? high_fd : conns[sock].fd;
+	  ++sock;
+	}
+      sock_log[1] = sock;
+
     }
 #endif
   
@@ -5146,6 +5241,7 @@ void sh_receive()
 	    sl_trust_purge_user();
 
 	    (void) sh_readconf_read ();
+
 	    for (i = SH_MINSOCK; i < maxconn; ++i)
 	      if (conns[i].state != CONN_FREE   && 
 		  conns[i].client_entry != NULL &&
@@ -5223,20 +5319,28 @@ void sh_receive()
        */
       FD_ZERO( &readset );
       FD_ZERO( &writeset );
-      FD_SET(conns[0].fd, &readset );
-      high_fd   = conns[0].fd;
+      high_fd = conns[0].fd;
 
-      if (conns[1].fd > -1)
+      for (sock = sock_tcp[0]; sock < sock_tcp[1]; ++sock)
 	{
-	  FD_SET(conns[1].fd, &readset );
-	  high_fd   = (high_fd > conns[1].fd) ? high_fd : conns[1].fd;
+	  FD_SET(conns[sock].fd, &readset );
+	  high_fd   = (high_fd > conns[sock].fd) ? high_fd : conns[sock].fd;
+	}
+
+      if (conns[sock_unix].fd > -1)
+	{
+	  FD_SET(conns[sock_unix].fd, &readset );
+	  high_fd   = (high_fd > conns[sock_unix].fd) ? high_fd : conns[sock_unix].fd;
 	}
 
 #ifdef INET_SYSLOG
-      if (conns[2].fd > -1)
+      for (sock = sock_log[0]; sock < sock_log[1]; ++sock)
 	{
-	  FD_SET(conns[2].fd, &readset );
-	  high_fd   = (high_fd > conns[2].fd) ? high_fd : conns[2].fd;
+	  if (conns[sock].fd > -1)
+	    {
+	      FD_SET(conns[sock].fd, &readset );
+	      high_fd   = (high_fd > conns[sock].fd) ? high_fd : conns[sock].fd;
+	    }
 	}
 #endif
 
@@ -5398,46 +5502,62 @@ void sh_receive()
 
       /* New connection.
        */
-      if ( FD_ISSET(conns[0].fd , &readset )) /* a new connection   */
+      for (sock = sock_tcp[0]; sock < sock_tcp[1]; ++sock)
 	{
-	  --num_sel;
-	  status = 0;
-	  if (nowconn < maxconn && sig_terminate == 0 && sig_termfast == 0)
+	  if ( FD_ISSET(conns[sock].fd , &readset )) /* a new connection   */
 	    {
-	      i = SH_MINSOCK;
-	      while (i < maxconn)
+	      --num_sel;
+	      status = 0;
+	      if (nowconn < maxconn && sig_terminate == 0 && sig_termfast == 0)
 		{
-		  if (conns[i].state == CONN_FREE)
+		  /* Find a free slot to accept the connection
+		   */
+		  i = SH_MINSOCK;
+		  while (i < maxconn)
 		    {
-		      status = sh_forward_accept (conns[0].fd, &conns[i]);
-		      if (status == 0)
+		      if (conns[i].state == CONN_FREE)
 			{
-			  high_fd = 
-			    (high_fd > conns[i].fd ? high_fd : conns[i].fd);
-			  ++server_status.conn_open;
-			  ++server_status.conn_total;
-			  server_status.last = time (NULL);
+			  /* Here we run the accept() and copy the peer to
+			   * the free slot. 
+			   */
+			  status = sh_forward_accept(conns[sock].fd, &conns[i]);
+			  
+			  if (status == 0)
+			    {
+			      high_fd = 
+				(high_fd > conns[i].fd ? high_fd : conns[i].fd);
+			      ++server_status.conn_open;
+			      ++server_status.conn_total;
+			      server_status.last = time (NULL);
+			    }
+			  break;
 			}
-		      break;
+		      ++i;
 		    }
-		  ++i;
 		}
+	      /* This re-runs select to accept data on the new
+	       * connection, rather than first dealing with old
+	       * connections.
+	       */
+	      if (status == 0) 
+		continue;
 	    }
-	  if (status == 0) 
-	    continue;
 	}
       
       /* check for commands on the socket
        */
-      if (conns[1].fd > (-1) && FD_ISSET(conns[1].fd , &readset ))
+      if (conns[sock_unix].fd > (-1) && FD_ISSET(conns[sock_unix].fd , &readset ))
 	{
 	  sh_socket_poll();
 	}
 
 #ifdef INET_SYSLOG
-      if (conns[2].fd > (-1) && FD_ISSET(conns[2].fd , &readset ))
+      for (sock = sock_log[0]; sock < sock_log[1]; ++sock)
 	{
-	  recv_syslog_socket (conns[2].fd);
+	  if (conns[sock].fd > (-1) && FD_ISSET(conns[sock].fd , &readset ))
+	    {
+	      recv_syslog_socket (conns[sock].fd);
+	    }
 	}
 #endif
 
@@ -5496,29 +5616,6 @@ void sh_forward_free_all ()
 }
 
 #ifdef INET_SYSLOG
-
-#ifdef HAVE_INET_ATON
-static char * my_inet_ntoa(struct in_addr in)
-{
-  return inet_ntoa(in);
-}
-#else
-static char * my_inet_ntoa(struct in_addr in)
-{
-  unsigned char a, b, c, d;
-  static char   foo[16];
-  char          bar[4];
-  memcpy (bar, &(in.s_addr), 4); /* memory alignment (?) */
-  memcpy (&a, &bar[0], 1);
-  memcpy (&b, &bar[1], 1);
-  memcpy (&c, &bar[2], 1);
-  memcpy (&d, &bar[3], 1);
-  sprintf(foo, "%d.%d.%d.%d",                       /* known to fit  */
-	  (int) a, (int) b, (int) c, (int) d);
-  return foo;
-}
-#endif
-
 
 /* Unlike Linux / FreeBSD, most systems don't define the stuff below
  * in syslog.h
@@ -5668,6 +5765,10 @@ static int recv_syslog_socket (int fd)
   struct sockaddr_in from;
   char errbuf[SH_ERRBUF_SIZE];
 
+  struct sh_sockaddr ss;
+  struct sockaddr * sa = (struct sockaddr *) &from;
+  char   namebuf[SH_BUFSIZE];
+
   /* The 6th argument in recvfrom is *socklen_t in Linux and *BSD, 
    * but *int everywhere else. Because socklen_t is unsigned int, there
    * should be no problem as long as  sizeof(struct sockaddr_in) < INT_MAX ...
@@ -5689,6 +5790,9 @@ static int recv_syslog_socket (int fd)
 
   res = recvfrom(fd,  buf,  1047, 0, (struct sockaddr *) &from, &fromlen);
 
+  sh_ipvx_save(&ss, sa->sa_family, &from);
+  sh_ipvx_ntoa(namebuf, sizeof(namebuf), &ss);
+
   if (res > 0)
     {
       res = (res < 1047) ? res : 1047; 
@@ -5708,12 +5812,12 @@ static int recv_syslog_socket (int fd)
 	  TPT(( 0, FIL__, __LINE__, _("msg=<UDP error: %d>\n"), res));
 	  sh_error_handle((-1), FIL__, __LINE__, res, MSG_ERR_SYSLOG,
 			  sh_error_message(res, errbuf, sizeof(errbuf)), 
-			  my_inet_ntoa(from.sin_addr));
+			  namebuf);
 	  SL_RETURN( (-1), _("recv_syslog_socket"));
 	}      
 
-      TPT(( 0, FIL__, __LINE__, _("msg=<UDP message from %s>\n"),
-	    my_inet_ntoa(from.sin_addr)));
+      TPT(( 0, FIL__, __LINE__, _("msg=<UDP message from %s>\n"), namebuf ));
+
       ptr = bptr;
       i = 0;
       if (*ptr == '<') 
@@ -5768,7 +5872,7 @@ static int recv_syslog_socket (int fd)
       TPT(( 0, FIL__, __LINE__, _("msg=<UDP error: %d>\n"), res));
       sh_error_handle((-1), FIL__, __LINE__, res, MSG_ERR_SYSLOG,
 		      sh_error_message(res, errbuf, sizeof(errbuf)), 
-		      my_inet_ntoa(from.sin_addr));
+		      namebuf);
 
       /* don't accept anything the next 2 seconds
        */
@@ -5783,16 +5887,72 @@ int set_syslog_active(const char * c)
   return sh_util_flagval(c, &enable_syslog_socket);
 }
 
-/* callerFlag == S_TRUE means override the enable_syslog_socket flag
- */
-int create_syslog_socket (int callerFlag)
+static int do_syslog_socket(int domain, int type, int protocol,
+			    struct sockaddr * sa, int salen)
 {
   int                flag = 1;  /* non-zero to enable an option */
   int sock;
   int errnum;
   int res;
+
+  /* create the socket, bind() it and listen()
+   */
+  sock = socket(domain, type, protocol);
+
+  if (sock < 0)
+    {
+      errnum = errno; 
+      sh_forward_printerr (_("syslog socket"), errnum, 514, __LINE__);
+      return -1;
+    }
+  (void) retry_fcntl( FIL__, __LINE__, sock, F_SETFD, 1 );
+  
+  if ( setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+		  (void *) &flag, sizeof(flag)) < 0 )
+    {
+      errnum = errno;
+      sh_forward_printerr (_("syslog setsockopt SO_REUSEADDR"), 
+			   errnum, 514, __LINE__);
+      return -1;
+    }
+
+#if defined(SO_BSDCOMPAT)
+  if ( setsockopt(sock, SOL_SOCKET, SO_BSDCOMPAT,
+		  (void *) &flag, sizeof(flag)) < 0 )
+    {
+      errnum = errno;
+      sh_forward_printerr (_("syslog setsockopt SO_BSDCOMPAT"), 
+			   errnum, 514, __LINE__);
+      return -1;
+    }
+#endif
+  
+  res = bind(sock, sa, salen);
+
+  if ( res < 0) 
+    {
+      errnum = errno;
+      sh_forward_printerr (_("syslog bind"), errnum, 514, __LINE__);
+      sl_close_fd(FIL__, __LINE__, sock);
+      return -1;
+    }
+  return sock;
+}
+
+/* callerFlag == S_TRUE means override the enable_syslog_socket flag
+ */
+int create_syslog_socket (int callerFlag)
+{
+  int sock;
+
+#if defined(USE_IPVX)
+  struct addrinfo *ai;
+  struct addrinfo *p;
+  struct addrinfo hints;
+#else
   struct sockaddr_in addr;
   int addrlen      = sizeof(addr);
+#endif
 
   SL_ENTER(_("create_syslog_socket"));
 
@@ -5804,62 +5964,67 @@ int create_syslog_socket (int callerFlag)
 	   */
 	  TPT(( 0, FIL__, __LINE__, _("msg=<close syslog socket>\n")));
 	  sl_close_fd(FIL__, __LINE__, syslog_sock);
-	  syslog_sock = -1;
+	  syslog_sock[0] = -1;
 	}
       SL_RETURN((-1), _("create_syslog_socket"));
     }
 
   sh_forward_printerr (NULL, 0, 514, __LINE__);
 
-  /* create the socket, bind() it and listen()
-   */
-  sock = socket(AF_INET, SOCK_DGRAM, 0);
+#if !defined(USE_IPVX)
 
-  if (sock < 0)
-    {
-      errnum = errno; 
-      sh_forward_printerr (_("syslog socket"), errnum, 514, __LINE__);
-      SL_RETURN((-1), _("create_syslog_socket"));
-    }
-  (void) retry_fcntl( FIL__, __LINE__, sock, F_SETFD, 1 );
-  
-  if ( setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
-		  (void *) &flag, sizeof(flag)) < 0 )
-    {
-      errnum = errno;
-      sh_forward_printerr (_("syslog setsockopt SO_REUSEADDR"), 
-			   errnum, 514, __LINE__);
-      SL_RETURN((-1), _("create_syslog_socket"));
-    }
-
-#if defined(SO_BSDCOMPAT)
-  if ( setsockopt(sock, SOL_SOCKET, SO_BSDCOMPAT,
-		  (void *) &flag, sizeof(flag)) < 0 )
-    {
-      errnum = errno;
-      sh_forward_printerr (_("syslog setsockopt SO_BSDCOMPAT"), 
-			   errnum, 514, __LINE__);
-      SL_RETURN((-1), _("create_syslog_socket"));
-    }
-#endif
-  
   memset(&addr, 0, sizeof(addr));
   addr.sin_family      = AF_INET;
   addr.sin_port        = htons(514);
   
-  res = bind(sock, (struct sockaddr *) &addr, addrlen);
+  do_syslog_socket(AF_INET, SOCK_DGRAM, 0, (struct sockaddr *) &addr, addrlen);
 
-  if ( res < 0) 
+  if (sock >= 0) {
+    syslog_sock[0] = sock;
+    syslog_sock_n  = 1;
+  }
+
+#else
+  memset (&hints, '\0', sizeof (hints));
+  hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG;
+  hints.ai_socktype = SOCK_DGRAM;
+  if (getaddrinfo (NULL, "syslog", &hints, &ai) != 0)
     {
       errnum = errno;
-      sh_forward_printerr (_("syslog bind"), errnum, 514, __LINE__);
-      sl_close_fd(FIL__, __LINE__, sock);
+      sh_forward_printerr (_("getaddrinfo"), errnum, 514, __LINE__);
+      sl_close_fd (FIL__, __LINE__, sock);
       SL_RETURN((-1), _("create_syslog_socket"));
     }
+  
+  p = ai;
 
-  syslog_sock = sock;
+  while (p != NULL && syslog_sock_n < SH_SOCKMAX)
+    {
+      sock = do_syslog_socket(p->ai_family, p->ai_socktype, p->ai_protocol,
+			      p->ai_addr, p->ai_addrlen);
+      
+      if (sock >= 0) {
+	if (syslog_sock_n < SH_SOCKMAX) {
+	  syslog_sock[syslog_sock_n] = sock;
+	  ++syslog_sock_n;
+	}
+	else {
+	  sl_close_fd (FIL__, __LINE__, sock);
+	}    
+      } else if (sock == -1) {
+	freeaddrinfo (ai);
+	goto end;
+      }
+      p = p->ai_next;
+    }
+  freeaddrinfo (ai);
+#endif
 
-  SL_RETURN((sock), _("create_syslog_socket"));
+ end:
+  if (syslog_sock_n > 1)
+    SH_MINSOCK += (syslog_sock_n - 1);
+
+  SL_RETURN((syslog_sock_n), _("create_syslog_socket"));
 }
 /* #ifdef INET_SYSLOG */
 #endif

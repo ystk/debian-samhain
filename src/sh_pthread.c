@@ -15,6 +15,11 @@ SH_MUTEX_INIT(mutex_pwent,        PTHREAD_MUTEX_INITIALIZER);
 SH_MUTEX_INIT(mutex_readdir,      PTHREAD_MUTEX_INITIALIZER);
 SH_MUTEX_INIT(mutex_thread_nolog, PTHREAD_MUTEX_INITIALIZER);
 
+int sh_pthread_setsigmask(int how, const void *set, void *oldset)
+{
+  return pthread_sigmask(how, (const sigset_t *)set, (sigset_t *)oldset);
+}
+
 void sh_pthread_mutex_unlock (void *arg)
 {
   (void) pthread_mutex_unlock ((pthread_mutex_t *)arg);
@@ -286,6 +291,15 @@ void sh_RMutexUnlock(void * arg)
   pthread_mutex_unlock(&tok->lock);
 }
 #endif
+
+#else
+
+#include <signal.h>
+
+int sh_pthread_setsigmask(int how, const void *set, void *oldset)
+{
+  return sigprocmask(how, (const sigset_t *)set, (sigset_t *)oldset);
+}
 
 
 #endif

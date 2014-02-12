@@ -1033,12 +1033,13 @@ static void msg_report(int severity, const sh_string * alias,
   if (rule) {
     mmm = replace_captures(record->message, rule->ovector, 
 			   rule->ovecnum);
+    rule->ovecnum = 0;
     msg = sh_util_safe_name_keepspace (sh_string_str(mmm));
   }
   else {
     msg = sh_util_safe_name_keepspace (sh_string_str(record->message));
   }
-  tmp = sh_util_safe_name (record->filename);
+  tmp = sh_util_safe_name_keepspace (record->filename);
   ttt = sh_util_safe_name_keepspace (sh_string_str(record->timestr));
   sh_error_handle (severity, FIL__, __LINE__, 0, MSG_LOGMON_REP,
 		   msg,
@@ -1069,7 +1070,7 @@ static void sum_report(int severity, const sh_string * alias,
   char * msg;
 
   SH_MUTEX_LOCK(mutex_thread_nolog);
-  tmp = sh_util_safe_name (sh_string_str(path));
+  tmp = sh_util_safe_name_keepspace (sh_string_str(path));
   msg = sh_util_safe_name_keepspace (sh_string_str(message));
   sh_error_handle (severity, FIL__, __LINE__, 0, MSG_LOGMON_SUM,
 		   msg,
@@ -1132,7 +1133,8 @@ static struct sh_ceval * find_counter(struct sh_geval * rule,
 /* process the counter for a SUM rule
  */
 static int  process_counter(struct sh_ceval * counter, 
-			    struct sh_geval * rule,  struct sh_logrecord * record)
+			    struct sh_geval * rule,  
+			    struct sh_logrecord * record)
 {
   int retval = -1;
   time_t  now;
@@ -1141,6 +1143,7 @@ static int  process_counter(struct sh_ceval * counter,
     {
       counter->counted_str = replace_captures(record->message, rule->ovector, 
 					      rule->ovecnum);
+      rule->ovecnum        = 0;
       counter->filename    = sh_string_new_from_lchar(record->filename,
 						      strlen(record->filename));
       DEBUG("debug: counted_str after replace: %s\n", 

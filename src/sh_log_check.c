@@ -8,6 +8,23 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#ifdef HAVE_DIRENT_H
+#include <dirent.h>
+#define NAMLEN(dirent) sl_strlen((dirent)->d_name)
+#else
+#define dirent direct
+#define NAMLEN(dirent) (dirent)->d_namlen
+#ifdef HAVE_SYS_NDIR_H
+#include <sys/ndir.h>
+#endif
+#ifdef HAVE_SYS_DIR_H
+#include <sys/dir.h>
+#endif
+#ifdef HAVE_NDIR_H
+#include <ndir.h>
+#endif
+#endif
+
 #if !defined(O_NONBLOCK)
 #if defined(O_NDELAY)
 #define O_NONBLOCK  O_NDELAY
@@ -38,6 +55,7 @@
 #include "sh_log_correlate.h"
 #include "sh_log_mark.h"
 #include "sh_log_repeat.h"
+#include "sh_extern.h"
 
 /* List of supported logfile types, format is
  * { 
@@ -56,6 +74,7 @@ struct sh_logfile_type sh_logtypes_def[] = {
 #if defined(HAVE_SYS_ACCT_H)
     {  "PACCT",  sh_read_pacct,   sh_parse_pacct,  NULL },
 #endif
+    {  "SHELL",  sh_read_shell,   sh_parse_shell,  NULL },
 };
 
 /* -------------------------- Internal Stuff -------------------------- */
@@ -66,21 +85,17 @@ struct logfile_record {
   fpos_t offset;
 };
 
+static int    do_checkpoint_cleanup = S_FALSE;
+
 static char * save_dir = NULL;
 
-static void * sh_dummy_path = NULL;
-
-static char * build_path (struct sh_logfile * record)
+static const char * get_save_dir(void)
 {
-  size_t plen;
-  int    retval;
-  char * path = NULL;
-
-  sh_dummy_path = (void *)&path;
+  int retval;
 
   if (!save_dir)
     {
-      save_dir = sh_util_strdup(DEFAULT_PIDDIR);
+      save_dir = sh_util_strdup(DEFAULT_DATAROOT);
 
       SH_MUTEX_LOCK(mutex_thread_nolog);
       retval = tf_trust_check (save_dir, SL_YESPRIV);
@@ -91,16 +106,87 @@ static char * build_path (struct sh_logfile * record)
 	  return(NULL);
 	}
     }
+  return save_dir;
+}
 
-  plen = strlen(save_dir);
+static void clean_dir()
+{
+  DIR * dir;
+  struct dirent * entry;
 
-  if (SL_TRUE == sl_ok_adds(plen, 130))
+  const char * dirpath;
+
+  if (S_FALSE == do_checkpoint_cleanup)
+    return;
+
+  dirpath = get_save_dir();
+
+  if (dirpath)
     {
-      plen += 130; /* 64 + 64 + 2 */
-      path = SH_ALLOC(plen);
-      (void) sl_snprintf(path, plen, "%s/%lu_%lu", save_dir,
-			 (unsigned long) record->device_id, 
-			 (unsigned long) record->inode);
+      dir = opendir(dirpath);
+      if (dir)
+	{
+	  unsigned long a, b;
+	  int retval;
+	  char c;
+	  size_t dlen = strlen(dirpath) + 1;
+	  time_t now  = time(NULL);
+
+	  while (NULL != (entry = readdir(dir)))
+	    {
+	      retval = sscanf(entry->d_name, "%lu_%lu%c", &a, &b, &c);
+
+	      if (2 == retval)
+		{
+		  struct stat buf;
+		  char * path;
+		  size_t  plen = strlen(entry->d_name) + 1;
+
+		  if (SL_TRUE == sl_ok_adds(plen, dlen))
+		    {
+		      plen += dlen;
+		      path = SH_ALLOC(plen);
+		      (void) sl_snprintf(path, plen, "%s/%s", 
+					 dirpath,entry->d_name);
+
+		      if (0 == retry_lstat(FIL__, __LINE__, path, &buf) &&
+			  S_ISREG(buf.st_mode))
+			{
+			  if (buf.st_mtime < now && 
+			      (now - buf.st_mtime) > 2592000) /* 30 days */
+			    {
+			      if (0 == tf_trust_check (path, SL_YESPRIV))
+				{
+				  unlink(path);
+				}
+			    }
+			}
+		    }
+		}
+	    }
+	  closedir(dir);
+	}
+    }
+}
+
+static char * build_path (struct sh_logfile * record)
+{
+  size_t plen;
+  char * path = NULL;
+  const char * dir = get_save_dir();
+
+  if (dir)
+    {
+      plen = strlen(dir);
+
+      if (SL_TRUE == sl_ok_adds(plen, 130))
+	{
+	  plen += 130; /* 64 + 64 + 2 */
+	  path = SH_ALLOC(plen);
+	  (void) sl_snprintf(path, plen, "%s/%lu_%lu", dir,
+			     (unsigned long) record->device_id, 
+			     (unsigned long) record->inode);
+	}
     }
 
   return path;
@@ -110,6 +196,7 @@ static void save_pos (struct sh_logfile * record)
 {
   char * path;
   FILE * fd;
+  mode_t mask;
   struct logfile_record save_rec;
 
   path = build_path(record);
@@ -122,7 +209,10 @@ static void save_pos (struct sh_logfile * record)
 	  return;
 	}
 
+      mask = umask(S_IWGRP | S_IWOTH);
       fd = fopen(path, "wb");
+      (void) umask(mask);
+
       if (fd)
 	{
 	  save_rec.device_id = record->device_id;
@@ -236,7 +326,7 @@ int sh_add_watch (const char * str)
       return -3;
     }
 
-  if (splits[1][0] != '/')
+  if (splits[1][0] != '/' && 0 != strcmp(splits[0], _("SHELL")))
     {
       sh_string * msg =  sh_string_new(0);
       sh_string_add_from_char(msg, _("Logfile path not absolute: "));
@@ -257,7 +347,10 @@ int sh_add_watch (const char * str)
   thisfile = SH_ALLOC(sizeof(struct sh_logfile));
 
   thisfile->filename     = filename;
-  thisfile->flags        = SH_LOGFILE_REWIND;
+  if (0 == strcmp(splits[0], _("SHELL")))
+    thisfile->flags        = SH_LOGFILE_NOFILE;
+  else
+    thisfile->flags        = SH_LOGFILE_REWIND;
   thisfile->inode        = 0;
   thisfile->device_id    = 0;
   thisfile->fp           = NULL;
@@ -322,46 +415,49 @@ int sh_add_watch (const char * str)
 
   /* Try reading saved offset. On success clear rewind flag.
    */
-  if (0 == stat(thisfile->filename, &buf))
+  if ((thisfile->flags & SH_LOGFILE_NOFILE) == 0)
     {
-      if (S_ISREG(buf.st_mode)
-#ifdef S_ISLNK
-	  || S_ISLNK(buf.st_mode)
-#endif 
-	  )
+      if (0 == stat(thisfile->filename, &buf))
 	{
-	  thisfile->inode     = buf.st_ino;
-	  thisfile->device_id = buf.st_dev;
-	  
-	  if (0 != read_pos(thisfile))
+	  if (S_ISREG(buf.st_mode)
+#ifdef S_ISLNK
+	      || S_ISLNK(buf.st_mode)
+#endif 
+	      )
 	    {
-	      thisfile->flags &= ~SH_LOGFILE_REWIND;
+	      thisfile->inode     = buf.st_ino;
+	      thisfile->device_id = buf.st_dev;
+	      
+	      if (0 != read_pos(thisfile))
+		{
+		  thisfile->flags &= ~SH_LOGFILE_REWIND;
+		}
+	    }
+	  else if (S_ISFIFO(buf.st_mode))
+	    {
+	      thisfile->inode      = buf.st_ino;
+	      thisfile->device_id  = buf.st_dev;
+	      thisfile->flags     |= SH_LOGFILE_PIPE;
 	    }
 	}
-      else if (S_ISFIFO(buf.st_mode))
+      else
 	{
-	  thisfile->inode      = buf.st_ino;
-	  thisfile->device_id  = buf.st_dev;
-	  thisfile->flags     |= SH_LOGFILE_PIPE;
+	  sh_string * msg =  sh_string_new(0);
+	  sh_string_add_from_char(msg, _("Logfile is not a regular file, link, or named pipe: "));
+	  sh_string_add_from_char(msg, splits[1]);
+	  
+	  SH_MUTEX_LOCK(mutex_thread_nolog);
+	  sh_error_handle(SH_ERR_ERR, FIL__, __LINE__, 0, MSG_E_SUBGEN,
+			  sh_string_str(msg),
+			  _("sh_add_watch"));
+	  SH_MUTEX_UNLOCK(mutex_thread_nolog);
+	  sh_string_destroy(&msg);
+	  
+	  SH_FREE(filename);
+	  SH_FREE(thisfile);
+	  SH_FREE(new);
+	  return -1;
 	}
-    }
-  else
-    {
-      sh_string * msg =  sh_string_new(0);
-      sh_string_add_from_char(msg, _("Logfile is not a regular file, link, or named pipe: "));
-      sh_string_add_from_char(msg, splits[1]);
-      
-      SH_MUTEX_LOCK(mutex_thread_nolog);
-      sh_error_handle(SH_ERR_ERR, FIL__, __LINE__, 0, MSG_E_SUBGEN,
-		      sh_string_str(msg),
-		      _("sh_add_watch"));
-      SH_MUTEX_UNLOCK(mutex_thread_nolog);
-      sh_string_destroy(&msg);
-      
-      SH_FREE(filename);
-      SH_FREE(thisfile);
-      SH_FREE(new);
-      return -1;
     }
 
   sh_watched_logs        = thisfile;
@@ -379,13 +475,18 @@ void sh_dump_watches()
       thisfile        = sh_watched_logs;
       sh_watched_logs = thisfile->next;
 
-      if ((thisfile->flags & SH_LOGFILE_PIPE) == 0)
+      if ((thisfile->flags & SH_LOGFILE_NOFILE) == 0 &&
+	  (thisfile->flags & SH_LOGFILE_PIPE) == 0)
 	{
 	  save_pos(thisfile);
 	}
 
-      if (thisfile->fp)
-	sl_fclose(FIL__, __LINE__, thisfile->fp);
+      if ((thisfile->flags & SH_LOGFILE_NOFILE) == 0)
+	{
+	  if (thisfile->fp)
+	    sl_fclose(FIL__, __LINE__, thisfile->fp);
+	}
+
       if (thisfile->filename)
 	SH_FREE(thisfile->filename);
       SH_FREE(thisfile);
@@ -676,7 +777,7 @@ int sh_open_for_reader (struct sh_logfile * logfile)
  */
 sh_string * sh_default_reader (sh_string * s, struct sh_logfile * logfile)
 {
-  int         status;
+  volatile int         status;
   char * tmp;
 
  start_read:
@@ -711,6 +812,138 @@ sh_string * sh_default_reader (sh_string * s, struct sh_logfile * logfile)
 
   if (0 != sh_open_for_reader(logfile))
     goto start_read;
+
+  return NULL;
+}
+
+struct task_entry
+{
+  sh_tas_t task;
+  struct task_entry * next;
+};
+
+static struct task_entry * tasklist = NULL;
+
+static struct task_entry * task_find(FILE * fp)
+{
+  struct task_entry * entry = tasklist;
+  while (entry)
+    {
+      if (entry->task.pipe == fp)
+	return (entry);
+      entry = entry->next;
+    }
+  return NULL;
+}
+ 
+static void task_remove(struct task_entry * task)
+{
+  struct task_entry * entry = tasklist;
+  struct task_entry * prev  = tasklist;
+
+  while (entry)
+    {
+      if (entry == task)
+	{
+	  if (entry == tasklist)
+	    {
+	      tasklist = entry->next;
+	      SH_FREE(entry);
+	      return;
+	    }
+	  else
+	    {
+	      prev->next = entry->next;
+	      SH_FREE(entry);
+	      return;
+	    }
+	}
+      prev  = entry;
+      entry = entry->next;
+    }
+  return;
+}
+ 
+static void task_add(struct task_entry * entry)
+{
+  entry->next = tasklist;
+  tasklist    = entry;
+  return;
+}
+ 
+sh_string * sh_command_reader (sh_string * s, struct sh_logfile * logfile)
+{
+  struct task_entry * entry;
+
+  struct  sigaction   new_act;
+  struct  sigaction   old_act;
+
+  volatile int        status;
+  char * tmp;
+
+ start_read:
+
+  if (logfile->fp)
+    {
+      /* ignore SIGPIPE (instead get EPIPE if connection is closed)
+       */
+      memset(&new_act, 0, sizeof(struct  sigaction));
+      new_act.sa_handler = SIG_IGN;
+      (void) retry_sigaction (FIL__, __LINE__, SIGPIPE, &new_act, &old_act);
+
+      /* Result cannot be larger than 8192, thus cast is ok
+       */
+      status = (int) sh_string_read(s, logfile->fp, 8192);
+
+      /* fprintf(stderr, "FIXME: %s\n", sh_string_str(s)); */
+
+      /* restore old signal handler
+       */
+      (void) retry_sigaction (FIL__, __LINE__, SIGPIPE, &old_act, NULL);
+
+      if (status <= 0)
+	{
+	  entry = task_find(logfile->fp);
+	  sh_ext_pclose (&(entry->task));
+	  task_remove(entry);
+
+	  logfile->fp = NULL;
+	  sh_string_destroy(&s);
+
+	  if (status == 0)
+	    {
+	      return NULL;
+	    }
+
+	  SH_MUTEX_LOCK(mutex_thread_nolog);
+	  tmp = sh_util_safe_name (logfile->filename);
+	  sh_error_handle((-1), FIL__, __LINE__, 0, MSG_LOGMON_EREAD,
+			  tmp);
+	  SH_FREE(tmp);
+	  SH_MUTEX_UNLOCK(mutex_thread_nolog);
+
+	  return NULL;
+	}
+      return s;
+    }
+
+  entry = SH_ALLOC(sizeof(struct task_entry));
+
+  status = sh_ext_popen_init (&(entry->task), logfile->filename);
+  if (0 == status)
+    {
+      task_add(entry);
+      logfile->fp = entry->task.pipe;
+      goto start_read;
+    }
+  else
+    {
+      SH_FREE(entry);
+      SH_MUTEX_LOCK(mutex_thread_nolog);
+      sh_error_handle(SH_ERR_ALL, FIL__, __LINE__, status, MSG_E_SUBGEN, 
+                      _("Could not open pipe"), _("sh_command reader"));
+      SH_MUTEX_UNLOCK(mutex_thread_nolog);
+    }
 
   return NULL;
 }
@@ -970,6 +1203,7 @@ int sh_log_check_check(void)
       sh_check_watches();
       sh_keep_match();
       sh_log_mark_check();
+      clean_dir();
     }
   SH_MUTEX_UNLOCK(mutex_logmon_check);
 
@@ -1003,6 +1237,7 @@ int sh_log_check_cleanup(void)
 /*********************  OPTIONS **********************/
 
 static int sh_logmon_set_active  (const char *str);
+static int sh_logmon_set_clean  (const char *str);
 static int sh_logmon_set_interval(const char *str);
 static int sh_logmon_add_watch (const char * str);
 static int sh_logmon_add_group (const char * str);
@@ -1022,6 +1257,10 @@ sh_rconf sh_log_check_table[] = {
     {
         N_("logmoninterval"),
         sh_logmon_set_interval,
+    },
+    {
+        N_("logmonclean"),
+        sh_logmon_set_clean,
     },
     {
         N_("logmonwatch"),
@@ -1090,6 +1329,19 @@ static int sh_logmon_set_active(const char *str)
   SL_ENTER(_("sh_logmon_set_active"));
 
   value = sh_util_flagval(str, &ShLogmonActive);
+
+  SL_RETURN((value), _("sh_logmon_set_active"));
+}
+
+/* Decide if we're active.
+ */
+static int sh_logmon_set_clean(const char *str) 
+{
+  int value;
+    
+  SL_ENTER(_("sh_logmon_set_active"));
+
+  value = sh_util_flagval(str, &do_checkpoint_cleanup);
 
   SL_RETURN((value), _("sh_logmon_set_active"));
 }

@@ -33,10 +33,36 @@
  *
  **************************************************/
 
+/* IPv6 */
+#if defined(HAVE_GETNAMEINFO) && defined(HAVE_GETADDRINFO)
+
+#if defined(SH_COMPILE_STATIC) && defined(__linux__)
+#undef USE_IPVX
+#define SH_SOCKMAX 1
+#else
+
+#if defined(USE_IPV4)
+#undef USE_IPVX
+#else
+#define USE_IPVX 1
+#endif
+
+#define SH_SOCKMAX 8
+#endif
+
+#else
+#undef USE_IPVX
+#define SH_SOCKMAX 1
+#endif
+
+/* end IPv6 */
+
 #define REPLACE_OLD
 
-/* Standard buffer sizes.
+/* Standard buffer sizes. 
+ * IPv6 is 8 groups of 4 hex digits seperated by colons.
  */
+#define SH_IP_BUF        48
 #define SH_MINIBUF       64
 #define SH_BUFSIZE     1024
 #define SH_MAXBUF      4096

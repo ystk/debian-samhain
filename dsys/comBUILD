@@ -69,7 +69,7 @@ commandBUILD() {
 	printINFO "Building version: ${src_version}, host: ${host}, os: ${arch}, format: ${format}, packed: password=${bd_packed}"
     fi
 
-    tmpdir=`eval echo "/tmp/sh_${src_version}_${arch}_${format}_$$"`
+    tmpdir=`eval echo "${temp_dir}/sh_${src_version}_${arch}_${format}_$$"`
 
     #---------------------------------------------------------------------
     # Create temporary build directory on build host.

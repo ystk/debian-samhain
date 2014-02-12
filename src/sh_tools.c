@@ -88,6 +88,7 @@
 #define SH_NEED_GETHOSTBYXXX
 #include "sh_static.h"
 #include "sh_pthread.h"
+#include "sh_ipvx.h"
 
 #undef  FIL__
 #define FIL__  _("sh_tools.c")
@@ -126,6 +127,53 @@ char * errorExplain (int err_num, char * buffer, size_t len)
  */
 int sh_tools_iface_is_present(char *str)
 {
+#if defined(USE_IPVX)
+  struct addrinfo *ai;
+  struct addrinfo hints;
+  int             res;
+
+  memset (&hints, '\0', sizeof (hints));
+  hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG;
+  hints.ai_socktype = SOCK_STREAM;
+  res = getaddrinfo (str, _("2543"), &hints, &ai);
+  
+  if (res == 0)
+    {
+      struct addrinfo *p = ai;
+      while (p != NULL)
+	{
+	  int fd = socket (p->ai_family, p->ai_socktype,
+			   p->ai_protocol);
+
+	  if (fd < 0)
+	    {
+	      freeaddrinfo (ai);
+	      return 0;
+	    }
+
+	  if (bind (fd, p->ai_addr, p->ai_addrlen) != 0)
+	    {
+	      /* bind() fails for access reasons, iface exists
+	       */
+	      if (errno == EACCES || errno == EADDRINUSE)
+		{
+		  sl_close_fd (FIL__, __LINE__, fd);
+		  freeaddrinfo (ai);
+		  return 1;
+		}
+
+	      sl_close_fd (FIL__, __LINE__, fd);
+	      freeaddrinfo (ai);
+	      return 0;
+	    }
+
+	  sl_close_fd (FIL__, __LINE__, fd);
+	  freeaddrinfo (ai);
+	  return 1;
+	  /* p = p->ai_next; */ 
+	}
+    }
+#else
   struct sockaddr_in sin;
   int sd;
 
@@ -157,6 +205,7 @@ int sh_tools_iface_is_present(char *str)
       sl_close_fd(FIL__, __LINE__, sd);
       return 1;
     }
+#endif
   return 0;
 }
 
@@ -427,17 +476,6 @@ char * sh_tools_errmessage (int tellme, char * errbuf, size_t len)
     return errbuf;
 }
 
-int is_numeric (const char * address)
-{
-  int j;
-  int len = sl_strlen(address);
-  
-  for (j = 0; j < len; ++j)
-    if ( (address[j] < '0' || address[j] > '9') && address[j] != '.')
-      return (1 == 0);
-  return (1 == 1);
-}
-
 #if defined (SH_WITH_SERVER)
 
 int get_open_max ()
@@ -467,7 +505,7 @@ int get_open_max ()
 
 typedef struct _sin_cache {
   char * address;
-  struct sockaddr_in sin;
+  struct sh_sockaddr  saddr;
   struct _sin_cache * next;
 } sin_cache;
 
@@ -502,6 +540,7 @@ int set_reverse_lookup (const char * c)
   return sh_util_flagval(c, &DoReverseLookup);
 }
 
+#if !defined(USE_IPVX)
 int connect_port (char * address, int port, 
 		  char * ecall, int * errnum, char * errmsg, int errsiz)
 {
@@ -534,9 +573,9 @@ int connect_port (char * address, int port,
       while (check_cache && check_cache->address)
 	{
 	  if ( 0 == sl_strncmp(check_cache->address, 
-			       address, sl_strlen(address)))
+			       address, sl_strlen(address)) )
 	    {
-	      memcpy (&sinr, &(check_cache->sin), sizeof(struct sockaddr_in));
+	      memcpy (&sinr, &((check_cache->saddr).sin), sizeof(struct sockaddr_in));
 	      sinr.sin_family = AF_INET;
 	      sinr.sin_port   = htons (port);
 	      cached = 1;
@@ -656,7 +695,9 @@ int connect_port (char * address, int port,
 	  check_cache          = SH_ALLOC(sizeof(sin_cache));
 	  check_cache->address = SH_ALLOC(sl_strlen(address) + 1);
 	  sl_strlcpy (check_cache->address, address, sl_strlen(address) + 1);
-	  memcpy(&(check_cache->sin), &sinr, sizeof(struct sockaddr_in));
+
+	  sh_ipvx_save(&(check_cache->saddr), AF_INET, (struct sockaddr *) &sinr);
+
 	  ++cached_addr;
 	  
 	  if (conn_cache)
@@ -709,6 +750,248 @@ int connect_port (char * address, int port,
   retval = (fail < 0) ? (-1) : fd;
   SL_RETURN(retval, _("connect_port"));
 }
+#else
+int connect_port (char * address, int port, 
+		  char * ecall, int * errnum, char * errmsg, int errsiz)
+{
+  struct sockaddr_in *sin;
+  struct sockaddr_in6 *sin6;
+  struct sh_sockaddr ss;
+  sin_cache * check_cache = conn_cache;
+  int    cached = 0;
+  int    fail   = 0;
+  int    fd     = -1;
+  int    status = 0;
+
+  int    retval;
+  char   errbuf[SH_ERRBUF_SIZE];
+
+  SL_ENTER(_("connect_port"));
+
+  /* paranoia -- should not happen
+   */
+  if (cached_addr > 128)
+    delete_cache();
+
+  if (check_cache != NULL)
+    {
+      while (check_cache && check_cache->address)
+	{
+	  if ( 0 == sl_strcmp(check_cache->address, address) )
+	    {
+	      memcpy (&ss, &(check_cache->saddr), sizeof(struct sh_sockaddr));
+	      switch (ss.ss_family) 
+		{
+		case AF_INET:
+		  sin = &(ss.sin);
+		  sin->sin_port   = htons (port);
+		  cached = 1;
+		  break;
+		case AF_INET6:
+		  sin6 = &(ss.sin6);
+		  sin6->sin6_port  = htons (port);
+		  cached = 1;
+		  break;
+		default:
+		  break;
+		}
+	      break;
+	    }
+	  if (check_cache->next)
+	    check_cache = check_cache->next;
+	  else
+	    check_cache = NULL;
+	}
+    }
+
+  if (cached != 0)
+    {
+      fd = socket(ss.ss_family, SOCK_STREAM, 0);
+      if (fd < 0) 
+	{
+	  status = errno;
+	  fail   = (-1);
+	  sl_strlcpy(ecall, _("socket"), SH_MINIBUF);
+	  *errnum = status;
+	  sl_strlcpy(errmsg, sh_error_message (status, errbuf, sizeof(errbuf)), errsiz);
+	  sl_strlcat(errmsg, _(", address "), errsiz);
+	  sl_strlcat(errmsg, address, errsiz);
+	}
+
+
+      if (fail != (-1)) 
+	{
+	  int addrlen = SH_SS_LEN(ss);
+	
+	  if ( retry_connect(FIL__, __LINE__, fd, 
+			     sh_ipvx_sockaddr_cast(&ss), addrlen) < 0) 
+	    {
+	      status = errno;
+	      sl_strlcpy(ecall, _("connect"), SH_MINIBUF);
+	      *errnum = status;
+	      sl_strlcpy(errmsg, sh_error_message (status, errbuf, sizeof(errbuf)), errsiz);
+	      sl_strlcat(errmsg, _(", address "), errsiz);
+	      sl_strlcat(errmsg, address, errsiz);
+	      sl_close_fd(FIL__, __LINE__, fd);
+	      fail = (-1); 
+	    }
+	}
+
+      if (fail != 0)
+	{
+	  delete_cache();
+	  cached = 0;
+	}
+    }
+
+  if (cached == 0)
+    {
+      int    res;
+      char   sport[32];
+      struct addrinfo *ai;
+      struct addrinfo hints;
+
+      memset (&hints, '\0', sizeof (hints));
+      hints.ai_flags = AI_ADDRCONFIG;
+#if defined(AI_CANONNAME)
+      hints.ai_flags |= AI_CANONNAME;
+#endif 
+      hints.ai_family   = AF_UNSPEC;
+      hints.ai_socktype = SOCK_STREAM;
+      sl_snprintf(sport, sizeof(sport), "%d", port);
+
+      res = getaddrinfo (address, sport, &hints, &ai);
+      if (res != 0)
+	{
+	  fail = (-1);
+	  status = errno;
+	  sl_strlcpy(ecall, _("getaddrinfo"), SH_MINIBUF);
+	  *errnum = status;
+	  sl_strlcpy(errmsg, gai_strerror (res), errsiz);
+	  sl_strlcat(errmsg, _(", address "), errsiz);
+	  sl_strlcat(errmsg, address, errsiz);
+	}
+
+      if (fail != (-1) && (DoReverseLookup == S_TRUE) && !sh_ipvx_is_numeric(address))
+	{
+	  struct addrinfo *p = ai;
+	  int    success = 0;
+	  char hostname[SH_BUFSIZE];
+	  const char * canonical;
+
+#if defined(AI_CANONNAME)
+	  if (ai->ai_canonname && strlen(ai->ai_canonname) > 0)
+	    {
+	      canonical = ai->ai_canonname;
+	    }
+	  else
+	    {
+	      canonical = address;
+	    }
+#else
+	  canonical = address;
+#endif
+
+	  while (p != NULL)
+	    {
+	      int e = getnameinfo (p->ai_addr, p->ai_addrlen, 
+				   hostname, sizeof(hostname),
+				   NULL, 0, NI_NAMEREQD);
+	      
+	      if (e == 0)
+		{
+		  if (sl_strcasecmp(hostname, canonical) == 0)
+		    {
+		      success = 1;
+		      break;
+		    }
+		}
+	    
+	      p = p->ai_next;
+	    }
+
+	  if (success == 0)
+	    {
+	      sl_strlcpy(ecall, _("strcmp"), SH_MINIBUF);
+	      sl_strlcpy(errmsg, _("Reverse lookup failed: "), 
+			 errsiz);
+	      sl_strlcat(errmsg, address, errsiz);
+	      fail = -1;
+	      freeaddrinfo (ai);
+	    }
+	}
+
+      if (fail != (-1))
+	{
+	  struct addrinfo *p = ai;
+
+	  while (p != NULL)
+	    {
+	      if ( (SOCK_STREAM == p->ai_socktype) &&
+		   ((p->ai_family == AF_INET) || (p->ai_family == AF_INET6)) )
+		{
+		
+		  fd = socket(p->ai_family, SOCK_STREAM, 0);
+		  
+		  if (fd != (-1))
+		    {
+		      if (retry_connect(FIL__, __LINE__, fd, 
+					p->ai_addr, p->ai_addrlen) >= 0)
+			{
+			  /* put it into the cache
+			   */
+			  check_cache          = SH_ALLOC(sizeof(sin_cache));
+			  check_cache->address = SH_ALLOC(sl_strlen(address) + 1);
+			  sl_strlcpy (check_cache->address, address, sl_strlen(address) + 1);
+			  
+			  sh_ipvx_save(&(check_cache->saddr), p->ai_family, p->ai_addr);
+			  
+			  ++cached_addr;
+			  
+			  if (conn_cache)
+			    {
+			      if (conn_cache->next)
+				check_cache->next    = conn_cache->next;
+			      else
+				check_cache->next    = NULL;
+			      conn_cache->next     = check_cache;
+			    }
+			  else
+			    {
+			      check_cache->next    = NULL;
+			      conn_cache           = check_cache;
+			    }
+			  
+			  freeaddrinfo (ai);
+			  goto end;
+			}
+		      status = errno;
+		      sl_close_fd(FIL__, __LINE__, fd);
+		    }
+		  else
+		    {
+		      status = errno;
+		    }
+		}
+	      p = p->ai_next;
+	    }
+	  fail = (-1);
+	  freeaddrinfo (ai);
+
+	  sl_strlcpy(ecall, _("connect"), SH_MINIBUF);
+	  *errnum = status;
+	  sl_strlcpy(errmsg, sh_error_message (status, errbuf, sizeof(errbuf)), errsiz);
+	  sl_strlcat(errmsg, _(", address "), errsiz);
+	  sl_strlcat(errmsg, address, errsiz);
+	}
+    }
+
+ end:
+  retval = (fail < 0) ? (-1) : fd;
+  SL_RETURN(retval, _("connect_port"));
+
+}
+#endif
 
 int connect_port_2 (char * address1, char * address2, int port, 
 		    char * ecall, int * errnum, char * errmsg, int errsiz)

@@ -19,56 +19,67 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 DAEMON=${exec_prefix}/sbin/samhain
 NAME=samhain
 DESC="file integrity checker"
+PIDFILE=/var/run/${NAME}/${NAME}.pid
 
-test -f $DAEMON || exit 0
+test -x $DAEMON || exit 0
+
+. /lib/lsb/init-functions
 
 set -e
 
+# Check if a daemon is running
+running()
+{
+    # No pidfile, probably no daemon present
+    #
+    [ ! -f "$PIDFILE" ] && return 1
+    pid=`cat $PIDFILE`
+    # No pid, probably no daemon present
+    [ -z "$pid" ] && return 1
+
+    pidofproc -p $PIDFILE
+    return $?
+}
+
+
 case "$1" in
   start)
-        echo -n "Starting $DESC: "
-	#
-	# Remove a stale lockfile, if found
-	#
-	if test -f /var/samhain/.samhain_lock; then
-	    rm -f /var/samhain/.samhain_lock
-	fi
-	if ! test -d /var/run/samhain/; then
-            mkdir /var/run/samhain/
-            chmod o-rX /var/run/samhain/
-	fi
+        [ ! -e /var/run/${NAME} ] && mkdir -p /var/run/${NAME}
+        log_begin_msg "Starting $DESC: $NAME"
         start-stop-daemon --start --quiet --exec $DAEMON
-        echo "$NAME."
-	#
-	# The hiding kernel module
-	#
-	: # no kernel module
+        log_end_msg $?
         ;;
   stop)
-        echo -n "Stopping $DESC: "
-        start-stop-daemon --stop --quiet --oknodo --exec $DAEMON
-        echo "$NAME."
+        log_begin_msg "Stopping $DESC: $NAME"
+        start-stop-daemon --stop --quiet --retry 5 --oknodo --pidfile $PIDFILE  --name  $NAME 
+        log_end_msg $?
         ;;
-  reload|force-reload)
-        echo "Reloading $DESC configuration files."
+  reload)
+        log_begin_msg "Reloading $DESC configuration files: $NAME"
         start-stop-daemon --stop --signal 1 --quiet --exec $DAEMON
+        log_end_msg $?
   	;;
-  restart)
-        #
-        #       If the "reload" option is implemented, move the "force-reload"
-        #       option to the "reload" entry above. If not, "force-reload" is
-        #       just the same as "restart".
-        #
-        echo -n "Restarting $DESC: "
-        start-stop-daemon --stop --quiet --oknodo --exec $DAEMON
-        sleep 3
-        start-stop-daemon --start --quiet --exec $DAEMON
-        echo "$NAME."
+  restart|force-reload)
+        log_begin_msg "Restarting $DESC: $NAME"
+        start-stop-daemon --stop --quiet --retry 5 --oknodo --pidfile $PIDFILE  --name  $NAME 
+        for i in 1 2 3 ; do
+            if ! running; then break ; fi
+            sleep 1
+        done
+        if  ! running  ; then
+            start-stop-daemon --start --quiet --exec $DAEMON
+            log_end_msg $?
+        else
+            log_daemon_msg " ERROR: $DAEMON did not die in the expected time, will not reload"
+            log_end_msg 1
+        fi
+        ;;
+   status)
+        status_of_proc -p $PIDFILE $DAEMON $NAME && exit 0 || exit $?
         ;;
   *)
-        N=/etc/init.d/$NAME
-        echo "Usage: $N {start|stop|restart|reload|force-reload}" >&2
-        # echo "Usage: $N {start|stop|restart|force-reload}" >&2
+        N=/etc/init.d/${0##*/}
+        echo "Usage: $N {start|stop|restart|reload|force-reload|status}" >&2
         exit 1
         ;;
 esac

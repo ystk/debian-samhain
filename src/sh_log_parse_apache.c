@@ -389,7 +389,7 @@ struct sh_logrecord * sh_parse_apache (sh_string * logline, void * fileinfo)
 
       record->message   = sh_string_new_from_lchar(sh_string_str(logline), 
 						   sh_string_len(logline));
-      record->pid       = 0;
+      record->pid       = PID_INVALID;
 
       pcre_free(hstr); 
       return record;

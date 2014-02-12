@@ -324,6 +324,7 @@ daemontest_sighup () {
 	tmp=`grep CRIT $LOGFILE | grep -v Runtime | wc -l`
 	while [ $tmp -lt 2 ]; do
 	    one_sec_sleep
+	    let "count = count + 1" >/dev/null
 	    if [ $count -gt 12 ]; then
 		[ -z "$verbose" ] || log_msg_fail "policy count (after)";
 		return 1
@@ -348,7 +349,7 @@ daemontest_sighup () {
 
 daemontest_sigabrt () {
     PID=`cat $PIDFILE`
-    kill -ABRT $PID
+    kill -${3} $PID
 
     count=0
     while [ -f $LOGFILE.lock ]; do
@@ -401,11 +402,11 @@ testtime0 () {
     daemontest_sigusr2 $tcount 3;
 
     let "tcount = tcount + 1" >/dev/null
-    daemontest_sigabrt $tcount 1;
+    daemontest_sigabrt $tcount 1 ABRT;
     let "tcount = tcount + 1" >/dev/null
-    daemontest_sigabrt $tcount 2;
+    daemontest_sigabrt $tcount 2 TTIN;
     let "tcount = tcount + 1" >/dev/null
-    daemontest_sigabrt $tcount 3;
+    daemontest_sigabrt $tcount 3 ABRT;
 
     let "tcount = tcount + 1" >/dev/null
     daemontest_sighup  $tcount 1;

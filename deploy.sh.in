@@ -167,6 +167,11 @@ yule_conf="@sysconfdir@/yulerc"
 #
 yule_data="@mydataroot@"
 
+# The temporary directory to use. Default is '/tmp', but some
+# sites may mount this 'noexec'.
+#
+temp_dir="/tmp"
+
 #__END_CUT__
 
 # -----------------------------------------------------------------------
@@ -218,6 +223,7 @@ export format
 export yule_exec
 export yule_conf
 export yule_data
+export temp_dir
 
 # dialog
 #
@@ -328,6 +334,7 @@ showUNINSTALL() {
     echo "Options:"
     echo
     echo " --host=<hostname>      The host where you want to uninstall."
+    echo " --tmpdir=<path>        Temporary directory to use on the this host."
     echo
     { (exit 0); exit 0; }
 }
@@ -421,6 +428,7 @@ showBUILD() {
     echo "        create a packed executable. Defaults to empty (don't pack)"
     echo " --user=<username>      Login as <username> to the build host (root)."
     echo " --add-path=<path>      Append 'path' to the PATH variable on the build host."
+    echo " --tmpdir=<path>        Temporary directory to use on the build host."
     { (exit 0); exit 0; }
 }
 
@@ -450,6 +458,7 @@ showINSTALL() {
     echo " --no-start             Do not start the client after installation."
     echo " --local=<path>         Local command (executed twice: "
     echo "                        after config installation and before client startup)."
+    echo " --tmpdir=<path>        Temporary directory to use on the this host."
     { (exit 0); exit 0; }
 }
 
@@ -639,6 +648,13 @@ do
     ;;
   --arch=* | -arch=*)
     arch="$optarg"; export arch
+    ;;
+
+  --tmpdir | -tmpdir)
+    opt_prev=temp_dir
+    ;;
+  --tmpdir=* | -tmpdir=*)
+    temp_dir="$optarg"; export temp_dir
     ;;
 
   -o | --logfile | -logfile)

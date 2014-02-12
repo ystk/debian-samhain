@@ -5,7 +5,7 @@
 
 Summary: File integrity and host-based IDS
 Name: samhain-client
-Version: 2.6.2
+Version: 2.8.3a
 Release: 5
 License: GPL
 Group: System Environment/Base
@@ -61,7 +61,7 @@ for i in `seq 6` %{?_with_gpg:7}; do ./test/test.sh $i; done
 		'--enable-login-watch' \
 		'--enable-ptrace' \
 		'--enable-db-reload' \
-		'--enable-base=545308717,817242016' \
+		'--enable-base=1344889070,1075798181' \
 		'--enable-xml-log' 
 
 make
@@ -77,8 +77,8 @@ make DESTDIR=${RPM_BUILD_ROOT} install
 # copy script files to /var/lib/samhain so that we can use them right
 # after the package is installed
 install -m 700 samhain-install.sh init/samhain.startLinux init/samhain.startLSB ${RPM_BUILD_ROOT}/etc
-install -m 640 -o 0 -g 0 samhain_hide.o		${RPM_BUILD_ROOT}/lib/modules/`uname -r`/samhain_hide.o
-install -m 640 -o 0 -g 0 samhain_erase.o	${RPM_BUILD_ROOT}/lib/modules/`uname -r`/samhain_erase.o
+install -m 640 -o 0 -g 0 samhain_kmem.ko	${RPM_BUILD_ROOT}/lib/modules/`uname -r`/samhain_kmem.ko
+install -m 640 -o 0 -g 0 samhain_hide.ko        ${RPM_BUILD_ROOT}/lib/modules/`uname -r`/samhain_hide.ko
 install -m 700 -o 0 -g 0 samhain_setpwd		${RPM_BUILD_ROOT}/usr/local/sbin/samhain_setpwd
 
 %clean

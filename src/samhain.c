@@ -70,6 +70,7 @@
 #include "sh_getopt.h"
 #include "sh_readconf.h"
 #include "sh_hash.h"
+#include "sh_restrict.h"
 
 #include "sh_nmail.h"
 
@@ -744,6 +745,16 @@ static void exit_handler(void)
   sh_files_delglobstack ();
   sh_hash_hashdelete();
   sh_files_hle_reg (NULL);
+  /*
+   * Only flush on exit if running as deamon.
+   * Otherwise we couldn't run another instance
+   * while the deamon is running (would leave the
+   * deamon with flushed ruleset).
+   */
+  if (sh.flag.isdaemon == S_TRUE)
+    {
+      sh_audit_delete_all ();
+    }
 #endif
 #if defined(SH_WITH_SERVER)
   sh_forward_free_all ();
@@ -971,7 +982,11 @@ static int samhainctl(int ctl, int * argc, char * argv[])
   char * argp[32];
   pid_t       * pidlist;
   int         i;
-
+#ifdef WCONTINUED
+      int wflags = WNOHANG|WUNTRACED|WCONTINUED;
+#else
+      int wflags = WNOHANG|WUNTRACED;
+#endif
 
   fullpath = strdup (SH_INSTALL_PATH);
   if (fullpath == NULL)
@@ -1018,7 +1033,7 @@ static int samhainctl(int ctl, int * argc, char * argv[])
       default:
 	times = 0;
 	while (times < 300) {
-	  respid = waitpid(pid, &status, WNOHANG|WUNTRACED);
+	  respid = waitpid(pid, &status, wflags);
 	  if ((pid_t)-1 == respid)
 	    {
 	      perror(_("waitpid"));
@@ -1462,6 +1477,8 @@ int undef_main(int argc, char * argv[])
   BREAKEXIT(sh_readconf_read);
   (void) sh_readconf_read ();
 
+  sh_calls_enable_sub();
+
 #if defined (SH_WITH_CLIENT) || defined (SH_STANDALONE)
   if (sh.flag.checkSum == SH_CHECK_NONE)
     {
@@ -1768,11 +1785,14 @@ int undef_main(int argc, char * argv[])
 	      (void) sh_files_delglobstack ();
 	      (void) sh_ignore_clean ();
 	      (void) hash_full_tree ();
+	      sh_audit_delete_all ();
+
 
 #if defined(SH_WITH_CLIENT)
 	      reset_count_dev_server();
 #endif
 #if defined(SH_WITH_CLIENT) || defined(SH_STANDALONE)
+	      sh_restrict_purge ();
 
 
 	      FileSchedOne = free_sched(FileSchedOne);

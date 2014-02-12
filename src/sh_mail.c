@@ -61,6 +61,7 @@
 #include "sh_filter.h"
 #include "sh_mail_int.h"
 #include "sh_nmail.h"
+#include "sh_ipvx.h"
 
 #undef  FIL__
 #define FIL__  _("sh_mail.c")
@@ -227,8 +228,9 @@ int sh_mail_sigverify (const char * s)
 				 KEY_LEN+1);
 	    }
 	  
+	  theSig = sh_util_siggen (key2, bufc, sl_strlen(bufc), 
+				   sigbuf, sizeof(sigbuf));
 
-	  theSig = sh_util_siggen (key2, bufc, sl_strlen(bufc), sigbuf, sizeof(sigbuf));
 	  if (sl_strncmp (key, 
 			  theSig,
 			  KEY_LEN) != 0) 
@@ -580,7 +582,7 @@ int sh_mail_msg (const char * message)
 	     */
 	    ++failcount;
 	    
-	    SL_RETURN((-1), _("sh_mail_msg"));
+	    SL_RETURN((-2), _("sh_mail_msg"));
 	  }
 	else
 	  {
@@ -815,7 +817,7 @@ int sh_mail_msg (const char * message)
     if (errcount == address_num)
       {
 	rollback_list(fifo_mail);
-	retval = -1;
+	retval = -3;
       }
     else
       {
@@ -1111,7 +1113,7 @@ static FILE * sh_mail_start_conn (struct alias * ma_address,
 
   (void) fflush(connFile);
 
-  if (0 != is_numeric(sh.host.name))
+  if (0 != sh_ipvx_is_numeric(sh.host.name))
     {
       sl_snprintf(error_msg, sizeof(error_msg), "HELO [%s]", 
 		  sh.host.name);
@@ -1123,7 +1125,7 @@ static FILE * sh_mail_start_conn (struct alias * ma_address,
     }
   report_smtp(error_msg);
 
-  if (0 != is_numeric(sh.host.name))
+  if (0 != sh_ipvx_is_numeric(sh.host.name))
     fprintf(connFile, _("HELO [%s]%c%c"), sh.host.name, 13, 10);
   else
     fprintf(connFile, _("HELO %s%c%c"), sh.host.name, 13, 10);
@@ -1148,7 +1150,7 @@ static FILE * sh_mail_start_conn (struct alias * ma_address,
   if (NULL == strchr(this_address, '@'))
     {
       (void) sl_strlcat (this_address, "@", 256);
-      if (0 != is_numeric(sh.host.name))
+      if (0 != sh_ipvx_is_numeric(sh.host.name))
 	(void) sl_strlcat (this_address, _("example.com"), 256);
       else
 	(void) sl_strlcat (this_address, sh.host.name, 256);
@@ -1864,8 +1866,8 @@ static dnsrep * return_mx (char *domain)
   dnsrep * answers = NULL;
   mx     * result;
   dnsrep * retval;
+  char   * address = NULL;
   char     errmsg[128];
-  size_t   len;
 
   SL_ENTER(_("return_mx"));
 
@@ -1882,6 +1884,8 @@ static dnsrep * return_mx (char *domain)
     }
   else
     {
+      char numeric[SH_IP_BUF];
+
       if (domain != NULL)
 	{
 #if defined(HAVE_ARPA_NAMESER_H)
@@ -1902,30 +1906,23 @@ static dnsrep * return_mx (char *domain)
 #endif
 	}
 
-      SH_MUTEX_LOCK(mutex_resolv);
-
-      host   = NULL;
       retval = NULL;
+      host   = NULL;
 
       if (domain != NULL)
-	host = /*@-unrecog@*/sh_gethostbyname (domain)/*@+unrecog@*/;
+	address = sh_ipvx_canonical(domain, numeric, sizeof(numeric));
 
-      if (host)
+      if (address)
 	{
 	  result       = SH_ALLOC (sizeof (mx));
 	  retval       = SH_ALLOC (sizeof (dnsrep));
 	  retval->reply = result;
 	  retval->count = 1;
 	  result->pref  = 0;
-	  /*@-type@*/
-	  len = strlen (host->h_name) + 1;
-	  result->address = SH_ALLOC (len);
-	  sl_strlcpy (result->address, host->h_name, len);
-	  /*@+type@*/
-	}
-      SH_MUTEX_UNLOCK(mutex_resolv);
 
-      if (!host)
+	  result->address = address;
+	}
+      else
 	{
 #ifdef FIL__
 	  (void) sl_strlcpy (errmsg, _("Unknown host "), 127);

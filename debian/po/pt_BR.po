@@ -1,0 +1,36 @@
+# Debconf translations for samhain.
+# Copyright (C) 2011 THE samhain'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the samhain package.
+# Flamarion Jorge <jorge.flamarion@gmail.com>, 2011.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: samhain 2.6.2-1\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2010-02-20 10:31+0100\n"
+"PO-Revision-Date: 2011-03-19 11:17-0300\n"
+"Last-Translator: Flamarion Jorge <jorge.flamarion@gmail.com>\n"
+"Language-Team: Brazilian Portuguese <debian-l10n-portuguese@lists.debian."
+"org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: pt_BR\n"
+
+#. Type: note
+#. Description
+#: ../templates:1001
+msgid "Samhain initialization"
+msgstr "Inicialização do Samhain"
+
+#. Type: note
+#. Description
+#: ../templates:1001
+msgid ""
+"The database used for Samhain will be initialized now. Any errors/messages "
+"regarding this initialization can be recovered from /var/log/samhain/samhain-"
+"init.log"
+msgstr ""
+"O banco de dados usado pelo Samhain será inicializado agora. Quaisquer erros/"
+"mensagens relacionadas a essa inicialização podem ser recuperados a partir "
+"de /var/log/samhain/samhain-init.log"

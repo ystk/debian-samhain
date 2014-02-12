@@ -6,7 +6,7 @@
 
 #include "config.h"
 
-#ifdef HOST_IS_I86LINUX
+#if defined(HOST_IS_I86LINUX) || defined(HOST_IS_64LINUX)
 #define SH_IDT_TABLE
 #endif
 
@@ -72,6 +72,8 @@ union {
 static unsigned long addr_system_call;
 static unsigned char system_call_code[SYS_CODE_SIZE];
 
+#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
+
 static int kmem_read (int fd, unsigned long addr, unsigned char * buf, int len)
 {
   if (lseek(fd, addr, SEEK_SET) == (off_t) (-1))
@@ -95,18 +97,6 @@ static int kmem_mmap (int fd, unsigned long addr, unsigned char * buf, int len)
   size_t    sz;
   char    * kmap;
 
-
-  /* first, try read()
-   */
-  int  ret_old = kmem_read (fd, addr, buf, len); 
-
-  if (ret_old == 0)
-    return ret_old;
-
-  if (verbose)
-    fprintf(stderr, 
-	    "kmem_mmap: read() from /dev/kmem failed, now trying mmap()\n");
-
   sz = getpagesize(); /* unistd.h */
 
   moff = ((size_t)(addr/sz)) * sz;                 /* lower page boundary */
@@ -115,9 +105,18 @@ static int kmem_mmap (int fd, unsigned long addr, unsigned char * buf, int len)
 
   if (kmap == MAP_FAILED)
     {
+      /* then, try read()
+       */
+      if (verbose)
+	fprintf(stderr, "kmem_mmap: mmap() failed, now trying read()\n");
+
+      if (0 == kmem_read (fd, addr, buf, len))
+	return 0;
+
       perror("kmem_mmap: mmap");
       return -1;
     }
+
   memcpy (buf, &kmap[roff], len);
       
   if (munmap(kmap, len+sz) != 0)
@@ -140,17 +139,40 @@ int read_kcode (unsigned long addr, unsigned char * buf, int len)
     }
 
   fd = open ("/dev/kmem", O_RDONLY);
+
   if (fd < 0)
     {
-      perror("read_kcode: open /dev/kmem");
+      if (0 != access("/proc/kmem", R_OK)) 
+	{
+	  perror("read_kcode: access /proc/kmem");
+
+	  fprintf(stderr, "\n");
+      
+	  fprintf(stderr, "NOTE:  kern_head: apparently you have no /dev/kmem, and the\n");
+	  fprintf(stderr, "       samhain_kmem module is not loaded\n");
+	  fprintf(stderr, "       If you get this message, please proceed as follows:\n");
+	  fprintf(stderr, "       $ make samhain_kmem.ko\n");
+	  fprintf(stderr, "       $ sudo /sbin/insmod samhain_kmem.ko; sudo ./kern_head > sh_ks.h; sudo /sbin/rmmod samhain_kmem\n");
+	  fprintf(stderr, "       $ make\n\n");
+	  exit (EXIT_FAILURE);
+	}
+      fd = open ("/proc/kmem", O_RDONLY);
+    }
+
+  if (fd < 0)
+    {
+      perror("read_kcode: open /dev/kmem and /proc/kmem");
       return -1;
     }
+
   if (kmem_mmap(fd, addr, buf, len) < 0)
     {
       close (fd);
       return -1;
     }
+
   close (fd);
+
   return 0;
 }
 
@@ -202,8 +224,13 @@ unsigned long get_symbol_from_systemmap (char * systemmap,
                                          char * symbol, char flag)
 {
   FILE * fp;
-  char buf[512], addr[16], * p;
+  char buf[512], addr[32], * p;
   unsigned long retval = 0;
+#if defined(__x86_64__) || defined(__amd64__)
+  int off = 8;
+#else
+  int off = 0;
+#endif
 
   fp = fopen (systemmap, "r");
 
@@ -215,18 +242,18 @@ unsigned long get_symbol_from_systemmap (char * systemmap,
     }
   while (fgets(buf, 512, fp) != NULL)
     {
-      if (buf[9] != flag)
+      if (buf[9+off] != flag)
         continue;
 
       p = strchr(buf, '\n');
       if (p != NULL)
         *p = '\0';
 
-      if (0 != strcmp(&buf[11], symbol))
+      if (0 != strcmp(&buf[11+off], symbol))
         continue;
 
       addr[0] = '0'; addr[1] = 'x'; addr[2] = '\0';
-      strncat(&addr[2], buf, 8);
+      strncat(&addr[2], buf, 8+off);
 
       retval = strtoul(addr, NULL, 0);
       if (retval == ULONG_MAX)
@@ -246,8 +273,13 @@ unsigned long get_symbol_from_systemmap (char * systemmap,
 int fill_smap(smap_entry * sh_smap, int num)
 {
   FILE * fp;
-  char buf[512], addr[16], name[128];
+  char buf[512], addr[32], name[128];
   int  i, j, count = 0, maxcall = 0;
+#if defined(__x86_64__) || defined(__amd64__)
+  int off = 8;
+#else
+  int off = 0;
+#endif
 
   fp = fopen (SYSTEMMAP, "r");
 
@@ -265,16 +297,17 @@ int fill_smap(smap_entry * sh_smap, int num)
   while (fgets(buf, 512, fp) != NULL)
     {
       
-      if ( ( (buf[9] == 'D') || (buf[9] == 'd') || 
-	     (buf[9] == 'R') || (buf[9] == 'r')) && 
-	   0 == strncmp("sys_call_table", &buf[11], 14))
+      if ( ( (buf[9+off] == 'D') || (buf[9+off] == 'd') || 
+	     (buf[9+off] == 'R') || (buf[9+off] == 'r')) && 
+	   0 == strncmp("sys_call_table", &buf[11+off], 14))
 	{
 	  printf("/* found sys_call_table */\n");
 	  /* --- copy symbol address ---
 	   */
 	  addr[0] = '0'; addr[1] = 'x'; addr[2] = '\0';
-	  strncat(&addr[2], buf, 8);
-	  addr[10] = '\0';
+	  strncat(&addr[2], buf, 8+off);
+	  addr[10+off] = '\0';
+
 	  sh_sys_call.addr_sys_call_table = strtoul(addr, NULL, 0);
 	  if (sh_sys_call.addr_sys_call_table == ULONG_MAX)
 	    {
@@ -287,17 +320,17 @@ int fill_smap(smap_entry * sh_smap, int num)
 	    }
 	}
 
-      if (buf[9] != 'T')
+      if (buf[9+off] != 'T')
 	continue;
 
-      if (0 == strncmp("system_call", &buf[11], 11))
+      if (0 == strncmp("system_call", &buf[11+off], 11))
 	{
 	  printf("/* found system_call */\n");
 	  /* --- copy symbol address ---
 	   */
 	  addr[0] = '0'; addr[1] = 'x'; addr[2] = '\0';
-	  strncat(&addr[2], buf, 8);
-	  addr[10] = '\0';
+	  strncat(&addr[2], buf, 8+off);
+	  addr[10+off] = '\0';
 	  addr_system_call = strtoul(addr, NULL, 0);
 	  if (addr_system_call == ULONG_MAX)
 	    {
@@ -307,20 +340,22 @@ int fill_smap(smap_entry * sh_smap, int num)
 	}
 
 
-      if ( (buf[11]!='s' || buf[12]!='y' || buf[13]!='s' || buf[14]!='_') &&
-	   (buf[11]!='o' || buf[12]!='l' || buf[13]!='d' || buf[14]!='_'))
+      if ( (buf[11+off]!='s' || buf[12+off]!='y' || 
+	    buf[13+off]!='s' || buf[14+off]!='_') &&
+	   (buf[11+off]!='o' || buf[12+off]!='l' || 
+	    buf[13+off]!='d' || buf[14+off]!='_'))
 	continue;
 
       for (i = 0; i < num; ++i)
 	{
-	  for (j = 0; j < 128; ++j)
+	  for (j = 0; j < 127; ++j)
 	    {
-	      if (buf[11+j] == '\n' || buf[11+j] == '\0')
+	      if (buf[11+off+j] == '\n' || buf[11+off+j] == '\0')
 		{
 		  name[j] = '\0';
 		  break;
 		}
-	      name[j] = buf[11+j];
+	      name[j] = buf[11+off+j];
 	    }
 
 
@@ -330,8 +365,8 @@ int fill_smap(smap_entry * sh_smap, int num)
 	      /* --- copy symbol address ---
 	       */
 	      addr[0] = '0'; addr[1] = 'x'; addr[2] = '\0';
-	      strncat(&addr[2], buf, 8);
-	      addr[10] = '\0';
+	      strncat(&addr[2], buf, 8+off);
+	      addr[10+off] = '\0';
 	      sh_smap[i].addr = strtoul(addr, NULL, 0);
 	      if (sh_smap[i].addr == ULONG_MAX)
 		{
@@ -346,6 +381,7 @@ int fill_smap(smap_entry * sh_smap, int num)
 	}
     }
   fclose(fp);
+
   if ((count > 0) && (maxcall > 0))
     return maxcall+1;
   else
@@ -356,8 +392,6 @@ int fill_smap(smap_entry * sh_smap, int num)
 int main(int argc, char * argv[])
 {
   int i, count, maxcall, qq;
-  int which = 4;
-  int two_six_seventeen_plus = 0;
   smap_entry sh_smap[SH_MAXCALLS];
   struct utsname utbuf;
   char *p = NULL;
@@ -367,6 +401,8 @@ int main(int argc, char * argv[])
   unsigned long proc_root_lookup;
 
   unsigned long addr_ni_syscall = 0;
+
+  int major, minor, micro, is64 = 0;
 
   if (argc > 1)
     {
@@ -395,19 +431,13 @@ int main(int argc, char * argv[])
       p = utbuf.release;
     }
 
-  if      (strncmp(p, "2.2", 3) == 0)
-    which = 2;
-  else if (strncmp(p, "2.4", 3) == 0)
-    which = 4;
-  else if (strncmp(p, "2.6", 3) == 0)
+  if (3 != sscanf(p, "%d.%d.%d", &major, &minor, &micro))
     {
-      which = 6;
-      if (17 >= atoi (&p[4]))
-	{
-	  two_six_seventeen_plus = 1;
-	}
+      perror("kern_head: sscanf");
+      exit (EXIT_FAILURE);
     }
-  else
+
+  if (minor != 4 && minor != 6)
     {
       fprintf(stderr, "kern_head: kernel %s not supported\n", p);
       exit (EXIT_FAILURE);
@@ -417,8 +447,15 @@ int main(int argc, char * argv[])
   if (utbuf.machine[0] != 'i' || utbuf.machine[2] != '8' || 
       utbuf.machine[3] != '6')
     {
-      fprintf(stderr, "kern_head: machine %s not supported\n", utbuf.machine);
-      exit (EXIT_FAILURE);
+      if (0 != strcmp(utbuf.machine, "x86_64"))
+	{
+	  fprintf(stderr, "kern_head: machine %s not supported\n", utbuf.machine);
+	  exit (EXIT_FAILURE);
+	}
+      else
+	{
+	  is64 = 1;
+	}
     }
 
   if (0 != getuid())
@@ -427,9 +464,7 @@ int main(int argc, char * argv[])
       
       fprintf(stderr, "NOTE:  kern_head: must run as 'root' (need to read from /dev/kmem)\n");
       fprintf(stderr, "       If you get this message, then proceed as follows:\n");
-      fprintf(stderr, "       $ su\n");
-      fprintf(stderr, "       $ ./kern_head > sh_ks.h\n");
-      fprintf(stderr, "       $ exit\n");
+      fprintf(stderr, "       $ sudo ./kern_head > sh_ks.h\n");
       fprintf(stderr, "       $ make\n\n");
       exit (EXIT_FAILURE);
     }
@@ -437,39 +472,43 @@ int main(int argc, char * argv[])
   printf("#ifndef SH_KERN_CALLS_H\n");
   printf("#define SH_KERN_CALLS_H\n\n");
 
-  printf("\n/* Kernel %s, machine %s -- use table %s */\n\n", 
+  printf("\n/* Kernel %s, machine %s, %d bit -- use table callz_2p4 */\n\n", 
 	 p, utbuf.machine,
-	 (which == 2) ? "callz_2p2" : "callz_2p4");
-      
+	 (is64 == 0) ? 32 : 64,
+	 (is64 == 0) ? "syscalls_32" : "syscalls_64");
 
   /* initiate the system call table 
    */
-  for (i = 0; i < SH_MAXCALLS; ++i)
+  if (is64 == 0)
     {
-      if (which == 2)
+      for (i = 0; i < SH_MAXCALLS; ++i)
 	{
-	  if (callz_2p2[i] == NULL)
+	  if (syscalls_32[i] == NULL)
 	    break;
-	  strcpy(sh_smap[i].name, callz_2p2[i]);
+	  strcpy(sh_smap[i].name, syscalls_32[i]);
+	  sh_smap[i].addr    = 0UL;
 	}
-      else
+      if (minor == 6) /* fix syscall map for 2.6 */
 	{
-	  if (callz_2p4[i] == NULL)
-	    break;
-	  strcpy(sh_smap[i].name, callz_2p4[i]);
+	  strcpy(sh_smap[0].name,   "sys_restart_syscall");
+	  strcpy(sh_smap[180].name, "sys_pread64");
+	  strcpy(sh_smap[181].name, "sys_pwrite64");
 	}
-      sh_smap[i].addr    = 0UL;
+    }
+  else /* x86_64 */
+    {
+      for (i = 0; i < SH_MAXCALLS; ++i)
+	{
+	  if (syscalls_64[i] == NULL)
+	    break;
+	  strcpy(sh_smap[i].name, syscalls_64[i]);
+	  sh_smap[i].addr    = 0UL;
+	}
     }
 
-  if (which == 6) /* fix syscall map for 2.6 */
-    {
-      strcpy(sh_smap[0].name,   "sys_restart_syscall");
-      strcpy(sh_smap[180].name, "sys_pread64");
-      strcpy(sh_smap[181].name, "sys_pwrite64");
-    }
   count = i;
 
-  /* get the actual number of the highest syscalls and use no more.
+  /* get the actual number of the highest syscall and use no more.
    * get sys_call_table and system_call
    */
   maxcall = fill_smap(sh_smap, count);
@@ -479,6 +518,7 @@ int main(int argc, char * argv[])
       fprintf(stderr, "kern_head: fill_smap failed\n");
       exit (EXIT_FAILURE);
     }
+
   if (addr_system_call == 0L) 
     {
       printf("#endif\n");
@@ -501,7 +541,8 @@ int main(int argc, char * argv[])
           break;
         }
     }
-  if (which < 6)
+
+  if (minor < 6)
     {
       maxcall = (maxcall > 256) ? 256 : maxcall;
     }
@@ -621,9 +662,10 @@ int main(int argc, char * argv[])
     printf("#define PROC_ROOT_IOPS_LOC %#lx\n\n", proc_root_iops);
   }
 
-  if (two_six_seventeen_plus == 1) {
-    printf("#define TWO_SIX_SEVENTEEN_PLUS 1\n\n");
-  }
+  if (KERNEL_VERSION(major,minor,micro) >= KERNEL_VERSION(2,6,17)) 
+    {
+      printf("#define TWO_SIX_SEVENTEEN_PLUS 1\n\n");
+    }
 
   printf("#endif\n");
 

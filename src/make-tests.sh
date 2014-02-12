@@ -17,10 +17,9 @@ echo '
 
 /* This is auto-generated code. Edit at your own peril. */
 
+#include "config.h"
 #include <stdio.h>
 #include "CuTest.h"
-#include "config.h"
-
 '
 
 cat $FILES | grep '^void Test' | 

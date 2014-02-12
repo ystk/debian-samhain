@@ -107,7 +107,7 @@ struct alias * add_recipient_intern(const char * str,
       list                = new;
 
       SH_MUTEX_LOCK_UNSAFE(mutex_listall);
-      if (0 == check_double(str, all_recipients, S_TRUE))
+      if (0 != check_double(str, all_recipients, S_TRUE))
 	{
 	  new->isAlias    = 1;
 	}
@@ -206,7 +206,7 @@ int sh_nmail_add_alias(const char * str)
 
 	      for (i = 0; i < nfields; ++i) {
 		if (0 == check_double(array[i],  all_recipients, S_TRUE))
-		  nflag = 1;
+		  nflag = 1; /* not in all_recipients --> bad */
 	      }
 
 	      if (nflag == 0)
@@ -233,9 +233,10 @@ int sh_nmail_add_alias(const char * str)
 
 	      SH_FREE(array);
 
-	      if (newalias && newalias->recipient_list == NULL)
+	      if (newalias == NULL || newalias->recipient_list == NULL)
 		{
-		  SH_FREE(newalias);
+		  if (newalias)
+		    SH_FREE(newalias);
 		  goto err;
 		}
       
@@ -405,7 +406,9 @@ int sh_nmail_compute_recipients (int level, const char * message,
 	      /* Don't mark aliases
 	       */
 	      if (flagit && list->isAlias == 0)
-		list->send_mail = 1;
+		{
+		  list->send_mail = 1;
+		}
 	      list = list->all_next;
 	    }
 	  else
@@ -517,6 +520,10 @@ int sh_nmail_msg (int level, const char * message,
 
 	  if (retval != 0)
 	    {
+	      sh_error_handle (SH_ERR_ALL, FIL__, __LINE__, 
+			       retval, MSG_E_SUBGEN,
+			       _("could not mail immediately"),
+			       _("sh_nmail_msg") );
 	      sh_mail_pushstack(level, message, alias);
 	    }
 	}
@@ -959,6 +966,7 @@ int sh_nmail_get_mailkey (const char * alias, char * buf, size_t bufsiz,
 static void free_recipient_list(struct alias * list)
 {
   struct alias * new;
+  sh_filter_type * p = NULL;
 
   while (list)
     {
@@ -969,7 +977,11 @@ static void free_recipient_list(struct alias * list)
       if (new->mail_filter)
 	{
 	  sh_filter_free(new->mail_filter);
-	  SH_FREE(new->mail_filter);
+	  if (!p || p != new->mail_filter)
+	    {
+	      p = new->mail_filter;
+	      SH_FREE(new->mail_filter);
+	    }
 	}
       sh_string_destroy(&(new->recipient));
       SH_FREE(new);
@@ -1000,7 +1012,7 @@ void sh_nmail_free()
       if (item->mail_filter)
 	{
 	  sh_filter_free(item->mail_filter);
-	  SH_FREE(item->mail_filter);
+	  /* SH_FREE(item->mail_filter); */
 	}
       SH_FREE(item);
     }

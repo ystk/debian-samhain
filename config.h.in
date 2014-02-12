@@ -363,6 +363,9 @@
 /* Define if your struct utmp has ut_addr.    */
 #undef HAVE_UTADDR
 
+/* Define if your struct utmp has ut_addr_v6  */
+#undef HAVE_UTADDR_V6
+
 /* Define if your includes are broken.        */
 #undef HAVE_BROKEN_INCLUDES
 
@@ -481,6 +484,12 @@
 /* Define to 1 if you have the <attr/xattr.h> header file. */
 #undef HAVE_ATTR_XATTR_H
 
+/* Define to 1 if you have the <auparse.h> header file. */
+#undef HAVE_AUPARSE_H
+
+/* Define if you have the auparse lib */
+#undef HAVE_AUPARSE_LIB
+
 /* Define to 1 if you have the `basename' function. */
 #undef HAVE_BASENAME
 
@@ -519,6 +528,9 @@
 /* Define to 1 if you have the `fgetxattr' function. */
 #undef HAVE_FGETXATTR
 
+/* Define to 1 if you have the `getaddrinfo' function. */
+#undef HAVE_GETADDRINFO
+
 /* Define to 1 if you have the `getcwd' function. */
 #undef HAVE_GETCWD
 
@@ -530,6 +542,9 @@
 
 /* Define to 1 if you have the `gethostname' function. */
 #undef HAVE_GETHOSTNAME
+
+/* Define to 1 if you have the `getnameinfo' function. */
+#undef HAVE_GETNAMEINFO
 
 /* Define to 1 if you have the `getpagesize' function. */
 #undef HAVE_GETPAGESIZE
@@ -683,6 +698,9 @@
 /* Define to 1 if you have the <paths.h> header file. */
 #undef HAVE_PATHS_H
 
+/* Define if you have pcre_dfa_exec */
+#undef HAVE_PCRE_DFA_EXEC
+
 /* Define if you have pcre/pcre.h. */
 #undef HAVE_PCRE_PCRE_H
 
@@ -718,6 +736,9 @@
 
 /* Define to 1 if you have the <rpc/rpcent.h> header file. */
 #undef HAVE_RPC_RPCENT_H
+
+/* Define to 1 if you have the <rpc/rpc.h> header file. */
+#undef HAVE_RPC_RPC_H
 
 /* Define if you have SA_SIGINFO */
 #undef HAVE_SA_SIGINFO
@@ -889,6 +910,9 @@
 /* Define to 1 if you have the `writev' function. */
 #undef HAVE_WRITEV
 
+/* Define if host OS is 64bit Linux */
+#undef HOST_IS_64LINUX
+
 /* Define if host OS is OPENBSD */
 #undef HOST_IS_OPENBSD
 
@@ -973,6 +997,12 @@
 /* Define if you want to check processes */
 #undef SH_USE_PROCESSCHECK
 
+/* The address of the vmlist */
+#undef SH_VMLIST
+
+/* The address of the vmlist spinlock */
+#undef SH_VMLIST_LOCK
+
 /* The size of `char *', as computed by sizeof. */
 #undef SIZEOF_CHAR_P
 
@@ -1015,8 +1045,14 @@
 /* Define if you want ACL support. */
 #undef USE_ACL
 
+/* Define if you do not want IPv6 */
+#undef USE_IPV4
+
 /* Define if you want the logfile monitor module. */
 #undef USE_LOGFILE_MONITOR
+
+/* Define for registry check */
+#undef USE_REGISTRY_CHECK
 
 /* Define if you want to use the system malloc */
 #undef USE_SYSTEM_MALLOC

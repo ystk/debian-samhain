@@ -339,7 +339,7 @@ testrun_internal_1c ()
 		[ -z "$verbose" ] ||     log_msg_ok "configure..."; 
 		$MAKE  'DBGDEF=-DSH_SUIDTESTDIR=\"${BASE}\"' >/dev/null 2>&1
 		if test x$? = x0; then
-		    [ -z "$verbose" ] || log_msg_ok "make..."; 
+		    [ -z "$verbose" ] || log_msg_ok "make DBGDEF=-DSH_SUIDTESTDIR=${BASE} ..."; 
 		else
 		    [ -z "$quiet" ] &&   log_msg_fail "make..."; 
 		    return 1

@@ -27,7 +27,7 @@ int sh_tools_iface_is_present(char *str);
 /* returns allocated buffer
  */
 char * sh_tools_safe_name(const char * str, int flag);
-int is_numeric (const char * address);
+
 int connect_port (char * address, int port, 
 		  char * ecall, int * errnum, char * errmsg, int errsiz);
 int connect_port_2 (char * address1, char * address2, int port, 

@@ -50,6 +50,9 @@
 #include "samhain.h"
 #include "sh_error.h"
 #include "sh_calls.h"
+#include "sh_ipvx.h"
+#include "sh_sub.h"
+#include "sh_utils.h"
 
 #undef  FIL__
 #define FIL__  _("sh_calls.c")
@@ -133,7 +136,7 @@ long int retry_sigaction(const char * file, int line,
   SL_RETURN(val_retry, _("retry_sigaction"));
 }
 
-static struct in_addr bind_addr;
+static struct sh_sockaddr bind_addr;
 static int        use_bind_addr = 0;
 
 int sh_calls_set_bind_addr (const char * str)
@@ -146,10 +149,14 @@ int sh_calls_set_bind_addr (const char * str)
   if (sh.flag.opts == S_TRUE)  
     reject = 1;
 
-  if (0 == /*@-unrecog@*/inet_aton(str, &bind_addr)/*@+unrecog@*/) 
-    {
-      return -1;
-    }
+#if defined(USE_IPVX)
+  if (0 == sh_ipvx_aton(str, &bind_addr)) 
+    return -1;
+#else
+  if (0 == inet_aton(str, &(bind_addr.sin.sin_addr))) 
+    return -1;
+#endif
+
   use_bind_addr = 1;
   return 0;
 }
@@ -160,7 +167,6 @@ long int retry_connect(const char * file, int line, int sockfd,
 {
   int error;
   long int val_retry = 0;
-  static struct sockaddr_in new_addr;
   char errbuf[SH_ERRBUF_SIZE];
 
   SL_ENTER(_("retry_connect"));
@@ -169,70 +175,120 @@ long int retry_connect(const char * file, int line, int sockfd,
 
   if (0 != use_bind_addr) 
     {
-      memcpy(&new_addr.sin_addr, &bind_addr, sizeof(struct in_addr));
-      new_addr.sin_family = AF_INET;
-      
-      val_retry = /*@-unrecog@*/bind(sockfd, 
-				     (struct sockaddr*)&new_addr, 
-				     sizeof(struct sockaddr_in))/*@+unrecog@*/;
+      int slen = SH_SS_LEN(bind_addr);
+
+      val_retry = bind(sockfd, sh_ipvx_sockaddr_cast(&bind_addr), slen);
     }
 
   if (val_retry == 0)
     {
       do {
-	val_retry = 
-	  /*@-unrecog@*/connect(sockfd, serv_addr, addrlen)/*@+unrecog@*/;
+	val_retry = connect(sockfd, serv_addr, addrlen);
       } while (val_retry < 0 && (errno == EINTR || errno == EINPROGRESS));
     }
 
   error = errno;
   if (val_retry != 0) {
-    /* ugly cast back to struct sockaddr_in :-(
-     */
+    long eport;
+    char eaddr[SH_IP_BUF];
+
+    struct sh_sockaddr ss;
+    sh_ipvx_save(&ss, serv_addr->sa_family, serv_addr);
+    sh_ipvx_ntoa(eaddr, sizeof(eaddr), &ss);
+    
+    if (serv_addr->sa_family == AF_INET)
+      eport = (long) ntohs(((struct sockaddr_in *)serv_addr)->sin_port);
+    else
+      eport = (long) ntohs(((struct sockaddr_in6 *)serv_addr)->sin6_port);
+
     sh_error_handle ((-1), file, line, error, MSG_ERR_CONNECT, 
 		     sh_error_message(error, errbuf, sizeof(errbuf)),
-		     (long) sockfd,
-		     /*@-unrecog -type@*/
-		     (long) ntohs(((struct sockaddr_in *)serv_addr)->sin_port),
-		     /*@+unrecog +type@*/
-#ifdef HAVE_INET_ATON
-		     /*@-unrecog -type@*/
-		     inet_ntoa( ((struct sockaddr_in *)serv_addr)->sin_addr )
-		     /*@+unrecog +type@*/
-#else
-		     _("unknown")
-#endif
-		     );
+		     (long) sockfd, eport, eaddr);
   }
   errno = error;    
   SL_RETURN(val_retry, _("retry_connect"));
 }
 
 long int retry_accept(const char * file, int line, int fd, 
-		      struct sockaddr *serv_addr, int * addrlen)
+		      struct sh_sockaddr *serv_addr, int * addrlen)
 {
   int  error;
   long int val_retry = -1;
   char errbuf[SH_ERRBUF_SIZE];
+  struct sockaddr_storage ss;
 
-  ACCEPT_TYPE_ARG3 my_addrlen = (ACCEPT_TYPE_ARG3) *addrlen;
+  ACCEPT_TYPE_ARG3 my_addrlen = sizeof(ss);
 
   errno              = 0;
 
   SL_ENTER(_("retry_accept"));
 
   do {
-    val_retry = /*@-unrecog@*/accept(fd, serv_addr, &my_addrlen)/*@+unrecog@*/;
+    val_retry = accept(fd, (struct sockaddr *)&ss, &my_addrlen);
   } while (val_retry < 0 && errno == EINTR);
-  *addrlen = (int) my_addrlen;
+
   error = errno;
   if (val_retry < 0) {
       sh_error_handle ((-1), file, line, error, MSG_ERR_ACCEPT, 
 		       sh_error_message(error, errbuf, sizeof(errbuf)),
 		       (long) fd );
   }
-  errno = error;    
+  errno = error;
+
+  sh_ipvx_save(serv_addr, ss.ss_family, (struct sockaddr *) &ss);
+
+  *addrlen = (int) my_addrlen;
   SL_RETURN(val_retry, _("retry_accept"));
+}
+
+static int sh_enable_use_sub = 0;
+
+#if defined (SH_WITH_CLIENT) || defined (SH_STANDALONE)
+static int sh_use_sub = 1;
+#else
+static int sh_use_sub = 0;
+#endif
+
+void sh_calls_enable_sub()
+{
+  sh_enable_use_sub = 1;
+  return;
+}
+
+int sh_calls_set_sub (const char * str)
+{
+  int ret = sh_util_flagval(str, &sh_use_sub);
+
+  if ((ret == 0) && (!sh_use_sub))
+    {
+      sh_kill_sub();
+    }
+  return ret;
+}
+
+long int retry_lstat_ns(const char * file, int line, 
+			const char *file_name, struct stat *buf)
+{
+  int error;
+  long int val_retry = -1;
+  char errbuf[SH_ERRBUF_SIZE];
+ 
+  SL_ENTER(_("retry_lstat_ns"));
+
+  do {
+    val_retry = /*@-unrecog@*/lstat (file_name, buf)/*@+unrecog@*/;
+  } while (val_retry < 0 && errno == EINTR);
+
+  error = errno;
+  if (val_retry < 0) {
+      (void) sh_error_message(error, aud_err_message, 64);
+      sh_error_handle ((-1), file, line, error, MSG_ERR_LSTAT, 
+		       sh_error_message(error, errbuf, sizeof(errbuf)),
+		       file_name );
+  }
+  errno = error;    
+
+  SL_RETURN(val_retry, _("retry_lstat_ns"));
 }
 
 long int retry_lstat(const char * file, int line, 
@@ -244,9 +300,17 @@ long int retry_lstat(const char * file, int line,
  
   SL_ENTER(_("retry_lstat"));
 
-  do {
-    val_retry = /*@-unrecog@*/lstat (file_name, buf)/*@+unrecog@*/;
-  } while (val_retry < 0 && errno == EINTR);
+  if (sh_use_sub && sh_enable_use_sub)
+    {
+      val_retry = sh_sub_lstat (file_name, buf);
+    }
+  else
+    {
+      do {
+	val_retry = /*@-unrecog@*/lstat (file_name, buf)/*@+unrecog@*/;
+      } while (val_retry < 0 && errno == EINTR);
+    }
+
   error = errno;
   if (val_retry < 0) {
       (void) sh_error_message(error, aud_err_message, 64);
@@ -255,6 +319,7 @@ long int retry_lstat(const char * file, int line,
 		       file_name );
   }
   errno = error;    
+
   SL_RETURN(val_retry, _("retry_lstat"));
 }
 
@@ -267,9 +332,17 @@ long int retry_stat(const char * file, int line,
  
   SL_ENTER(_("retry_stat"));
 
-  do {
-    val_retry = stat (file_name, buf);
-  } while (val_retry < 0 && errno == EINTR);
+  if (sh_use_sub && sh_enable_use_sub)
+    {
+      val_retry = sh_sub_stat (file_name, buf);
+    }
+  else
+    {
+      do {
+	val_retry = stat (file_name, buf);
+      } while (val_retry < 0 && errno == EINTR);
+    }
+
   error = errno;
   if (val_retry < 0) {
       (void) sh_error_message(error, aud_err_message, 64);
@@ -278,6 +351,7 @@ long int retry_stat(const char * file, int line,
 		       file_name );
   }
   errno = error;    
+
   SL_RETURN(val_retry, _("retry_stat"));
 }
 

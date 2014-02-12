@@ -211,7 +211,7 @@ int parse_func (int i, char * p)
 	l = 0;
 	/*@+charint@*//* Incompatible types for == (char, char): ??? */
 	for (k = 0; k < 3; ++k)
-	  if (p[k] != '\0' && tolower(p[k]) == MonNames[j][k]) ++l;
+	  if (p[k] != '\0' && tolower((int) p[k]) == MonNames[j][k]) ++l;
 	/*@-charint@*/
 	if (l == 3)
 	  return j;
@@ -223,7 +223,7 @@ int parse_func (int i, char * p)
 	l = 0;
 	/*@+charint@*//* Incompatible types for == (char, char): ??? */
 	for (k = 0; k < 3; ++k)
-	  if (p[k] != '\0' && tolower(p[k]) == DayNames[j][k]) ++l;
+	  if (p[k] != '\0' && tolower((int) p[k]) == DayNames[j][k]) ++l;
 	/*@-charint@*/
 	if (l == 3)
 	  return j;

@@ -86,8 +86,20 @@ esac
 
 case "$1" in
   start)
+        #
+        # Preloaded kernel module
+        #
+        @sh_insmod_pre@
+	#
 	${DAEMON} start
 	ERRNUM=$?
+        #
+        # The hiding kernel module
+        #
+        if [ $ERRNUM -eq 0 ]; then
+                @sh_insmod_cmd@
+        fi
+	#
 	SH_ACT="started"
 	;;
   stop)

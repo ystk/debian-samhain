@@ -11,7 +11,7 @@ AC_ARG_VAR([LIBS], [libraries to link against, e.g. -lintl])
 dnl
 dnl start
 dnl
-AM_INIT_AUTOMAKE(samhain, 2.6.2)
+AM_INIT_AUTOMAKE(samhain, 2.8.3a)
 AC_DEFINE([SAMHAIN], 1, [Application is samhain])
 AC_CANONICAL_HOST
 
@@ -63,6 +63,9 @@ case "$host_os" in
 	   i*86*)
 	   AC_DEFINE(HOST_IS_I86LINUX)
 	   ;;
+	   x86_64)
+	   AC_DEFINE([HOST_IS_64LINUX], 1, [Define if host OS is 64bit Linux])
+	   ;;
 	   *)
 	   ;;
 	esac
@@ -82,6 +85,7 @@ case "$host_os" in
 	
 	*cygwin*) 
 	AC_DEFINE(HOST_IS_CYGWIN)
+	AC_DEFINE([USE_REGISTRY_CHECK], 1, [Define for registry check])
 	dnmalloc_ok=no
 	AC_MSG_RESULT([no trusted paths and no dnmalloc])
 	;;
@@ -226,9 +230,9 @@ AC_CHECK_HEADERS(stddef.h libgen.h sched.h malloc.h sys/uio.h \
 	sys/select.h sys/socket.h netinet/in.h \
 	regex.h glob.h \
 	linux/ext2_fs.h linux/fs.h ext2fs/ext2_fs.h asm/segment.h \
-	elf.h linux/elf.h \
+	elf.h linux/elf.h auparse.h \
 	paths.h arpa/nameser.h arpa/nameser_compat.h \
-	rpc/rpcent.h sys/statvfs.h,
+	rpc/rpcent.h rpc/rpc.h sys/statvfs.h,
 	[],
 	[],
 	[#include <sys/types.h>] 
@@ -242,6 +246,7 @@ if test "x$sh_utmpx" = "xyes"; then
   		AC_DEFINE(HAVE_UTMPX_H)
   		AC_EGREP_HEADER(ut_host, utmpx.h, AC_DEFINE(HAVE_UTHOST) )
   		AC_EGREP_HEADER(ut_addr, utmpx.h, AC_DEFINE(HAVE_UTADDR) )
+  		AC_EGREP_HEADER(ut_addr_v6, utmpx.h, AC_DEFINE(HAVE_UTADDR_V6) )
   		AC_EGREP_HEADER(ut_xtime,utmpx.h, AC_DEFINE(HAVE_UTXTIME) )
   		AC_EGREP_HEADER(ut_type, utmpx.h, AC_DEFINE(HAVE_UTTYPE) )
   else
@@ -364,6 +369,7 @@ AC_CHECK_FUNCS(memcmp memcpy memmove memset getpwent endpwent \
 	usleep setpriority getpeereid nanosleep \
 	strptime basename sched_yield hasmntopt \
 	inet_aton gethostbyname setutent setrlimit gethostname uname \
+	getaddrinfo getnameinfo \
 	initgroups getpagesize \
 	ttyname fchmod writev mmap tzset \
 	getsid getpriority getpgid statvfs \
@@ -437,6 +443,17 @@ AC_CHECK_LIB(socket, res_search, [
      AC_CHECK_LIB(resolv, __dn_skipname)
     ])
   ]) 
+
+sh_auparse=no
+
+if test "x$ac_cv_header_auparse_h" = "xyes"
+then
+   AC_CHECK_LIB(auparse, auparse_find_field, [
+   			 LIBS="$LIBS -lauparse"
+			 sh_auparse=yes
+			 AC_DEFINE(HAVE_AUPARSE_LIB, 1, [Define if you have the auparse lib])
+			 ])
+fi
 
 dnl arguments for accept
 
@@ -948,6 +965,11 @@ AC_ARG_ENABLE(static,
 		if test x"$mynetbsd" = xyes
 		then
 		  tmp_LIBS=`echo $LIBS | sed 's%\-lresolv%%' `
+		  LIBS="${tmp_LIBS}"
+		fi
+		if test x"${sh_auparse}" = xyes
+		then
+		  tmp_LIBS=`echo $LIBS | sed 's%\-lauparse%%' `
 		  LIBS="${tmp_LIBS}"
 		fi
 		AC_DEFINE(SH_COMPILE_STATIC, 1, [Define if compiling static])
@@ -1492,6 +1514,11 @@ AC_ARG_ENABLE(logfile-monitor,
 				)
 			  ]
 	   )
+	   AC_CHECK_LIB(pcre, pcre_dfa_exec, [
+	   		      AC_DEFINE([HAVE_PCRE_DFA_EXEC], 1, [Define if you have pcre_dfa_exec])
+			      ], [
+			      AC_MSG_WARN([pcre_dfa_exec not available])
+			      ])
         fi
         ]
 )
@@ -1549,10 +1576,27 @@ AC_ARG_ENABLE(debug,
                         mydebugdef="-g"
                 fi
                 mydebugit="yes"
+	elif test "x${enable_debug}" = "xgdb"; then
+                if test "x${myneedg3}" = "xyes"; then
+                        mydebugdef="-g3"
+                else
+                        mydebugdef="-g"
+                fi
+		mydebugit="yes"
         fi
         ]
 )
 AC_SUBST(mydebugdef)
+
+
+AC_ARG_ENABLE(ipv6,
+        [  --disable-ipv6			disable ipv6 support],
+        [
+        if test "x${enable_ipv6}" = xno; then
+		AC_DEFINE(USE_IPV4,1,[Define if you do not want IPv6])
+        fi
+        ]
+)
 
 if test "x${dnmalloc_ok}" = "xyes"; then
    sh_dnmalloc_enabled=yes
@@ -1929,6 +1973,7 @@ AC_SUBST(myident)
 AC_SUBST(need_user_install)
 
 sh_insmod_cmd=": # no kernel module"
+sh_insmod_pre=": # no kernel module"
 sh_lkm=""
 lkm_inc=""
 khidemap="/boot/System.map"
@@ -2019,9 +2064,7 @@ AC_ARG_ENABLE(khide,
 	fi
 	]
 )
-AC_SUBST(lkm_inc)
-AC_SUBST(sh_lkm)
-AC_SUBST(sh_insmod_cmd)
+
 AC_SUBST(install_name)
 AC_SUBST(INSTALL_NAME)
 AC_SUBST(stegin_prg)
@@ -2063,22 +2106,66 @@ AC_ARG_WITH(kcheck,
 
 		kernelversion=`uname -r`
 		AC_DEFINE_UNQUOTED(SH_KERNEL_VERSION, _("${kernelversion}"), [Define the kernel version])
+
 		if test "x${withval}" != "xyes"; then
 			systemmap="${withval}"
 		fi
+
 		if test "x${cross_compiling}" = xyes; then
 			:
 		elif test "x$selectconfig" = "xfreebsd"; then
 			LIBS="$LIBS -lkvm"
 			sh_libkvm="-lkvm"
-		elif test -f "${systemmap}"; then 
-			:
+		elif test -f "${systemmap}"; then
+		     	if test -c /dev/kmem; then 
+			   :
+			else
+			   # need kernel module
+
+	   		   if test -f /lib/modules/${kernelversion}/build/include/linux/kernel.h; then
+			      lkm_inc="-I/lib/modules/${kernelversion}/build/include"
+	   		   else
+			       AC_MSG_WARN([--enable-khide: /lib/modules/${kernelversion}/build/include/linux not found])
+			       AC_MSG_WARN([--enable-khide: You may need to install the kernel-source])
+			       AC_MSG_WARN([--enable-khide: headers for the currently-running kernel.])
+	   		   fi
+
+			   AC_MSG_CHECKING([for vmlist_lock])
+			   sh_vmlist_lock=`egrep ['[bdBD] vmlist_lock$'] ${systemmap} | awk '{print $1}'` 
+			   if test x"$sh_vmlist_lock" = x; then 
+			       AC_MSG_RESULT(no)
+			   else
+			       sh_vmlist_lock="0x${sh_vmlist_lock}"
+			       AC_MSG_RESULT([${sh_vmlist_lock}])
+			       AC_DEFINE_UNQUOTED(SH_VMLIST_LOCK, ${sh_vmlist_lock}, [The address of the vmlist spinlock])
+			   fi
+
+			   AC_MSG_CHECKING([for vmlist])
+			   sh_vmlist_lock=`egrep ['[bdBD] vmlist$'] ${systemmap} | awk '{print $1}'` 
+			   if test x"$sh_vmlist" = x; then 
+			       AC_MSG_RESULT(no)
+			   else
+			       sh_vmlist="0x${sh_vmlist}"
+			       AC_MSG_RESULT([${sh_vmlist}])
+			       AC_DEFINE_UNQUOTED(SH_VMLIST, ${sh_vmlist}, [The address of the vmlist])
+			   fi
+
+			   sh_lkm="${sh_lkm} samhain_kmem.ko"
+			   sh_insmod_pre="modprobe ${install_name}_kmem"
+
+			fi
 		else
 			AC_MSG_ERROR([Option --with-kcheck=systemmap cannot be used, because system map ${systemmap} does not exist.])
 		fi
 	fi
 	]
 )
+
+AC_SUBST(lkm_inc)
+AC_SUBST(sh_lkm)
+AC_SUBST(sh_insmod_cmd)
+AC_SUBST(sh_insmod_pre)
+
 AC_SUBST(systemmap)
 AC_SUBST(sh_libkvm)
 
@@ -2375,24 +2462,29 @@ AC_ARG_WITH(trusted,
 AC_DEFINE_UNQUOTED(SL_ALWAYS_TRUSTED, ${mytrust} )
 AC_SUBST(mytrust)
 
+mytmpdir=
+
 AC_ARG_WITH(tmp-dir,
         [  --with-tmp-dir=PFX		set directory for temporary files [[HOME]]],
         [
 	if test "x${cross_compiling}" = xyes; then
-		my_tmp_dir="$withval"
-		AC_DEFINE_UNQUOTED(SH_TMPDIR, _("${my_tmp_dir}") )
+		mytmpdir="$withval"
+		AC_DEFINE_UNQUOTED(SH_TMPDIR, _("${mytmpdir}") )
 	else
 		if test -d "${withval}"; then
-			my_tmp_dir="$withval"
-			AC_DEFINE_UNQUOTED(SH_TMPDIR, _("${my_tmp_dir}") )
+			mytmpdir="$withval"
+			AC_DEFINE_UNQUOTED(SH_TMPDIR, _("${mytmpdir}") )
 		else
-			my_tmp_dir="$withval"
-			AC_DEFINE_UNQUOTED(SH_TMPDIR, _("${my_tmp_dir}") )
+			mytmpdir="$withval"
+			AC_DEFINE_UNQUOTED(SH_TMPDIR, _("${mytmpdir}") )
 			AC_MSG_WARN([--with-tmp-dir: tmp directory ${withval} does not exist])
 		fi
 	fi
 	]
 )
+
+AC_SUBST(mytmpdir)
+
 
 dnl
 dnl PATH DEFAULTS

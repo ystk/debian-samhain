@@ -47,6 +47,7 @@
 #include "sh_tools.h"
 #include "sh_unix.h"
 #include "sh_utils.h"
+#include "sh_restrict.h"
 
 
 extern int set_reverse_lookup (const char * c);
@@ -254,7 +255,7 @@ static int sh_readconf_cond_match(char * str, int line)
 		  sh.host.system, /* flawfinder: ignore */ 
 		  sh.host.release, sh.host.machine);
       
-      if  (sl_strncmp (p,  myident, sl_strlen(myident)) == 0
+      if  (sl_strncmp (p,  myident, strlen(myident)) == 0
 #ifdef HAVE_REGEX_H
 	   || sh_util_regcmp (p, myident) == 0
 #endif
@@ -339,7 +340,8 @@ int sh_readconf_read (void)
 #endif
   char * tmp;
 
-  char   line_in[512+2];
+#define SH_LINE_IN 16384
+  char * line_in;
   char * line;
 
   /* This is for nested conditionals.
@@ -372,9 +374,13 @@ int sh_readconf_read (void)
       fd = sh_forward_req_file(_("CONF"));
 
       if (!SL_ISERROR(fd))
-	local_file = 0;
+	{
+	  local_file = 0;
+	}
       else if (sh.flag.checkSum != SH_CHECK_INIT)
-	aud_exit (FIL__, __LINE__, EXIT_FAILURE);
+	{
+	  aud_exit (FIL__, __LINE__, EXIT_FAILURE);
+	}
       else
 	{
 	  sh_error_handle ((-1), FIL__, __LINE__, fd, MSG_D_FAIL);
@@ -426,6 +432,8 @@ int sh_readconf_read (void)
 	     KEY_LEN+1);
   sl_rewind (fd);
 
+  line_in = SH_ALLOC(SH_LINE_IN);
+
 #if defined(SH_STEALTH) && !defined(SH_STEALTH_MICRO)
     /* extract the data and copy to temporary file
      */
@@ -433,7 +441,7 @@ int sh_readconf_read (void)
 
   sh_unix_getline_stealth (0, NULL, 0); /* initialize */
 
-  while ( sh_unix_getline_stealth (fd, line_in, 512) > 0) {
+  while ( sh_unix_getline_stealth (fd, line_in, SH_LINE_IN-2) > 0) {
     hidden_count++;
     if (line_in[0] == '\n')
       {
@@ -450,7 +458,7 @@ int sh_readconf_read (void)
     if (0 == sl_strncmp(line_in, _("[EOF]"), 5))
       break;
 #endif
-    if (hidden_count > 4096)  /* arbitrary safeguard */
+    if (hidden_count > 1048576)  /* arbitrary safeguard, 1024*1024 */
       break;
   }
   sl_close(fd);
@@ -463,7 +471,7 @@ int sh_readconf_read (void)
    */
   conf_line = 0;
 
-  while ( sh_unix_getline (fd, line_in, 512) > 0) {
+  while ( sh_unix_getline (fd, line_in, SH_LINE_IN-2) > 0) {
 
     ++conf_line;
 
@@ -501,6 +509,7 @@ int sh_readconf_read (void)
 		 _("There seems to be more than one signed message in the configuration\nfile. Please make sure there is only one signed message.\n"));
 	    sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_EXIT_ABORT1,
 			     sh.prg_name);
+	    SH_FREE(line_in);
 	    aud_exit (FIL__, __LINE__,EXIT_FAILURE);
 	  }
       }
@@ -659,7 +668,10 @@ int sh_readconf_read (void)
    */
   sl_rewind (fd);
   if (0 != sh_gpg_check_sign (fd, 0, 1))
-    aud_exit (FIL__, __LINE__, EXIT_FAILURE);
+    {
+      SH_FREE(line_in);
+      aud_exit (FIL__, __LINE__, EXIT_FAILURE);
+    }
 #endif
 
   sl_close (fd);
@@ -668,6 +680,7 @@ int sh_readconf_read (void)
 
   read_mode = SH_SECTION_NONE; /* reset b/o sighup reload */
 
+  SH_FREE(line_in);
   SL_RETURN( 0, _("sh_readconf_read"));
 }
 
@@ -929,10 +942,16 @@ cfg_options ext_table[] = {
   { N_("file"),           SH_SECTION_PRELINK,    SH_SECTION_NONE, 
     sh_files_pushfile_prelink },
 
-  { N_("ignoreadded"), SH_SECTION_MISC,   SH_SECTION_NONE, 
+  { N_("ignoreadded"),   SH_SECTION_MISC,   SH_SECTION_NONE, 
     sh_ignore_add_new },
   { N_("ignoremissing"), SH_SECTION_MISC,   SH_SECTION_NONE, 
     sh_ignore_add_del },
+
+  { N_("skipchecksum"),  SH_SECTION_MISC,   SH_SECTION_NONE, 
+    sh_restrict_define },
+  { N_("filetype"),      SH_SECTION_MISC,   SH_SECTION_NONE, 
+    sh_restrict_add_ftype },
+
 
   { N_("filecheckscheduleone"), SH_SECTION_MISC,   SH_SECTION_NONE, 
     sh_set_schedule_one },
@@ -1201,8 +1220,14 @@ cfg_options ext_table[] = {
   { N_("syslogfacility"),    SH_SECTION_LOG,   SH_SECTION_MISC, 
     sh_log_set_facility },
 
+  { N_("syslogmapstampto"),    SH_SECTION_LOG,   SH_SECTION_MISC, 
+    sh_log_set_stamp_priority },
+
   { N_("mactype"),     SH_SECTION_MISC,  SH_SECTION_NONE, 
     sh_util_sigtype },
+
+  { N_("avoidblock"),     SH_SECTION_MISC,  SH_SECTION_NONE, 
+    sh_calls_set_sub },
 
   { NULL,    0,   0,  NULL}
 };
@@ -1377,7 +1402,7 @@ static int sh_readconfig_line (char * line)
     {
       i = 0;
       while (ident[i] != NULL) {
-	if (sl_strncmp (key, _(ident[i]), sl_strlen(ident[i])-1) == 0)
+	if (sl_strncmp (key, _(ident[i]), sl_strlen(ident[i])) == 0)
 	  {
 	    good_opt = 0;
 	    sh_error_set_iv (identnum[i], value);
