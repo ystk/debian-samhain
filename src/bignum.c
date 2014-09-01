@@ -213,9 +213,9 @@ free_digits(DIGIT * dp, ulong  count)
   /* Mar 4 2000 R. Wichmann: check for dp == NULL */
   if (!dp) 
     return;
+  (void) count;
   free((char *)dp);
   dp = NULL;
-  count = 0;
 }
 #endif
 

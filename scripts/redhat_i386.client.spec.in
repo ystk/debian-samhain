@@ -140,6 +140,7 @@ fi
 /usr/local/sbin/samhain
 /usr/local/sbin/samhain_setpwd
 /lib/modules
+%attr(644,root,root) /etc/logrotate.d/@install_name@
 #%attr(644,root,root) /usr/local/man/man5/samhain*
 #%attr(644,root,root) /usr/local/man/man8/samhain*
 #%config(noreplace) REQ_FROM_SERVER/etc/samclient.conf

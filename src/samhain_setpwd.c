@@ -278,8 +278,9 @@ int main (int argc, char * argv[])
 
   if (strlen(argv[3]) != 16)
     {
-      fprintf (stdout, _("ERROR <new_password> %s has not exactly 16 chars\n"),
-	       argv[0]);
+      fprintf (stdout, 
+	       _("ERROR <new_password> |%s| has not exactly 16 chars\n"),
+	       argv[3]);
       fflush(stdout);
       return  EXIT_FAILURE;
     }

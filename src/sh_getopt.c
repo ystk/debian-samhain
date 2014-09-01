@@ -29,6 +29,7 @@
 #include "samhain.h"
 #include "sh_error.h"
 #include "sh_getopt.h"
+#include "sh_unix.h"
 #include "sh_files.h"
 #include "sh_utils.h"
 #include "sh_mail.h"
@@ -79,6 +80,11 @@ static opttable_t op_table[] = {
     N_("Run update in interactive mode"),  
     HAS_ARG_NO, 
     sh_util_set_interactive },
+  { N_("listfile"),  
+    '-', 
+    N_("Run update with listfile"),  
+    HAS_ARG_YES, 
+    sh_util_update_file },
 #endif
 #if defined(SH_WITH_SERVER) || defined(SH_WITH_CLIENT)
   { N_("server-port"),  
@@ -394,7 +400,7 @@ static void sh_getopt_print_options (void)
   if (num > 0) fputc ('\n', stdout);
   printf (_("Client executable (port %d)"), SH_DEFAULT_PORT); ++num;
 #endif
-#if defined(SH_WITH_CLIENT)
+#if defined(SH_WITH_SERVER)
   if (num > 0) fputc ('\n', stdout);
   printf (_("Server executable (port %d, user %s)"), 
 	  SH_DEFAULT_PORT, DEFAULT_IDENT); 
@@ -438,6 +444,11 @@ static void sh_getopt_print_options (void)
   if (num > 0) fputc ('\n', stdout);
   printf (_("   -- Key fingerprint: %s"), SH_GPG_FP); ++num;
 #endif
+#endif
+
+#if defined(SH_SHELL_EVAL)
+  if (num > 0) fputc ('\n', stdout);
+  fputs (_(" shell expansion in configuration file supported"), stdout); ++num;
 #endif
 
 #if defined(SL_DEBUG)
@@ -550,6 +561,10 @@ static void sh_getopt_print_modules (void)
 #ifdef USE_LOGFILE_MONITOR
   if (num > 0) fputc (',', stdout);
   fputs (_(" logfile monitor"), stdout); ++num;
+#endif
+#if defined(USE_REGISTRY_CHECK)
+  if (num > 0) fputc ('\n', stdout);
+  fputs (_(" Windows registry"), stdout); ++num;
 #endif
   if (num == 0)
     fputs (_(" none"), stdout);

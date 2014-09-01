@@ -46,15 +46,14 @@
 ## E-mail
 ##
 # MailSeverity=none
-MailSeverity=crit
 
 ## Console
 ##
-# PrintSeverity=info
+PrintSeverity=none
 
 ## Logfile
 ##
-# LogSeverity=none
+LogSeverity = warn
 
 ## Syslog
 ##
@@ -96,11 +95,11 @@ MailSeverity=crit
 
 ## Log the server timestamp for received messages
 #
-SetDBServerTstamp = True
+# SetDBServerTstamp = True
 
 ## Use a persistent connection
 #
-UsePersistent = True
+# UsePersistent = True
 
 
 

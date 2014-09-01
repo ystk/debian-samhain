@@ -1,13 +1,223 @@
-2.8.3a:
+	* Add support for SHA2-256 checksum function
+	* Drop support for --enable-khide on kernel version 3.x and above
+	* Fix IgnoreAdded to anchor regex at beginning of path (reported by
+	  R.Lindner)
+	* Add check to detect availability of pmap_getmaps() (missing in
+	  static library on recent Linux systems as reported by Ian Baldwin)
+	* Fixes for Ubuntu 13.4:
+	  - no error msg for failing stat on /run/user/Username/gvfs in
+	    suidcheck
+	  - no error message for failing hardlink check on /run/user/Username
+	  - eliminate compiler warnings
+	* Add option '--disable-asm' to work around a gcc issue in Debian
+	  unstable (reported by micah)
+	* Remove option '-i' from mkitab in samhain-install.sh.in (reported
+	  by N. Kerski)
+
+3.0.13:
+	* Fix detection of nonfunctional /dev/kmem
+	* Fix race condition in GrowingLogfiles policy that
+	  causes spurious reports (problem noticed by J. Daubert)
+
+3.0.12:
+	* Fix compiler warning in bignum.c (unused parameter)
+	* Detect if /var/run is a symlink and /run exists
+	* Fix for broken support for audit subsystem (reported
+	  by isquish)
+	* Fix for incorrect use of sh_inotify_add_watch_later
+	  which causes a steady increase in memory usage
+	  (issue reported by Maxime V)
+	* Fix for potential minor memory leak
+	* Fix for bug in negated conditionals for config file
+	  (reported by M. Ward)
+
+3.0.11:
+	* Fix for compile error on HP-UX (reported by P. Alves)
+	* Propagate ERANGE error from getgrxxx_r (issue raised by C. Feikes)
+	* Fix reconnecting to database for Oracle
+	* Add better logrotate handling for the GrowingLogs policy (search
+	  rotated log and verify it, don't report if this succeeds)
+	* Add ability to create debian packages with preset password (use
+	  env var PASSWORD)
+	* Add option KernelCheckProc (bool) to suppress kernel /proc test
+	* Add option IgnoreModified to cover transient files that
+	  not only get added/deleted but also modified
+
+3.0.10:
+	* Revert to previous logic in samhain.c because it will block
+	  otherwise (reported by Alexandr Sabitov)
+
+3.0.9:
+	* Fixed a Cygwin compile warning
+	* Change logic in samhain.c to make sure inotify doesn't cause
+	  excessive full scans
+	* Add option IgnoreTimestampsOnly in Windows registry check (ignore
+	  changes if only timestamp has changed)
+	* Fix the probe command (misses clients if their startup message
+	  has been missed)
+	* Fix the RPM spec file for --enable-network=client and no password
+	  (reported by Mitch St Martin)
+	* Fix build error with Linux audit (reported by Andy Jack)
+	* Fix detection of utmpx.h (reported by D. Thiel)
+
+3.0.8:
+	* rename to 3.0.8 for release
+	* useful exit status for samhainadmin.pl --examine
+
+3.0.7a:
+	* add ability to create RPM with preset password (use
+	  env var PASSWORD)
+	* fix the rpm-light makefile target
+	* fix minor bug in samhain_setpwd.c (incorrect error message)
+
+3.0.7:
+	* update documentation for prelude
+	* fix configure to properly search for Oracle Instantclient SDK
+	* pass through TNS_ADMIN environment variable for Oracle
+	* optimize audit rules automatically
+	* zero out the html status file at server exit
+	* don't check for assembly optimization unless linux or *BSD
+
+3.0.6:
+	* install logrotate script if /etc/logrotate.d is detected
+	* new option --enable-suid for nagios
+	* fix for --enable-ptrace: make the save_tv variable thread specific
+	* fix bug in inotify code which made it follow symlinks (by [anonymous])
+	* fix two missing SH_MUTEX_LOCK(mutex_thread_nolog) (by [anonymous])
+	* fix for 'no such process' message from sh_fInotify_init_internal()
+	  (by [anonymous])
+	* fix for --enable-ptrace with threads (by [anonymous])
+	* option SetReportFile for writing out summary after file check
+
+3.0.5:
+	* fix xml format templates for registry check
+	* fix database download on registry check init (reported by ldieu)
+
+3.0.4:
+	* fix verbosity of message for alerts on already deleted watches
+	  (set it to debug - suggested by xrx)
+	* fix extraneous error messages about file not found from
+	  sh_fInotify_init_internal() (bug reports by xrx and aj)
+
+3.0.3 (28-03-2012):
+	* fix potential deadlock in sh_ext_popen()
+	* make sure sh_processes_readps cannot hang forever
+	* fix for deadlock if sh_processes_readps hangs
+	* fix for deadlock if suid check and inotify are used together
+	  (reported by A. Jack)
+	* fixed problem with samhain_stealth.c (handle input config
+	  files that don't end with a newline)
+	* fixed compiler warnings for yulectl.c with stealth
+	* fixed lacking support for O_NOATIME on 64bit linux
+
+3.0.2a (23-02-2012):
+	* Fix compile error on Solaris 10
+
+3.0.2 (16-02-2012):
+	* change sql init scripts to make bigint fields unsigned (problem
+	  reported by A. Sabitov)
+	* patch by Andy Jack for issue with the --with-gpg option (hangs with
+          high cpu load at startup)
+	* call ./samhain-install.sh as /bin/sh ./samhain-install.sh in the
+	  RPM spec file, because /var might be mounted noexec (reported by GC)
+	* fixed configure.ac for the case that --with-gpg and --enable-nocl are
+	  used (./samhain for gpg checksum; problem report by Andy Jack)
+	* fixed a potential NULL pointer dereference in sh_inotify.c on
+	  systems where inotify is not available (reported by <anonymous>)
+	* fixed: the config file template mentions (in a comment) the
+	  non-existent directive SetLockPath instead of the correct
+	  SetLockfilePath (reported by Curtis).
+	* fixed: the definition of O_NOATIME isn't seen in sh_files.c.
+
+3.0.1 (07-12-2011):
+	* fix a memory leak (reported by C. Westlake)
+	* fix an uninitialized variable in the suidcheck code (problem
+	  reports by T- Luettgert and Kai)
+	* fix a bug in the port check with --disable-ipv6 (reported
+	  by C. Westlake)
+	* fix potential deadlock in sh_files.c (reported by S. Mirolo)
+	* change Makefile.in to stop on compile error rather than at link stage
+	  (suggested by S. Mirolo)
+	* fix compile errors caused by missing #define (pthread disabled) and
+	  wrong function call (OSX specific code), reported by S. Mirolo
+	* fix warning by the llvm/clang static checker
+	* fix compile issues on freebsd
+	* handle (ignore) SIGPIPE more thoroughly
+	* update config.guess, config.sub
+
+3.0.0a (06-10-2011):
+	* Fix compile-time issues on RHEL5 (reported by Thomas)
+
+3.0.0 (01-11-2011):
+	* Add support for the inotify API
+	* If --disable-shellexpand is used, also disable setting
+	  the prelink/ps paths
+	* Fix missing check_mask storage for glob pattern
+	* Add support for integer keys in zAVL
+	* Fix compiler warnings with gcc 4.6.1 (variables that get set
+	  but then remain unused)
+	* Add more server-side debugging for IPv6
+	* Make kern_head compile with 3.x kernels
+
+2.8.6 (20-09-2011):
+	* Manual updated.
+	* Added an option LogmonDeadtime to avoid repetitive reporting
+	  on correlated events.
+	* Fix problems with timestamp handling in logfile correlation
+	  (problem reported by D. Dearmore)
+	* List the policy under which a directory/file is checked
+	* Option to use a textfile with a list of files for update
+	* Fix --enable-db-reload option (reported by David L.)
+	* Fix samhain_kmem compilation, need to compile under chosen
+	  name if --enable-install-name is used (reported by David L.)
+	* Fix uninitialized string in error message (reported by mimox)
+
+2.8.5a (16-06-2011):
+	* Fix autolocal.m4 for new configure option
+
+2.8.5 (15-06-2011):
+	* Detect non-working /dev/kmem in configure script, and fix
+	  a bug in the samhain_kmem kernel module.
+	* Fix wrong handler for LogmonMarkSeverity (reported by S. Chittenden)
+	* Better protection against the 'intruder on server' scenario
+	  pointed out by xrx. Add option to disable shell expansion in
+	  configuration files, and check gpg signature earlier.
+	* Support /opt/local/bin in the Unix entropy gatherer (suggestion
+	  by Sean Chittenden)
+	* Cache timeserver response for one second (suggestion by
+	  Sean Chittenden)
+
+2.8.4a (11-05-2011):
+	* Fix for compile error with --with-prelude 
+	  (reported by Sean Chittenden), missing regression test added
+	* Fix for compile error with --enable-udp (reported by Sean Chittenden),
+	  missing regression test added
+
+2.8.4 (30-04-2011):
+	* Fix another reload bug in the log monitoring module
+	* Add unit tests for IgnoreAdded/IgnoreDeleted configuration directives
+	* Fix deadlock after reload when compiled with --enable-login-watch
+	  (reported by M. Teege and O. Cobanoglu)
+	* Fix compile error for samhain_hide.ko with recent kernel
+	* Include patch by J. Graumann to specify the location of the 
+	  secret keyring with samhainadmin.pl
+	* Fix potential timeout problem in sh_sub_stat_int() and propagate the
+	  error (issue reported by mtg)
+	* Add support for X-Forwarded-For in apache logfile parser, add
+	  option 'RE{regex}' to insert arbitrary regex
+	* New options PortcheckMinPort, PortcheckMaxPort for the open ports
+	  check
+
+2.8.3a (23-03-2011):
 	* Fix two 'label at end of compound statement' errors on FreeBSD
 	  (reported by David E. Thiel)
 
-2.8.3:
+2.8.3 (22-03-2011):
 	* init scripts: load samhain_kmem.ko before samhain starts
 	* slib.c: eliminate mutex from sl_create_ticket()
 	* sh_entropy.c: move pthread usage out of child
 	* sh_hash.c, sh_pthread.c, sh_pthread.h: sh_hash_hashdelete()
-	  needs deadlock detection, may be called from within sh_hash_init() 
+	  needs deadlock detection, may be called from within sh_hash_init()
 	  via atexit handler on error condition
 	* sh_suidchk.c, sh_calls.c, sh_calls.h: need a nosub version of lstat()
 	  to use with relative path after chdir()
@@ -17,18 +227,18 @@
 	* fix zeroing of result from getnameinfo() (problem reported by Richard)
 	* fix spurious warnings about unsupported address family (reported
 	  by N Silverman)
-	* option to run lstat/stat in subprocess to avoid hanging on NFS mounts 
+	* option to run lstat/stat in subprocess to avoid hanging on NFS mounts
 	  (off by default)
 	* fix Windows/Cygwin compile error (reported by A. Schmidt)
 
-2.8.2:
+2.8.2 (16-02-2011):
 	* add function to skip checksumming
 	* Fix missing check for recursion depth >= 0 if not IgnoreAll
 	* Fix hardcoded path for temp directory in deployment scripts
 	* Fix bad compile on CentOS 4.8 with gcc 4.1.2
 	* Fix minor bug in check_samhain.pl (pointed out by J.-S. Eon long ago)
 
-2.8.1:
+2.8.1 (17-11-2010):
 	* Document handling of missing files with secondary schedule
 	* Fix incorrect handling of missing files when secondary schedule
 	  is used (reported by Sergey)

@@ -52,6 +52,26 @@ static void zAVLFillVacancy (zAVLTree *avltree,
 #define ZAVL_OK 1
 #define ZAVL_NO 0
 
+/* The comparison function. Was a macro, but this allows for more
+ * flexibility (non-string keys). The key is a (void *) now, and
+ * the type is stored in the zAVLTree struct. Oct 21, 2011, rw
+ */
+static int zAVLKey_cmp(const zAVLTree * tree, zAVLKey a, zAVLKey b)
+{
+  if (tree->keytype == zAVL_KEY_STRING)
+    {
+      return (strcmp((char*)a, (char *)b));
+    }
+  else /* zAVL_KEY_INT */
+    {
+      int x = *((int *)a);
+      int y = *((int *)b);
+
+      if      (x > y) return  1;
+      else if (x < y) return -1;
+      else return 0;
+    }
+}
 
 /*
  * AVLAllocTree:
@@ -61,7 +81,7 @@ static void zAVLFillVacancy (zAVLTree *avltree,
  * On success, a pointer to the malloced AVLTree is returned.  If there
  * was a malloc failure, then NULL is returned.
  */
-zAVLTree *zAVLAllocTree (zAVLKey (*getkey)(void const *item))
+zAVLTree *zAVLAllocTree (zAVLKey (*getkey)(void const *item), int keytype)
 {
   zAVLTree *rc;
 
@@ -72,6 +92,7 @@ zAVLTree *zAVLAllocTree (zAVLKey (*getkey)(void const *item))
   rc->top = NULL;
   rc->count = 0;
   rc->getkey = getkey;
+  rc->keytype = keytype;
   return rc;
 }
 
@@ -344,7 +365,7 @@ static void zAVLRebalanceNode (zAVLTree *avltree, zAVLNode *avlnode)
 
   depthdiff = R_DEPTH(avlnode) - L_DEPTH(avlnode);
 
-  if (depthdiff <= -2) {
+  if (depthdiff <= -2 && avlnode->left) {
     child = avlnode->left;
 
     if (L_DEPTH(child) >= R_DEPTH(child)) {
@@ -362,27 +383,30 @@ static void zAVLRebalanceNode (zAVLTree *avltree, zAVLNode *avlnode)
 
     else {
       gchild = child->right;
-      avlnode->left = gchild->right;
-      if (avlnode->left != NULL)
-        avlnode->left->parent = avlnode;
-      avlnode->depth = CALC_DEPTH(avlnode);
-      child->right = gchild->left;
-      if (child->right != NULL)
-        child->right->parent = child;
-      child->depth = CALC_DEPTH(child);
-      gchild->right = avlnode;
-      if (gchild->right != NULL)
-        gchild->right->parent = gchild;
-      gchild->left = child;
-      if (gchild->left != NULL)
-        gchild->left->parent = gchild;
-      gchild->depth = CALC_DEPTH(gchild);
-      *superparent = gchild;
-      gchild->parent = origparent;
+      if (gchild)
+	{
+	  avlnode->left = gchild->right;
+	  if (avlnode->left != NULL)
+	    avlnode->left->parent = avlnode;
+	  avlnode->depth = CALC_DEPTH(avlnode);
+	  child->right = gchild->left;
+	  if (child->right != NULL)
+	    child->right->parent = child;
+	  child->depth = CALC_DEPTH(child);
+	  gchild->right = avlnode;
+	  if (gchild->right != NULL)
+	    gchild->right->parent = gchild;
+	  gchild->left = child;
+	  if (gchild->left != NULL)
+	    gchild->left->parent = gchild;
+	  gchild->depth = CALC_DEPTH(gchild);
+	  *superparent = gchild;
+	  gchild->parent = origparent;
+	}
     }
   }
 
-  else if (depthdiff >= 2) {
+  else if (depthdiff >= 2 && avlnode->right) {
     child = avlnode->right;
 
     if (R_DEPTH(child) >= L_DEPTH(child)) {
@@ -400,23 +424,26 @@ static void zAVLRebalanceNode (zAVLTree *avltree, zAVLNode *avlnode)
 
     else {
       gchild = child->left;
-      avlnode->right = gchild->left;
-      if (avlnode->right != NULL)
-        avlnode->right->parent = avlnode;
-      avlnode->depth = CALC_DEPTH(avlnode);
-      child->left = gchild->right;
-      if (child->left != NULL)
-        child->left->parent = child;
-      child->depth = CALC_DEPTH(child);
-      gchild->left = avlnode;
-      if (gchild->left != NULL)
-        gchild->left->parent = gchild;
-      gchild->right = child;
-      if (gchild->right != NULL)
-        gchild->right->parent = gchild;
-      gchild->depth = CALC_DEPTH(gchild);
-      *superparent = gchild;
-      gchild->parent = origparent;
+      if (gchild)
+	{
+	  avlnode->right = gchild->left;
+	  if (avlnode->right != NULL)
+	    avlnode->right->parent = avlnode;
+	  avlnode->depth = CALC_DEPTH(avlnode);
+	  child->left = gchild->right;
+	  if (child->left != NULL)
+	    child->left->parent = child;
+	  child->depth = CALC_DEPTH(child);
+	  gchild->left = avlnode;
+	  if (gchild->left != NULL)
+	    gchild->left->parent = gchild;
+	  gchild->right = child;
+	  if (gchild->right != NULL)
+	    gchild->right->parent = gchild;
+	  gchild->depth = CALC_DEPTH(gchild);
+	  *superparent = gchild;
+	  gchild->parent = origparent;
+	}
     }
   }
 

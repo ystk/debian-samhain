@@ -157,7 +157,7 @@ int sh_html_head(SL_TICKET ticket)
 	  time_ptr   = localtime (&(server_status.start));
 #endif
 	  if (time_ptr != NULL) 
-	    status = strftime (ts1, 80, _("%d-%m-%Y %H:%M:%S"), time_ptr);
+	    strftime (ts1, 80, _("%d-%m-%Y %H:%M:%S"), time_ptr);
 	  now = time(NULL);
 #if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_LOCALTIME_R)
 	  time_ptr   = localtime_r (&now, &time_tm);
@@ -165,7 +165,7 @@ int sh_html_head(SL_TICKET ticket)
 	  time_ptr   = localtime (&now);
 #endif
 	  if (time_ptr != NULL) 
-	    status = strftime (ts2, 80, _("%d-%m-%Y %H:%M:%S"), time_ptr);
+	    strftime (ts2, 80, _("%d-%m-%Y %H:%M:%S"), time_ptr);
 
 	  sl_snprintf(outline, 1023, 
 		      _("<p>Time:<BR>Now: %s<BR>Start: %s</p>"), 
@@ -191,7 +191,7 @@ int sh_html_head(SL_TICKET ticket)
 	      time_ptr   = localtime (&(server_status.last));
 #endif
 	      if (time_ptr != NULL) 
-		status = strftime (ts1, 80, _("%d-%m-%Y %H:%M:%S"), time_ptr);
+		strftime (ts1, 80, _("%d-%m-%Y %H:%M:%S"), time_ptr);
 	      sl_snprintf(outline, 1023, 
 			  _("<p>Last connection at %s</p>"), 
 			  ts1);
@@ -322,7 +322,7 @@ int sh_html_get_entry (void)
 	  if (!entry_orig)
 	    {
 	      entry_size = 0;
-	      add_size   = 0;
+	      /* add_size   = 0; *//* never read */
 	      SL_RETURN( 0, _("sh_html_get_entry"));
 	    }
 
@@ -500,6 +500,32 @@ int sh_html_write(void  * inptr)
   sl_close(fd);
 
   SL_RETURN((0), _("sh_html_write"));
+}
+
+int sh_html_zero()
+{
+  long fd;
+
+  SL_ENTER(_("sh_html_zero"));
+
+  if (0 != (fd = tf_trust_check (DEFAULT_HTML_FILE, SL_YESPRIV)))
+    {
+      SL_RETURN((-1), _("sh_html_zero"));
+    }
+
+  fd = sl_open_write_trunc (FIL__, __LINE__, DEFAULT_HTML_FILE, SL_YESPRIV);
+
+  if (SL_ISERROR(fd))
+    {
+     SL_RETURN((-1), _("sh_html_zero"));
+    }
+
+  sh_html_head(fd);
+  sh_html_foot(fd);
+
+  sl_close(fd);
+
+  SL_RETURN((0), _("sh_html_zero"));
 }
 
 /* SH_WITH_SERVER */

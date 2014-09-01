@@ -3,7 +3,7 @@
 # check_samhain.pl - check to see how many policy violations are reported
 #   by the samhain file integrity checker.
 #
-# Copyright Rainer Wichmann (2004)
+# Copyright Rainer Wichmann (2004, 2012)
 #
 # License Information:
 # This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,7 @@
 use strict;
 use Getopt::Long;
 use vars qw($PROGNAME $SAMHAIN $opt_V $opt_h $opt_v $verbose $opt_w $opt_c $opt_t $status $msg $state $retval);
-use lib  "utils.pm";
+use lib  "/usr/local/nagios/libexec" ;
 use utils qw(%ERRORS &print_revision);
 
 #my $TIMEOUT = 15;
@@ -48,7 +48,7 @@ $ENV{'ENV'}='';
 
 # -----------------------------------------------------------------[ Global ]--
 
-$PROGNAME = "check_samhain";
+$PROGNAME = "check_@install_name@";
 $SAMHAIN = "@sbindir@/@install_name@"; 
 
 # ----------------------------------------------------------------[ options ]--
@@ -98,7 +98,7 @@ if ($status < $opt_w) {
     $msg = "WARNING: $status policy violations (threshold w=$opt_w)";
     $state = $ERRORS{'WARNING'};
 } else {
-    $msg = "CRITICAL: $status policy violations (threshold w=$opt_w)";
+    $msg = "CRITICAL: $status policy violations (threshold c=$opt_c)";
     $state = $ERRORS{'CRITICAL'};
 }
 
@@ -142,7 +142,7 @@ sub process_arguments(){
 	 );
     
     if ($opt_V) {
-	print_revision($PROGNAME,'$Revision: 1.0 $ ');
+	print_revision($PROGNAME,'$Revision: 1.1 $ ');
 	exit $ERRORS{'OK'};
     }
     
@@ -181,8 +181,8 @@ sub print_usage () {
 }
 
 sub print_help () {
-    print_revision($PROGNAME, '$Revision: 1.0 $');
-    print "Copyright (c) 2004 Rainer Wichmann
+    print_revision($PROGNAME, '1.1');
+    print "Copyright (c) 2004,2012 Rainer Wichmann
 
 This plugin checks the number of policy violations reported by the
 samhain file intgrity checker

@@ -430,6 +430,7 @@ char   * com_path[] = {
   N_("/usr/bin/"),
   N_("/usr/sbin/"),
   N_("/usr/local/bin/"),
+  N_("/opt/local/bin/"),
   NULL
 };
 

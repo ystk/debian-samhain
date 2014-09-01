@@ -185,6 +185,8 @@ int sh_eval_gadd (const char * str)
   group_extra = NULL; /* pcre_study(group, 0, &error); */
 
   ng = SH_ALLOC(sizeof(struct sh_geval));
+  memset(ng, '\0', sizeof(struct sh_geval));
+
   ng->label       = sh_string_new_from_lchar(splits[0], lengths[0]);
   ng->flags       = RFL_ISGROUP;
 
@@ -291,6 +293,8 @@ int sh_eval_hadd (const char * str)
   host_extra = NULL; /* pcre_study(host, 0, &error); */
 
   nh = SH_ALLOC(sizeof(struct sh_heval));
+  memset(nh, '\0', sizeof(struct sh_heval));
+
   nh->hostname = host;
   nh->hostname_extra = host_extra;
   nh->rulegroups = NULL;
@@ -357,6 +361,8 @@ int sh_eval_qadd (const char * str)
     }
 
   nq = SH_ALLOC(sizeof(struct sh_qeval));
+  memset(nq, '\0', sizeof(struct sh_qeval));
+
   nq->label = sh_string_new_from_lchar(splits[0], lengths[0]);
   nq->alias = NULL;
 
@@ -608,6 +614,8 @@ int sh_eval_radd (const char * str)
   SH_FREE(new);
 
   nr = SH_ALLOC(sizeof(struct sh_geval));
+  memset(nr, '\0', sizeof(struct sh_geval));
+
   nr->label       = NULL;
   nr->flags       = RFL_ISRULE;
   nr->delay       = 0;
@@ -626,14 +634,14 @@ int sh_eval_radd (const char * str)
 
   if (pflag == 'K')
     {
-      nr->label   = sh_string_new_from_lchar(dstr, strlen(dstr));
+      nr->label   = sh_string_new_from_lchar(dstr, sl_strlen(dstr));
       nr->flags  |= RFL_KEEP;
       nr->delay   = dsec;
       SH_FREE(dstr);
     }
   else if (pflag == 'M')
     {
-      nr->label   = sh_string_new_from_lchar(dstr, strlen(dstr));
+      nr->label   = sh_string_new_from_lchar(dstr, sl_strlen(dstr));
       nr->flags  |= RFL_MARK;
       nr->delay   = dsec;
       SH_FREE(dstr);
@@ -788,10 +796,19 @@ void sh_eval_cleanup()
     {
       if (htmp->hostname_extra) (*pcre_free)(htmp->hostname_extra);
       if (htmp->hostname)       (*pcre_free)(htmp->hostname);
+      if (htmp->rulegroups)     htmp->rulegroups = NULL;
       hostlist = htmp->next;
+      htmp->next = NULL;
       SH_FREE(htmp);
       htmp = hostlist;
     }
+
+  hostlist   = NULL;
+  queuelist  = NULL;
+  grouplist  = NULL;
+
+  host_open  = NULL;
+  group_open = NULL;
 
   sh_keep_destroy();
   sh_keep_match_del();
@@ -867,7 +884,7 @@ static struct sh_geval * test_rule (struct sh_geval * rule, sh_string *msg, time
 
 	    if ( rule->flags & RFL_KEEP )
 	      {
-		DEBUG("debug: rule %d matches (keep)\n", count);
+		DEBUG("debug: rule %d matches (keep), timestamp = %lu\n", count, timestamp);
 		sh_keep_add(rule->label, rule->delay, 
 			    timestamp == 0 ? time(NULL) : timestamp);
 	      }
@@ -901,6 +918,7 @@ static struct sh_geval * test_rule (struct sh_geval * rule, sh_string *msg, time
   if (!rule)
     DEBUG("debug: no match found\n");
   /* If there was no match, this is NULL */
+  dummy1 = NULL;
   return rule;
 }
   
@@ -975,6 +993,9 @@ static struct sh_geval * test_grules (struct sh_heval * host,
 	group = group->next; /* next group of rules */
       } while (group);
     }
+
+  dummy2 = NULL;
+  dummy3 = NULL;
   return result;
 }
 
@@ -1104,7 +1125,7 @@ static struct sh_ceval * find_counter(struct sh_geval * rule,
   if (!(rule->counterlist))
     {
       DEBUG("debug: allocate new counterlist AVL tree\n");
-      rule->counterlist = zAVLAllocTree(sh_eval_getkey);
+      rule->counterlist = zAVLAllocTree(sh_eval_getkey, zAVL_KEY_STRING);
     }
 
   counter = (struct sh_ceval *) zAVLSearch (rule->counterlist, 
@@ -1115,6 +1136,8 @@ static struct sh_ceval * find_counter(struct sh_geval * rule,
       DEBUG("debug: no counter found\n");
 
       counter = SH_ALLOC(sizeof(struct sh_ceval));
+      memset(counter, '\0', sizeof(struct sh_ceval));
+
       counter->hostname    = sh_string_new_from_lchar(sh_string_str(host), 
 						      sh_string_len(host));
       counter->counted_str = NULL;

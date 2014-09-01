@@ -64,6 +64,7 @@ static const char lf_combined0[] = N_("%h %l %u %t \"%r\" %>s %b \"%{Referer}i\"
  */
 static void * sh_dummy_new = NULL;
 static void * sh_dummy_fti = NULL;
+static void * sh_dummy_ftr = NULL;
 
 void * sh_eval_fileinfo_apache(char * str)
 {
@@ -88,6 +89,7 @@ void * sh_eval_fileinfo_apache(char * str)
    */
   sh_dummy_new = (void*) &new;
   sh_dummy_fti = (void*) &f_time;
+  sh_dummy_ftr = (void*) &result;
 
   if (0 == strncmp("common", str, 6))
     {
@@ -151,8 +153,9 @@ void * sh_eval_fileinfo_apache(char * str)
       if(quotes)
 	{
 	  if(strcmp(token, "%r") == 0 || 
-	     strstr(token, _("{Referer}")) == 0 || 
-             strstr(token, _("{User-Agent}")) == 0)
+	     strstr(token, _("{Referer}")) != NULL || 
+             strstr(token, _("{User-Agent}")) != NULL ||
+	     strstr(token, _("{X-Forwarded-For}")) != NULL )
 	    {
 	      /*
 	      p = "\"([^\"\\\\]*(?:\\\\.[^\"\\\\]*)*)\"";
@@ -172,6 +175,17 @@ void * sh_eval_fileinfo_apache(char * str)
 	      sh_string_add_from_char(re_string, "(");
 	      sh_string_add_from_char(re_string, "\\S+");
 	      sh_string_add_from_char(re_string, ")");
+	    }
+	}
+      else if (token[0] == 'R' && token[1] == 'E' && token[2] == '{' && token[strlen(token)-1] == '}') 
+	{
+	  char * lb =  strchr(token, '{');
+	  char * rb = strrchr(token, '}');
+
+	  if (lb && rb)
+	    {
+	      ++lb; *rb = '\0';
+	      sh_string_add_from_char(re_string, lb);
 	    }
 	}
       else if (token[0] == '%' && token[strlen(token)-1] == 't') 
@@ -338,6 +352,9 @@ struct sh_logrecord * sh_parse_apache (sh_string * logline, void * fileinfo)
 	{
 	  struct tm btime;
 	  char * ptr = NULL;
+
+	  memset(&btime, '\0', sizeof(struct tm));
+	  btime.tm_isdst = -1;
 	  
 	  /* example: 01/Jun/2008:07:55:28 +0200 */
 

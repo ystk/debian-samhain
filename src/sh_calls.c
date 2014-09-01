@@ -33,6 +33,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <netdb.h>
 #include <netinet/in.h>
 
 #ifndef S_SPLINT_S
@@ -56,6 +57,8 @@
 
 #undef  FIL__
 #define FIL__  _("sh_calls.c")
+
+extern int flag_err_debug;
 
 char aud_err_message[64];
 
@@ -235,7 +238,56 @@ long int retry_accept(const char * file, int line, int fd,
   }
   errno = error;
 
+  if (flag_err_debug == SL_TRUE)
+    {
+      char ipbuf[SH_IP_BUF];
+      char buf[SH_BUFSIZE];
+#if defined(USE_IPVX)
+      sl_strlcpy(errbuf, _("Address family: "), sizeof(errbuf));
+      sl_strlcat(errbuf, 
+		 (ss.ss_family == AF_INET6) ? _("AF_INET6") : _("AF_INET"),
+		 sizeof(errbuf));
+      getnameinfo((struct sockaddr *)&ss, my_addrlen,
+		  ipbuf, sizeof(ipbuf), NULL, 0, NI_NUMERICHOST);
+#else
+      struct sockaddr_in sa;
+      char * p;
+      memcpy(&(sa), (struct sockaddr_in*)&ss, sizeof(struct sockaddr_in));
+      p = inet_ntoa(sa.sin_addr);
+      sl_strlcpy(ipbuf, p, sizeof(ipbuf));
+      sl_strlcpy(errbuf, _("Address family: AF_INET"), sizeof(errbuf));
+#endif
+      sl_strlcpy(buf, _("Address: "), sizeof(buf));
+      sl_strlcat(buf, ipbuf, sizeof(buf));
+      sh_error_handle (SH_ERR_ALL, FIL__, __LINE__, 0, MSG_E_SUBGEN,
+		       errbuf, _("retry_accept"));
+      sh_error_handle (SH_ERR_ALL, FIL__, __LINE__, 0, MSG_E_SUBGEN,
+		       buf, _("retry_accept"));
+    }
+
   sh_ipvx_save(serv_addr, ss.ss_family, (struct sockaddr *) &ss);
+
+  if (flag_err_debug == SL_TRUE)
+    {
+      char ipbuf[SH_IP_BUF];
+      char ipbuf2[SH_IP_BUF];
+      char buf[SH_BUFSIZE];
+#if defined(USE_IPVX)
+      int len = (serv_addr->ss_family == AF_INET) ? 
+	sizeof(struct sockaddr_in) :
+	sizeof(struct sockaddr_in6);
+      getnameinfo(sh_ipvx_sockaddr_cast(serv_addr), len,
+		  ipbuf2, sizeof(ipbuf2), NULL, 0, NI_NUMERICHOST);
+#else
+      char * p = inet_ntoa((serv_addr->sin).sin_addr);
+      sl_strlcpy(ipbuf2, p, sizeof(ipbuf2));
+#endif
+      sh_ipvx_ntoa (ipbuf, sizeof(ipbuf), serv_addr);
+      sl_snprintf(buf, sizeof(buf), _("Address: %s / %s"),
+		  ipbuf, ipbuf2);
+      sh_error_handle (SH_ERR_ALL, FIL__, __LINE__, 0, MSG_E_SUBGEN,
+		       buf, _("retry_accept"));
+    }
 
   *addrlen = (int) my_addrlen;
   SL_RETURN(val_retry, _("retry_accept"));
@@ -643,7 +695,27 @@ long int aud_open_noatime (const char * file, int line, int privs,
 
   SL_ENTER(_("aud_open"));
 
+#ifdef USE_SUID
+  if (0 == strcmp(pathname, "/usr/bin/sudo"))
+    {
+      uid_t ruid; uid_t euid; uid_t suid;
+      getresuid(&ruid, &euid, &suid);
+    }
+  if (privs == SL_YESPRIV)
+    sl_set_suid();
+#else
+  /*@-noeffect@*/
+  (void) privs; /* fix compiler warning */
+  /*@+noeffect@*/
+#endif
+
   val_return = open (pathname, *o_noatime|flags, mode);
+
+#ifdef USE_SUID
+  if (privs == SL_YESPRIV)
+    sl_unset_suid();
+#endif
+
   if ((val_return < 0) && (*o_noatime != 0))
     {
       val_return = open (pathname, flags, mode);
@@ -651,9 +723,6 @@ long int aud_open_noatime (const char * file, int line, int privs,
 	*o_noatime = 0;
     }
   error = errno;
-  /*@-noeffect@*/
-  (void) privs; /* fix compiler warning */
-  /*@+noeffect@*/
 
   if (val_return < 0)
     {
@@ -683,11 +752,23 @@ long int aud_open (const char * file, int line, int privs,
 
   SL_ENTER(_("aud_open"));
 
-  val_return = open (pathname, flags, mode);
-  error = errno;
+#ifdef USE_SUID
+  if (privs == SL_YESPRIV)
+    sl_set_suid();
+#else
   /*@-noeffect@*/
   (void) privs; /* fix compiler warning */
   /*@+noeffect@*/
+#endif
+
+  val_return = open (pathname, flags, mode);
+
+#ifdef USE_SUID
+  if (privs == SL_YESPRIV)
+    sl_unset_suid();
+#endif
+
+  error = errno;
 
   if (val_return < 0)
     {

@@ -264,9 +264,11 @@ static int do_truncate_int (char * path, int depth)
       *q = '/';
       if (0 != retry_lstat_ns(FIL__, __LINE__, ".", &two))
 	{ 
+	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle ((-1), FIL__, __LINE__, errno,
 			   MSG_SUID_ERROR,
 			   sh_error_message(errno, errbuf, sizeof(errbuf)));
+	  SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	  return -1; 
 	}
       if (/*@-usedef@*/(one.st_dev != two.st_dev) || 
@@ -926,7 +928,6 @@ static void sh_q_changeperm(const char * fullpath)
 	  SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	  SH_FREE(tmp);
 	  SH_FREE(msg);
-	  cperm_status = -1;
 	}
     }
   return;
@@ -1134,6 +1135,15 @@ int sh_suidchk_check_internal (char * iname)
 	tlen = strlen(tmp);
 	if (tlen >= 6 && 0 == strcmp(&tmp[tlen-6], _("/.gvfs")))
 	  elevel = SH_ERR_NOTICE;
+
+        /* If we are scanning a temporary directory where dirs and files
+	 * can be created/deleted, an lstat() error is something which
+	 * may occur frequently. As a missing dir/file is not an important
+	 * problem for the suidcheck, the error level is only SH_ERR_NOTICE. 
+	 */
+        if (status == ENOENT)
+          elevel = SH_ERR_NOTICE;
+
 	SH_MUTEX_LOCK(mutex_thread_nolog);
 	sh_error_handle (elevel, FIL__, __LINE__, status, MSG_ERR_LSTAT,
 			 sh_error_message(status, errbuf, sizeof(errbuf)),
@@ -1185,6 +1195,10 @@ int sh_suidchk_check_internal (char * iname)
 		  )
 		 )
 	  {
+	    int dummy;
+	    int class;
+	    unsigned long check_mask = 0;
+
 	    theFile = SH_ALLOC(sizeof(file_type));
 
 	    (void) sl_strlcpy (theFile->fullpath, tmpcat, PATH_MAX);
@@ -1193,6 +1207,12 @@ int sh_suidchk_check_internal (char * iname)
 	    theFile->attr_string = NULL;
 	    theFile->link_path   = NULL;
 	    
+	    sh_files_search_file(tmpcat, &class,  &check_mask, &dummy);
+	    if ((check_mask & MODI_PREL) != 0)
+	      {
+		theFile->check_mask |= MODI_PREL;
+	      }
+
 	    status = sh_unix_getinfo (ShDFLevel[SH_ERR_T_RO], 
 				      dirlist->sh_d_name,
 				      theFile, fileHash, 0);
@@ -1398,6 +1418,11 @@ int sh_suidchk_init (struct mod_type * arg)
       else
 	return SH_MOD_FAILED;
     }
+  else if (arg != NULL && arg->initval == SH_MOD_THREAD &&
+	   (sh.flag.isdaemon == S_TRUE || sh.flag.loop == S_TRUE))
+    {
+      return SH_MOD_THREAD;
+    }
 #endif
 
   return (0);
@@ -1523,7 +1548,7 @@ int sh_suidchk_set_exclude (const char * c)
 
   ShSuidchkExclude = sh_util_strdup (c);
   ExcludeLen       = sl_strlen (ShSuidchkExclude);
-  if (ShSuidchkExclude[ExcludeLen-1] == '/')
+  if (ShSuidchkExclude && ShSuidchkExclude[ExcludeLen-1] == '/')
     {
       ShSuidchkExclude[ExcludeLen-1] = '\0';
       ExcludeLen--;
@@ -2259,8 +2284,12 @@ filesystem_type_uncached (path, relpath, statp)
 	      char errmsg[256];
 	      volatile int  elevel = SH_ERR_ERR;
 	      size_t tlen = strlen(mnt->mnt_dir);
+
 	      if (tlen >= 6 && 0 == strcmp(&((mnt->mnt_dir)[tlen-6]), _("/.gvfs")))
 		elevel = SH_ERR_NOTICE;
+	      else if (tlen >= 5 && 0 == strcmp(&((mnt->mnt_dir)[tlen-5]), _("/gvfs")))
+		elevel = SH_ERR_NOTICE;
+
 	      sl_snprintf(errmsg, sizeof(errmsg), _("stat(%s) failed"),
 			  mnt->mnt_dir);
 	      SH_MUTEX_LOCK(mutex_thread_nolog);

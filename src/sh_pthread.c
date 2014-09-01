@@ -30,11 +30,11 @@ int sh_pthread_init_threadspecific(void)
 {
   int rc = 0;
 #ifdef SH_STEALTH
-  extern int sh_g_thread(void);
+  do {
+    extern int sh_g_thread(void);
 
-  rc = sh_g_thread();
-  if (rc != 0)
-    return rc;
+    rc = sh_g_thread();
+  } while (0);
 #endif
 
   return rc;
@@ -84,6 +84,14 @@ int sh_pthread_create(void *(*start_routine)(void*), void *arg)
   /* block all signals 
    */
   sigfillset( &signal_set );
+#if defined(SCREW_IT_UP)
+  /*
+   * raise(SIGTRAP) sends to same thread, like 
+   * pthread_kill(pthread_self(), sig); so we need to unblock the
+   * signal. 
+   */
+  sigdelset( &signal_set, SIGTRAP );
+#endif 
   pthread_sigmask( SIG_BLOCK, &signal_set, NULL );
 
   /* find a free slot in threads[]
@@ -152,6 +160,7 @@ void sh_threaded_module_cleanup(void *arg)
 {
   sh_mtype * this_module = (sh_mtype *) arg;
   this_module->mod_cleanup();
+  this_module->initval = -1;
   return;
 }
 

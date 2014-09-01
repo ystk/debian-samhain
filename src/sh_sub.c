@@ -251,16 +251,17 @@ struct sh_sub_out {
 
 static ssize_t sh_sub_write(int fd, const void *buf, size_t count)
 {
+  char * mbuf = (char *) buf;
   ssize_t rcount;
   int ttl = 5; /* 0, 1, 9, 81, 729 millisec */
   int tti = 1; 
 
   do {
 
-    rcount = write(fd, buf, count);
+    rcount = write(fd, mbuf, count);
     if (rcount > 0) 
       {
-	count -= rcount; buf += rcount; --ttl;
+	count -= rcount; mbuf += rcount; --ttl;
       }
 
     if (count > 0)
@@ -347,18 +348,23 @@ static void wait_for_command()
   } while (1 == 1);
 }
 
+#ifndef ETIMEDOUT
+#define ETIMEDOUT EIO
+#endif
+
 static ssize_t sh_sub_read(int fd, void *buf, size_t count)
 {
+  char * mbuf = (char *) buf;
   ssize_t rcount;
   int ttl = 5; /* 0, 1, 9, 81, 729 millisec */
   int tti = 1; 
 
   do {
-    rcount = read(fd, buf, count);
+    rcount = read(fd, mbuf, count);
 
     if (rcount > 0) 
       {
-	count -= rcount; buf += rcount; --ttl;
+	count -= rcount; mbuf += rcount; --ttl;
       }
 
     if (count > 0)
@@ -370,10 +376,13 @@ static ssize_t sh_sub_read(int fd, void *buf, size_t count)
 	  }
 	else
 	  {
+	    if (rcount >= 0) 
+	      errno = ETIMEDOUT;
 	    return -1;
 	  }
       }
-  } while (count > 0 && (errno == EAGAIN || errno == EWOULDBLOCK));
+  } while (count > 0 && 
+	   (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR));
 
   if (count > 0)
     return -1;
@@ -452,7 +461,9 @@ static int sh_sub_stat_int(const char *path, struct stat *buf, char command)
   retval = sh_sub_write(parent2child[1], &inbuf, sizeof(inbuf));
   if (retval < 0)
     {
+      int error = errno;
       sh_kill_sub();
+      errno = error;
       sflag = 1;
       goto end;
     }
@@ -465,12 +476,14 @@ static int sh_sub_stat_int(const char *path, struct stat *buf, char command)
   pfds.events = POLLIN;
 
   do {
-    retval = poll(&pfds, 1, 1000);
+    retval = poll(&pfds, 1, 300 * 1000);
   } while (retval < 0 && errno == EINTR);
 
   if (retval <= 0)
     {
+      int error = errno;
       sh_kill_sub();
+      errno = (retval == 0) ? ETIMEDOUT : error;
       sflag = -1;
       goto end;
     }
@@ -482,7 +495,9 @@ static int sh_sub_stat_int(const char *path, struct stat *buf, char command)
   retval = sh_sub_read (child2parent[0], &outbuf, sizeof(outbuf));
   if (retval < 0)
     {
+      int error = errno;
       sh_kill_sub();
+      errno = error;
       sflag = 1;
       goto end;
     }

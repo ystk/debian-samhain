@@ -128,6 +128,9 @@ static int sh_portchk_check_udp = 1;
 static int sh_portchk_active    = 1;
 static int sh_portchk_interval  = SH_PORTCHK_INTERVAL;
 
+static int sh_portchk_minport = -1;
+static int sh_portchk_maxport = -1;
+
 struct sh_port {
   int                  port;
   struct sh_sockaddr * paddr;
@@ -189,11 +192,45 @@ static int sh_portchk_set_interval (const char * c)
       SH_MUTEX_UNLOCK(mutex_thread_nolog);
       retval = -1;
     }
-
-  sh_portchk_interval = (time_t) val;
-  SL_RETURN(0, _("sh_portchk_set_interval"));
+  else
+    {
+      sh_portchk_interval = (time_t) val;
+    }
+  SL_RETURN(retval, _("sh_portchk_set_interval"));
 }
 
+static int sh_portchk_set_port_minmax (const char * c, int * setthis)
+{
+  int retval = 0;
+  long val;
+
+  SL_ENTER(_("sh_portchk_set_port_minmax"));
+  val = strtol (c, (char **)NULL, 10);
+  if (val < 0 || val > 65535)
+    {
+      SH_MUTEX_LOCK(mutex_thread_nolog);
+      sh_error_handle ((-1), FIL__, __LINE__, EINVAL, MSG_EINVALS,
+		       _("port check port minmax"), c);
+      SH_MUTEX_UNLOCK(mutex_thread_nolog);
+      retval = -1;
+    }
+  else
+    {
+      *setthis = (int) val;
+    }
+  SL_RETURN(retval, _("sh_portchk_set_port_minmax"));
+}
+
+
+static int sh_portchk_set_minport   (const char * str)
+{
+  return sh_portchk_set_port_minmax (str, &sh_portchk_minport);
+}
+
+static int sh_portchk_set_maxport   (const char * str)
+{
+  return sh_portchk_set_port_minmax (str, &sh_portchk_maxport);
+}
 
 static int sh_portchk_set_active   (const char * str)
 {
@@ -247,6 +284,14 @@ sh_rconf sh_portchk_table[] = {
         sh_portchk_set_interval,
     },
     {
+        N_("portcheckminport"),
+        sh_portchk_set_minport,
+    },
+    {
+        N_("portcheckmaxport"),
+        sh_portchk_set_maxport,
+    },
+    {
         N_("portcheckudp"),
         sh_portchk_set_udp,
     },
@@ -275,7 +320,7 @@ static char * check_services (int port, int proto);
 
 #ifdef TEST_ONLY
 
-static int portchk_debug = 0;
+static int portchk_debug = 0; 
 #define SH_ALLOC       malloc
 #define SH_FREE        free
 #define sh_util_strdup strdup
@@ -387,16 +432,17 @@ static void sh_portchk_add_to_list (int proto,
 {
   struct sh_portentry * new = SH_ALLOC (sizeof(struct sh_portentry));
 
-  if (portchk_debug)
-    fprintf(stderr, _("add to list: port %d/%s %d %d (%s)\n"),
-	    port, SH_PROTO_STR(proto), flag, status, service ? service : _("undef"));
-
   new->port = port;
   sh_ipvx_ntoa(new->interface, SH_INTERFACE_SIZE, paddr);
   new->status = status;
   new->flag   = flag;
 
   new->error  = NULL;
+
+  if (portchk_debug)
+    fprintf(stderr, _("add to list: port %d/%s %d %d (%s) %s\n"),
+	    port, SH_PROTO_STR(proto), flag, status, service ? service : _("undef"),
+	    new->interface);
 
   if (service)
     new->service = sh_util_strdup (service);
@@ -558,6 +604,10 @@ static void sh_portchk_check_list (struct sh_portentry ** head, int proto, int r
       pre = ptr;
       ptr = ptr->next;
     }
+
+  sh_dummy_ptr = NULL;
+  sh_dummy_pre = NULL;
+
   return;
 }
 
@@ -602,7 +652,8 @@ static struct sh_portentry * sh_portchk_get_from_list (int proto, int port,
 }
       
 
-static void sh_portchk_cmp_to_list (int proto, int port, struct sh_sockaddr * paddr, char * service)
+static void sh_portchk_cmp_to_list (int proto, int port, 
+				    struct sh_sockaddr * paddr, char * service)
 {
   struct sh_portentry * portent;
   char errbuf[256];
@@ -623,10 +674,12 @@ static void sh_portchk_cmp_to_list (int proto, int port, struct sh_sockaddr * pa
 
 	  snprintf (errbuf, sizeof(errbuf), _("port: %s:%d/%s (%s)"), 
 		    saddr, port, SH_PROTO_STR(proto), service);
-#ifdef TEST_ONLY
-	  fprintf(stderr, _("open port: %s:%d/%s (%s)\n"), 
-		  saddr, port, SH_PROTO_STR(proto), service);
-#else
+
+	  if (portchk_debug)
+	    fprintf(stderr, _("cmp_to_list: open port: %s:%d/%s (%s)\n"), 
+		    saddr, port, SH_PROTO_STR(proto), service);
+
+#ifndef TEST_ONLY
 	  path = sh_port2proc_query(proto, paddr, port, &qpid, user, sizeof(user));
 	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle(sh_portchk_severity, FIL__, __LINE__, 0, 
@@ -705,10 +758,12 @@ static void sh_portchk_cmp_to_list (int proto, int port, struct sh_sockaddr * pa
 
 	  snprintf (errbuf, sizeof(errbuf), _("port: %s:%d/%s (%s)"), 
 		    saddr, port, SH_PROTO_STR(proto), check_services(port, proto));
-#ifdef TEST_ONLY
-	  fprintf(stderr, _("open port: %s:%d/%s (%s)\n"), 
-		  saddr, port, SH_PROTO_STR(proto), check_services(port, proto));
-#else
+
+	  if (portchk_debug)
+	    fprintf(stderr, _("cmp_to_list: open port: %s:%d/%s (%s) check_services\n"), 
+		    saddr, port, SH_PROTO_STR(proto), check_services(port, proto));
+
+#ifndef TEST_ONLY
 	  path = sh_port2proc_query(proto, paddr, port, &qpid, user, sizeof(user));
 	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle(sh_portchk_severity, FIL__, __LINE__, 0, 
@@ -778,7 +833,7 @@ static char * check_services (int port, int proto)
 static char * check_rpc_list (int port, struct sockaddr_in * address, 
 			      unsigned long prot)
 {
-#ifdef  HAVE_RPC_RPC_H
+#if defined(HAVE_RPC_RPC_H) && defined(HAVE_PMAP_GETMAPS)
   struct pmaplist * head;
   char *r;
   static char buf[256];
@@ -862,7 +917,7 @@ static int check_port_udp_internal (int fd, int port, struct sh_sockaddr * paddr
 	{
 	  sh_ipvx_ntoa(ipbuf, sizeof(ipbuf), paddr);
 	  if (portchk_debug)
-	    fprintf(stderr, _("check port: %5d/udp on %15s established/time_wait\n"),
+	    fprintf(stderr, _("check port_udp: %5d/udp on %15s established/time_wait\n"),
 		    port, ipbuf);
 	}
       else 
@@ -886,9 +941,11 @@ static int check_port_udp_internal (int fd, int port, struct sh_sockaddr * paddr
 	       */
 	      if (paddr->ss_family == AF_INET)
 		{
-		  p = check_rpc_list (port, (struct sockaddr_in *) sh_ipvx_sockaddr_cast(paddr), IPPROTO_UDP);
+		  p = check_rpc_list (port, 
+				      (struct sockaddr_in *) sh_ipvx_sockaddr_cast(paddr), 
+				      IPPROTO_UDP);
 		}
-	      
+
 	      sh_portchk_cmp_to_list (IPPROTO_UDP, port, paddr, p ? p : NULL);
 	      
 	      /* If not an RPC service, try to get name from /etc/services
@@ -899,7 +956,7 @@ static int check_port_udp_internal (int fd, int port, struct sh_sockaddr * paddr
 	      if (portchk_debug)
 		{
 		  sh_ipvx_ntoa(ipbuf, sizeof(ipbuf), paddr);
-		  fprintf(stderr, _("check port: %5d/udp on %15s open %s\n"), 
+		  fprintf(stderr, _("check port_udp: %5d/udp on %15s open %s\n"), 
 			  port, ipbuf, p);
 		}
 	      
@@ -933,7 +990,7 @@ static int check_port_tcp_internal (int fd, int port, struct sh_sockaddr * paddr
       if (portchk_debug)
 	{
 	  sh_ipvx_ntoa(ipbuf, sizeof(ipbuf), paddr);
-	  fprintf(stderr, _("check port: %5d on %15s established/time_wait\n"),
+	  fprintf(stderr, _("check port_tcp: %5d on %15s established/time_wait\n"),
 		  port, ipbuf);
 	}
     }
@@ -959,7 +1016,9 @@ static int check_port_tcp_internal (int fd, int port, struct sh_sockaddr * paddr
        */
       if (paddr->ss_family == AF_INET)
 	{
-	  p = check_rpc_list (port, (struct sockaddr_in *) sh_ipvx_sockaddr_cast(paddr), IPPROTO_TCP);
+	  p = check_rpc_list (port, 
+			      (struct sockaddr_in *) sh_ipvx_sockaddr_cast(paddr), 
+			      IPPROTO_TCP);
 	}
 
       sh_portchk_cmp_to_list (IPPROTO_TCP, port, paddr, p ? p : NULL);
@@ -972,7 +1031,7 @@ static int check_port_tcp_internal (int fd, int port, struct sh_sockaddr * paddr
       if (portchk_debug)
 	{
 	  sh_ipvx_ntoa(ipbuf, sizeof(ipbuf), paddr);
-	  fprintf(stderr, _("check port: %5d on %15s open %s\n"), 
+	  fprintf(stderr, _("check port_tcp: %5d on %15s open %s\n"), 
 		  port, ipbuf, p);
 	}
 
@@ -1091,6 +1150,13 @@ static int sh_portchk_init_internal (void)
       memcpy(&(sin.sin_addr.s_addr), hent->h_addr_list[i], sizeof(in_addr_t));
       sh_ipvx_save(&(iface_list.iface[iface_list.used]), 
 		   AF_INET, (struct sockaddr *)&sin);
+      
+      if (portchk_debug)
+	{
+	  char buf[256];
+	  sh_ipvx_ntoa(buf, sizeof(buf), &(iface_list.iface[iface_list.used]));
+	  fprintf(stderr, _("interface[%d]: %s\n"), i, buf); 
+	}
       ++iface_list.used;
       ++i;
     }
@@ -1150,6 +1216,11 @@ int sh_portchk_init (struct mod_type * arg)
       else
 	return SH_MOD_FAILED;
     }
+  else if (arg != NULL && arg->initval == SH_MOD_THREAD &&
+	   (sh.flag.isdaemon == S_TRUE || sh.flag.loop == S_TRUE))
+    {
+      return SH_MOD_THREAD;
+    }
 #endif
   return sh_portchk_init_internal();
 }
@@ -1164,6 +1235,9 @@ int sh_portchk_reconf (void)
   sh_portchk_active    = 1;
   sh_portchk_check_udp = 1;
   sh_portchk_interval  = SH_PORTCHK_INTERVAL;
+
+  sh_portchk_minport = -1;
+  sh_portchk_maxport = -1;
 
   portlist_udp = sh_portchk_kill_list (portlist_udp);
   portlist_tcp = sh_portchk_kill_list (portlist_tcp);
@@ -1228,10 +1302,20 @@ static int check_port_generic (int port, int domain, int type, int protocol)
 	  if (portchk_debug)
 	    perror(_("socket"));
 #else
-	  SH_MUTEX_LOCK(mutex_thread_nolog);
-	  sh_error_handle((-1), FIL__, __LINE__, errno, MSG_E_SUBGEN, 
-			  sh_error_message(errno, errbuf, sizeof(errbuf)), _("socket"));
-	  SH_MUTEX_UNLOCK(mutex_thread_nolog);
+
+#ifndef EPROTONOSUPPORT
+#define EPROTONOSUPPORT 0
+#endif
+#ifndef EAFNOSUPPORT
+#define EAFNOSUPPORT    0
+#endif
+	  if (errno != EPROTONOSUPPORT && errno != EAFNOSUPPORT)
+	    {
+	      SH_MUTEX_LOCK(mutex_thread_nolog);
+	      sh_error_handle((-1), FIL__, __LINE__, errno, MSG_E_SUBGEN, 
+			      sh_error_message(errno, errbuf, sizeof(errbuf)), _("socket"));
+	      SH_MUTEX_UNLOCK(mutex_thread_nolog);
+	    }
 #endif
 	  continue;
 	}
@@ -1313,10 +1397,19 @@ static int sh_portchk_scan_ports_generic (int min_port, int max_port_arg,
 	  if (portchk_debug)
 	    perror(_("socket"));
 #else
-	  SH_MUTEX_LOCK(mutex_thread_nolog);
-	  sh_error_handle((-1), FIL__, __LINE__, errno, MSG_E_SUBGEN, 
-			  sh_error_message(errno, errbuf, sizeof(errbuf)), _("socket"));
-	  SH_MUTEX_UNLOCK(mutex_thread_nolog);
+#ifndef EPROTONOSUPPORT
+#define EPROTONOSUPPORT 0
+#endif
+#ifndef EAFNOSUPPORT
+#define EAFNOSUPPORT    0
+#endif
+	  if (errno != EPROTONOSUPPORT && errno != EAFNOSUPPORT)
+	    {
+	      SH_MUTEX_LOCK(mutex_thread_nolog);
+	      sh_error_handle((-1), FIL__, __LINE__, errno, MSG_E_SUBGEN, 
+			      sh_error_message(errno, errbuf, sizeof(errbuf)), _("socket"));
+	      SH_MUTEX_UNLOCK(mutex_thread_nolog);
+	    }
 #endif
 	  continue;
 	}
@@ -1456,6 +1549,7 @@ static int sh_portchk_add_interface (const char * str)
       }
   } while (*str);
 
+  sh_dummy_str = NULL;
   return 0;
 }
 
@@ -1561,7 +1655,11 @@ static int sh_portchk_add_required_port_generic (char * service,
     {  
       portent = sh_portchk_get_from_list (proto, -1, &saddr, buf);
       if (!portent)
-	sh_portchk_add_to_list (proto,   -1, &saddr,  buf, type, SH_PORT_UNKN);
+	{
+	  if (portchk_debug)
+	    fprintf(stderr, _("add_required_port %d\n"), (int) port);
+	  sh_portchk_add_to_list (proto,   -1, &saddr,  buf, type, SH_PORT_UNKN);
+	}
       else
 	{
 #ifdef TEST_ONLY
@@ -1579,7 +1677,12 @@ static int sh_portchk_add_required_port_generic (char * service,
     {
       portent = sh_portchk_get_from_list (proto, port, &saddr, NULL);
       if (!portent)
-	sh_portchk_add_to_list (proto, port, &saddr, NULL, type, SH_PORT_UNKN);
+	{
+	  if (portchk_debug)
+	    fprintf(stderr, _("add_required_port: open port: %d/%s\n"), 
+		    (int) port, SH_PROTO_STR(proto));
+	  sh_portchk_add_to_list (proto, port, &saddr, NULL, type, SH_PORT_UNKN);
+	}
       else
 	{
 #ifdef TEST_ONLY
@@ -1720,37 +1823,44 @@ static int sh_portchk_add_blacklist (const char * str)
 int sh_portchk_check ()
 {
   volatile int min_port;
+  static int noprivports = 0;
 
   SH_MUTEX_LOCK(mutex_port_check);
 
-  min_port = 0;
+  min_port = (sh_portchk_minport == -1) ? 0 : sh_portchk_minport;
 
   if (sh_portchk_active != S_FALSE)
     {
+      SH_MUTEX_LOCK(mutex_thread_nolog);
       sh_error_handle(SH_ERR_INFO, FIL__, __LINE__, 0, MSG_E_SUBGEN, 
 		      _("Checking for open ports"),
 		      _("sh_portchk_check"));
+      SH_MUTEX_UNLOCK(mutex_thread_nolog);
 
       sh_portchk_reset_lists();
-      if (0 != geteuid())
+      if ((0 != geteuid()) && (min_port < 1024))
 	{
 	  min_port = 1024;
+	  if (noprivports == 0)
+	    {
 #ifdef TEST_ONLY
-	  fprintf(stderr, "** WARNING not scanning ports < 1024\n");
+	      fprintf(stderr, "** WARNING not scanning ports < 1024\n");
 #else
-	  SH_MUTEX_LOCK(mutex_thread_nolog);
-	  sh_error_handle(SH_ERR_ERR, FIL__, __LINE__, 0, MSG_E_SUBGEN, 
-			  _("not scanning ports below 1024"), 
-			  _("sh_portchk_check"));
-	  SH_MUTEX_UNLOCK(mutex_thread_nolog);
+	      SH_MUTEX_LOCK(mutex_thread_nolog);
+	      sh_error_handle(SH_ERR_ERR, FIL__, __LINE__, 0, MSG_E_SUBGEN, 
+			      _("not scanning ports below 1024"), 
+			      _("sh_portchk_check"));
+	      SH_MUTEX_UNLOCK(mutex_thread_nolog);
 #endif
+	      noprivports = 1;
+	    }
 	}
 
       sh_port2proc_prepare();
 
       if (sh_portchk_check_udp == 1)
-	sh_portchk_scan_ports_udp(min_port, -1);
-      sh_portchk_scan_ports_tcp(min_port, -1);
+	sh_portchk_scan_ports_udp(min_port, sh_portchk_maxport);
+      sh_portchk_scan_ports_tcp(min_port, sh_portchk_maxport);
 
 
       sh_portchk_check_list (&portlist_tcp, IPPROTO_TCP, SH_PORT_REPORT);

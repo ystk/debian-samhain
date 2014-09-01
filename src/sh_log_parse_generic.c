@@ -46,17 +46,15 @@ struct sh_fileinfo_generic {
 static void default_time (struct sh_logrecord * record)
 {
   struct tm ts;
-  struct tm * ts_p;
   char   tmp[80];
   size_t len;
 
   record->timestamp = time(NULL);
   
 #if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_LOCALTIME_R)
-  ts_p = localtime_r (&(record->timestamp), &ts);
+  localtime_r (&(record->timestamp), &ts);
 #else
-  ts_p = localtime (&(record->timestamp));
-  memcpy(&ts, ts_p, sizeof(struct tm));
+  memcpy(&ts, localtime(&(record->timestamp)), sizeof(struct tm));
 #endif
   len = strftime(tmp, sizeof(tmp), _("%Y-%m-%dT%H:%M:%S"), &ts);
 

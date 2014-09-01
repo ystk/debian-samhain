@@ -801,6 +801,9 @@ gather_inet(int proto)
                             (inp->inp_fport != 0 && !opt_c))
                                 continue;
                 } else if (inp->inp_vflag & INP_IPV6) {
+#ifndef in6p_fport
+#define in6p_fport inp_fport
+#endif
                         if ((inp->in6p_fport == 0 && !opt_l) ||
                             (inp->in6p_fport != 0 && !opt_c))
                                 continue;
@@ -821,6 +824,9 @@ gather_inet(int proto)
                 sock = SH_ALLOC(sizeof *sock);
 		memset(sock, '\0', sizeof (*sock));
 
+#ifndef in6p_lport
+#define in6p_lport inp_lport
+#endif
                 sock->socket = so->xso_so;
                 sock->proto = proto;
                 if (inp->inp_vflag & INP_IPV4) {
@@ -916,8 +922,8 @@ char * sh_port2proc_query(int proto, struct sh_sockaddr * saddr, int sport,
 {
   int n, hash;
   struct xfile *xf;
-  struct in_addr  * haddr;
-  struct in6_addr * haddr6;
+  struct in_addr  * haddr  = NULL;
+  struct in6_addr * haddr6 = NULL;
   struct sock * s;
   struct in6_addr   anyaddr = IN6ADDR_ANY_INIT; 
 

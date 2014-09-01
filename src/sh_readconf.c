@@ -30,6 +30,7 @@
 #include "sh_calls.h"
 #include "sh_error.h"
 #include "sh_extern.h"
+#include "sh_unix.h"
 #include "sh_files.h"
 #include "sh_forward.h"
 #include "sh_gpg.h"
@@ -45,7 +46,6 @@
 #endif
 #include "sh_tiger.h"
 #include "sh_tools.h"
-#include "sh_unix.h"
 #include "sh_utils.h"
 #include "sh_restrict.h"
 
@@ -135,12 +135,13 @@ struct str_ListSections tab_ListSections[] = {
 
 static char * sh_readconf_expand_value (const char * str)
 {
+#ifdef SH_EVAL_SHELL
   char * tmp = (char*)str;
   char * out;
 
   while (tmp && isspace((int)*tmp)) ++tmp;
   
-  if (tmp[0] == '$' && tmp[1] == '(')
+  if (tmp && tmp[0] == '$' && tmp[1] == '(')
     {
       size_t len = strlen(tmp);
       while (isspace((int) tmp[len-1])) { tmp[len-1] = '\0'; --len; }
@@ -151,6 +152,7 @@ static char * sh_readconf_expand_value (const char * str)
 	  return out;
 	}
     }
+#endif
   return sh_util_strdup(str);
 }
 
@@ -160,7 +162,9 @@ enum {
   SH_RC_SYSTEM     = 2,
   SH_RC_FILE       = 3,
   SH_RC_IFACE      = 4,
+#ifdef SH_EVAL_SHELL
   SH_RC_CMD        = 5
+#endif
 };
 
 
@@ -194,11 +198,13 @@ static int sh_readconf_cond_match(char * str, int line)
 	{
 	  p += 4; while (isspace((int)*p)) ++p;
 	  negate = 0;
+	  match  = 1;
 	}
       else if (0 == strncmp(p, _("!"), 1))
 	{
 	  ++p; while (isspace((int)*p)) ++p;
 	  negate = 0;
+	  match  = 1;
 	}
   
       if (0 == strncasecmp(p, _("file_exists "), 12))
@@ -217,10 +223,12 @@ static int sh_readconf_cond_match(char * str, int line)
 	{
 	  p += 15; cond_type = SH_RC_SYSTEM;
 	}
+#ifdef SH_EVAL_SHELL
       else if (0 == strncasecmp(p, _("command_succeeds "), 17))
 	{
 	  p += 17; cond_type = SH_RC_CMD;
 	}
+#endif
       else
 	{
 	  char errbuf[SH_ERRBUF_SIZE];
@@ -270,12 +278,14 @@ static int sh_readconf_cond_match(char * str, int line)
       if (sh_tools_iface_is_present(p))
 	match = negate;
       break;
+#ifdef SH_EVAL_SHELL
     case SH_RC_CMD:
       if (0 == sh_unix_run_command(p))
 	match = negate;
       break;
+#endif
     default:
-      match = 0;
+      /* do nothing */;
     }
   return match;
 }
@@ -336,7 +346,9 @@ int sh_readconf_read (void)
   SL_TICKET    fd    = -1;
 #if defined(SH_STEALTH) && !defined(SH_STEALTH_MICRO)
   SL_TICKET    fdTmp = -1;
-  SL_TICKET open_tmp (void);
+#endif
+#if defined(WITH_GPG) || defined(WITH_PGP)
+  SL_TICKET    fdGpg = -1;
 #endif
   char * tmp;
 
@@ -466,6 +478,25 @@ int sh_readconf_read (void)
   sl_rewind (fd);
 #endif
 
+#if defined(WITH_GPG) || defined(WITH_PGP)
+
+  /* extract the data and copy to temporary file
+   */
+  fdGpg = sh_gpg_extract_signed(fd);
+
+  sl_close(fd);
+  fd = fdGpg;
+
+  /* Validate signature of open file.
+   */
+  if (0 != sh_gpg_check_sign (fd, 0, 1))
+    {
+      SH_FREE(line_in);
+      aud_exit (FIL__, __LINE__, EXIT_FAILURE);
+    }
+  sl_rewind (fd);
+#endif
+
 
   /* ---  Start reading lines.  ---
    */
@@ -578,6 +609,8 @@ int sh_readconf_read (void)
 	continue;
       }
 
+    /* fprintf(stderr, "%d %s\n", cond_excl, line); */
+
     /****************************************************
      *
      * Only carry on if this section is intended for us
@@ -662,17 +695,6 @@ int sh_readconf_read (void)
     sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_EINVALDD,
 		     _("config file"), 
 		     (long) conf_line);
-
-#if defined(WITH_GPG) || defined(WITH_PGP)
-  /* Validate signature of open file.
-   */
-  sl_rewind (fd);
-  if (0 != sh_gpg_check_sign (fd, 0, 1))
-    {
-      SH_FREE(line_in);
-      aud_exit (FIL__, __LINE__, EXIT_FAILURE);
-    }
-#endif
 
   sl_close (fd);
 
@@ -946,6 +968,8 @@ cfg_options ext_table[] = {
     sh_ignore_add_new },
   { N_("ignoremissing"), SH_SECTION_MISC,   SH_SECTION_NONE, 
     sh_ignore_add_del },
+  { N_("ignoremodified"), SH_SECTION_MISC,   SH_SECTION_NONE, 
+    sh_ignore_add_mod },
 
   { N_("skipchecksum"),  SH_SECTION_MISC,   SH_SECTION_NONE, 
     sh_restrict_define },
@@ -1197,6 +1221,11 @@ cfg_options ext_table[] = {
   { N_("setconsole"),        SH_SECTION_MISC,  SH_SECTION_NONE, 
     sh_log_set_console },
 
+  { N_("setreportfile"),     SH_SECTION_MISC,  SH_SECTION_NONE, 
+    sh_efile_path },
+  { N_("setreportgroup"),    SH_SECTION_MISC,  SH_SECTION_NONE, 
+    sh_efile_group },
+
 #ifdef WITH_MESSAGE_QUEUE
   { N_("messagequeueactive"),SH_SECTION_MISC,  SH_SECTION_NONE, 
     enable_msgq },
@@ -1228,6 +1257,11 @@ cfg_options ext_table[] = {
 
   { N_("avoidblock"),     SH_SECTION_MISC,  SH_SECTION_NONE, 
     sh_calls_set_sub },
+
+#ifdef SCREW_IT_UP
+  { N_("setsigtrapmaxduration"),        SH_SECTION_MISC,  SH_SECTION_MISC, 
+    sh_sigtrap_max_duration_set },
+#endif
 
   { NULL,    0,   0,  NULL}
 };
@@ -1357,6 +1391,7 @@ static int sh_readconfig_line (char * line)
     }
 
   /* Expand shell expressions. This return allocated memory which we must free.
+   * If !defined(SH_EVAL_SHELL), this will reduce to a strdup.
    */
   value = sh_readconf_expand_value(value);
 

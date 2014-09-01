@@ -100,8 +100,12 @@
  */
 
 #ifndef LINUX26
+#ifndef __KERNEL__
 #define __KERNEL__
+#endif
+#ifndef MODULE
 #define MODULE
+#endif
 #endif
 #define LINUX
 
@@ -111,6 +115,7 @@
 /* #define FILE_DEBUG  */   /* getdents     */
 /* #define READ_DEBUG  */   /* read         */
 /* #define PROC_DEBUG  */   /* procfs       */
+/* #define INIT_DEBUG  */   /* module init  */
 
 /*****************************************************
  *
@@ -121,21 +126,29 @@
 
 /* The configure options (#defines) for the Kernel
  */
+#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
 /* 2.6.19 (((2) << 16) + ((6) << 8) + (19)) */
 #define SH_KERNEL_MIN 132627 
 
-#if SH_KERNEL_NUMERIC >= SH_KERNEL_MIN
+#if SH_KERNEL_NUMERIC >= KERNEL_VERSION(2,6,33)
+#include <generated/autoconf.h>
+#else
+#if SH_KERNEL_NUMERIC >= KERNEL_VERSION(2,6,19)
 #include <linux/autoconf.h>
 #else
 #include <linux/config.h>
 #endif
+#endif
 
-#ifndef LINUX26
+#if SH_KERNEL_NUMERIC < KERNEL_VERSION(2,6,0)
 #ifdef CONFIG_MODVERSIONS
 #include <linux/modversions.h>
 #endif
+#else
+#ifndef LINUX26
+#define LINUX26
 #endif
-
+#endif
 
 #ifdef LINUX26
 #include <linux/init.h>
@@ -172,7 +185,12 @@
 
 /* Include for lock_kernel().
  */
+#if SH_KERNEL_NUMERIC < KERNEL_VERSION(3,0,0)
 #include <linux/smp_lock.h>
+#else
+static inline void lock_kernel(void) { }
+static inline void unlock_kernel(void) { }
+#endif
 
 #if SH_KERNEL_NUMERIC >= SH_KERNEL_MIN
 #include <linux/mutex.h>
@@ -181,6 +199,9 @@
 /* Include for fget().
  */
 #include <linux/file.h>
+#if SH_KERNEL_NUMERIC >= KERNEL_VERSION(2,6,26)
+#include <linux/fdtable.h>
+#endif
 
 /*****************************************************
  *
@@ -201,7 +222,20 @@ unsigned long * sh_sys_call_table = (unsigned long *) MAGIC_ADDRESS;
 
 /* The old address of the sys_getdents syscall.
  */
+#if SH_KERNEL_NUMERIC < KERNEL_VERSION(2,6,27)
 int (*old_getdents)(unsigned int, struct dirent *, unsigned int);
+#else
+
+struct linux_dirent {
+  unsigned long   d_ino;
+  unsigned long   d_off;
+  unsigned short  d_reclen;
+  char            d_name[1];
+};
+
+int (*old_getdents)(unsigned int, struct linux_dirent *, unsigned int);
+#endif
+
 #ifdef __NR_getdents64
 #if SH_KERNEL_NUMERIC >= 132628
 /*
@@ -289,15 +323,25 @@ struct task_struct * fetch_task_struct (int pid)
 }
 
 #else
-/*
- *  RedHat 2.4.20 kernel
- */
+#if SH_KERNEL_NUMERIC < KERNEL_VERSION(2,6,25)
 struct task_struct * fetch_task_struct (int pid)
 {
   struct task_struct * task_ptr = NULL;
   task_ptr = find_task_by_pid (pid);
   return (task_ptr);
 }
+#else
+struct task_struct * fetch_task_struct (int pid)
+{
+  struct task_struct * task_ptr = NULL;
+  struct pid * task_pid = find_vpid(pid);
+  if (task_pid)
+    {
+      task_ptr = pid_task (task_pid, PIDTYPE_PID);
+    }
+  return (task_ptr);
+}
+#endif
 #endif
 
 /* Convert a string to an int. 
@@ -344,16 +388,26 @@ int my_atoi(char * in_str)
  *   Hide all files/dirs that include the string MAGIC_HIDE in their
  *   name. 
  */
+#if SH_KERNEL_NUMERIC < KERNEL_VERSION(2,6,27)
 int new_getdents (unsigned int fd, struct dirent *dirp, unsigned int count)
+#else
+int new_getdents (unsigned int fd, struct linux_dirent *dirp, unsigned int count)
+#endif
 {
   int                  status = 0;    /* Return value from original getdents */
   struct inode       * dir_inode;
   struct file        * fd_file;
   int                  dir_is_proc = 0;
 
+#if SH_KERNEL_NUMERIC < KERNEL_VERSION(2,6,27)
   struct dirent      * dirp_prev;
   struct dirent      * dirp_new;
   struct dirent      * dirp_current;
+#else
+  struct linux_dirent      * dirp_prev;
+  struct linux_dirent      * dirp_new;
+  struct linux_dirent      * dirp_current;
+#endif
 
   int                  dir_table_bytes;
   int                  forward_bytes;
@@ -412,7 +466,11 @@ int new_getdents (unsigned int fd, struct dirent *dirp, unsigned int count)
   /* Allocate space for new dirent table. Can't use GFP_KERNEL 
    * (kernel oops)
    */
+#if SH_KERNEL_NUMERIC < KERNEL_VERSION(2,6,27)
   dirp_new = (struct dirent *) kmalloc (status, GFP_ATOMIC);
+#else
+  dirp_new = (struct linux_dirent *) kmalloc (status, GFP_ATOMIC);
+#endif
 
   if (dirp_new == NULL)
     {
@@ -513,9 +571,15 @@ int new_getdents (unsigned int fd, struct dirent *dirp, unsigned int count)
 
       /* Next entry in dirp table.
        */
+#if SH_KERNEL_NUMERIC < KERNEL_VERSION(2,6,27)
       if (dir_table_bytes > 0)
 	dirp_current = (struct dirent *) ( (char *) dirp_current + 
 					   forward_bytes);
+#else
+      if (dir_table_bytes > 0)
+	dirp_current = (struct linux_dirent *) ( (char *) dirp_current + 
+					   forward_bytes);
+#endif
     }
 
   /* Copy our modified dirp table back to user space.
@@ -533,6 +597,8 @@ int new_getdents (unsigned int fd, struct dirent *dirp, unsigned int count)
   unlock_kernel();
   return (status);
 }
+
+
 
 /* For 2.4 kernel
  */
@@ -553,9 +619,15 @@ long new_getdents64 (unsigned int fd, struct dirent64 *dirp, unsigned int count)
   struct file        * fd_file;
   int                  dir_is_proc = 0;
 
+#if SH_KERNEL_NUMERIC < KERNEL_VERSION(2,6,27)
   struct dirent64    * dirp_prev;
   struct dirent64    * dirp_new;
   struct dirent64    * dirp_current;
+#else
+  struct linux_dirent64    * dirp_prev;
+  struct linux_dirent64    * dirp_new;
+  struct linux_dirent64    * dirp_current;
+#endif
 
   int                  dir_table_bytes;
   int                  forward_bytes;
@@ -763,9 +835,15 @@ long new_getdents64 (unsigned int fd, struct dirent64 *dirp, unsigned int count)
 
       /* Next entry in dirp table.
        */
+#if SH_KERNEL_NUMERIC < KERNEL_VERSION(2,6,27)
       if (dir_table_bytes > 0)
 	dirp_current = (struct dirent64 *) ( (char *) dirp_current + 
 					     forward_bytes);
+#else
+      if (dir_table_bytes > 0)
+	dirp_current = (struct linux_dirent64 *) ( (char *) dirp_current + 
+					     forward_bytes);
+#endif
     }
 
   /* Copy our modified dirp table back to user space.
@@ -785,7 +863,7 @@ long new_getdents64 (unsigned int fd, struct dirent64 *dirp, unsigned int count)
 #endif
 
 #ifdef LINUX26
-static struct module *find_module(const char *name)
+static struct module *sh_find_module(const char *name)
 {
         struct module *mod;
 	struct list_head * modules = (struct list_head *) SH_LIST_MODULES;
@@ -808,7 +886,15 @@ int init_module(void)
 #endif
 {
 
+#ifdef INIT_DEBUG
+  printk("INIT 0\n");
+#endif
+
   lock_kernel();
+
+#ifdef INIT_DEBUG
+  printk("INIT 1\n");
+#endif
 
   /* Unfortunately this does not fully prevent the module from appearing
    * in /proc/ksyms. 
@@ -817,14 +903,29 @@ int init_module(void)
   EXPORT_NO_SYMBOLS;
 #endif
 
+#ifdef INIT_DEBUG
+  printk("INIT 1a (%d)\n", SYS_getdents);
+#endif
+
   /* Replace the 'sys_getdents' syscall with the new version.
    */
   old_getdents                        = (void*) sh_sys_call_table[SYS_getdents];
+#ifdef INIT_DEBUG
+  printk("INIT 1b\n");
+#endif
   sh_sys_call_table[SYS_getdents]     = (unsigned long) new_getdents;
   
+#ifdef INIT_DEBUG
+  printk("INIT 2\n");
+#endif
+
 #ifdef __NR_getdents64
   old_getdents64                      = (void*) sh_sys_call_table[SYS_getdents64];
   sh_sys_call_table[SYS_getdents64]   = (unsigned long) new_getdents64;
+#endif
+
+#ifdef INIT_DEBUG
+  printk("INIT 3\n");
 #endif
 
 #ifdef LINUX26
@@ -832,37 +933,84 @@ int init_module(void)
 #if defined(SH_MODLIST_LOCK)
     spinlock_t * modlist_lock = (spinlock_t * ) SH_MODLIST_LOCK;
 #endif
-#if SH_KERNEL_NUMERIC >= SH_KERNEL_MIN
-    struct mutex * module_mutex = (struct mutex *) SH_MODLIST_MUTEX;
+#if SH_KERNEL_NUMERIC >= KERNEL_VERSION(2,6,30)
+    struct mutex * sh_module_mutex = &module_mutex;
+#else
+#if (SH_KERNEL_NUMERIC >= SH_KERNEL_MIN)
+    struct mutex * sh_module_mutex = (struct mutex *) SH_MODLIST_MUTEX;
+#endif
 #endif
 
     struct module *mod;
 
 #if SH_KERNEL_NUMERIC >= SH_KERNEL_MIN
-    mutex_lock(module_mutex);
+#ifdef INIT_DEBUG
+    printk("INIT 4 0\n");
+#endif
+    mutex_lock(sh_module_mutex);
 #endif
 
-    mod = find_module(SH_INSTALL_NAME"_hide");
+#ifdef INIT_DEBUG
+    printk("INIT 4 1\n");
+#endif
+
+    mod = sh_find_module(SH_INSTALL_NAME"_hide");
+
+#ifdef INIT_DEBUG
+    printk("INIT 4 2 (%d)\n", mod == 0 ? 0 : 1);
+#endif
+
     if (mod) {
       /* Delete from various lists */
 #if defined(SH_MODLIST_LOCK)
+#ifdef INIT_DEBUG
+      printk("INIT 4 3a\n");
+#endif
       spin_lock_irq(modlist_lock);
+#ifdef INIT_DEBUG
+      printk("INIT 4 3b\n");
+#endif
 #endif
       if (removeme == 1)
 	{
+#ifdef INIT_DEBUG
+	  printk("INIT 4 4a\n");
+#endif
 	  list_del(&mod->list);
+#ifdef INIT_DEBUG
+	  printk("INIT 4 4b\n");
+#endif
 	}
 #if defined(SH_MODLIST_LOCK)
+#ifdef INIT_DEBUG
+	  printk("INIT 4 5a\n");
+#endif
       spin_unlock_irq(modlist_lock);
+#ifdef INIT_DEBUG
+	  printk("INIT 4 5b\n");
+#endif
 #endif
     }
+
 #if SH_KERNEL_NUMERIC >= SH_KERNEL_MIN
-      mutex_unlock(module_mutex);
+#ifdef INIT_DEBUG
+    printk("INIT 4 6a\n");
+#endif
+    mutex_unlock(sh_module_mutex);
+#ifdef INIT_DEBUG
+    printk("INIT 4 6b\n");
+#endif
 #endif
   }
 #endif
 
+#ifdef INIT_DEBUG
+  printk("INIT 4 7a\n");
+#endif
   unlock_kernel();
+#ifdef INIT_DEBUG
+  printk("INIT 4 7b\n");
+#endif
   return (0);
 }
 
@@ -880,6 +1028,7 @@ void cleanup_module(void)
   /* Restore the new syscalls to the original version.
    */
   sh_sys_call_table[SYS_getdents]     = (unsigned long) old_getdents;
+
 #ifdef __NR_getdents64
   sh_sys_call_table[SYS_getdents64]   = (unsigned long) old_getdents64;
 #endif

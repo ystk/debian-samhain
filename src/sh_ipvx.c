@@ -86,6 +86,15 @@ int sh_ipvx_is_numeric (const char * addr)
 
 int sh_ipvx_isany (struct sh_sockaddr * a)
 {
+#if defined(HOST_IS_CYGWIN)
+  /* 
+   * Cygwin implementation gives 'missing braces around initializer'
+   * warning, thus replace it with correct version.
+   */
+#undef IN6ADDR_ANY_INIT
+#define IN6ADDR_ANY_INIT { { { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 } } }
+#endif
+
 #if defined(USE_IPVX)
   struct in6_addr anyaddr = IN6ADDR_ANY_INIT; 
 #endif
@@ -209,14 +218,17 @@ int sh_ipvx_set_port(struct sh_sockaddr * ss, int port)
   switch (ss->ss_family)
     {
     case AF_INET:
+      (ss->sin).sin_family = AF_INET;
       (ss->sin).sin_port = htons (port);
       break;
     case AF_INET6:
+      (ss->sin6).sin6_family = AF_INET6;
       (ss->sin6).sin6_port = htons (port);
       break;
     }
   return 0;
 #else
+  (ss->sin).sin_family = AF_INET;
   (ss->sin).sin_port = htons (port);
   return 0;
 #endif

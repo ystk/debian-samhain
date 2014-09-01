@@ -408,6 +408,10 @@ void tiger(const word64 *str, word64 length, word64 res[3])
   register word64 i;
   register word64 j = 0;
   unsigned char temp[64];
+  union {
+    word64 itmp;
+    unsigned char ctmp[8];
+  } uu;
 
   /*
    * res[0]=0x0123456789ABCDEFLL;
@@ -468,7 +472,12 @@ void tiger(const word64 *str, word64 length, word64 res[3])
   memset( temp+j, 0, 56-j);
 #endif
 
-  ((word64*)(&(temp[56])))[0] = ((word64)length)<<3;
+  /* Avoid gcc warning for type-punned pointer 
+   */
+  uu.itmp = ((word64)length)<<3;
+  for (j=0; j<8; j++)
+        temp[56+j] = uu.ctmp[j];
+
   tiger_compress(((word64*)temp), res);
 }
 

@@ -267,7 +267,7 @@ int recv_from_server (char * message)
 	if (recvmsg[0] == 'E' && recvmsg[1] == 'N' && recvmsg[2] == 'D')
 	  {
 	    if (verbose && (num == 0))
-	      fprintf (stdout, _("# There are no pending commands.\n"));
+	      fprintf (stdout, "%s", _("# There are no pending commands.\n"));
 	    return 0;
 	  }
 	++num;
@@ -299,13 +299,13 @@ int recv_from_server (char * message)
 
   if (0 != good)
     {
-      fprintf (stderr, _("ERROR: Bounced message != original message (possible reason: superfluous password).\n"));
+      fprintf (stderr, "%s", _("ERROR: Bounced message != original message (possible reason: superfluous password).\n"));
       return -1;
     }
   else
     {
       if (verbose)
-	fprintf (stdout, _("# Message received by server.\n"));
+	fprintf (stdout, "%s", _("# Message received by server.\n"));
     }
 
   return 0;
@@ -316,21 +316,21 @@ void usage(char * name)
   printf(_("\nUsage : %s [-v][-s server_socket] -c command <client_hostname>\n\n"), 
 	 name);
 
-  printf(_("Purpose : send commands to the server via a socket,\n"));
-  printf(_("          in particular commands that the server would\n"));
-  printf(_("          transfer to the client <client_hostname> when\n"));
-  printf(_("          this client connects to deliver a message.\n\n"));
-  printf(_("          If password is required, it is read from\n"));
-  printf(_("          $HOME/.yulectl_cred or taken from the environment\n"));
-  printf(_("          variable YULECTL_PASSWORD (not recommended).\n\n"));
+  printf("%s", _("Purpose : send commands to the server via a socket,\n"));
+  printf("%s", _("          in particular commands that the server would\n"));
+  printf("%s", _("          transfer to the client <client_hostname> when\n"));
+  printf("%s", _("          this client connects to deliver a message.\n\n"));
+  printf("%s", _("          If password is required, it is read from\n"));
+  printf("%s", _("          $HOME/.yulectl_cred or taken from the environment\n"));
+  printf("%s", _("          variable YULECTL_PASSWORD (not recommended).\n\n"));
 
-  printf(_("Commands: RELOAD    <reload configuration>\n"));
-  printf(_("          STOP      <terminate>\n"));
-  printf(_("          SCAN      <initiate file system check\n"));
-  printf(_("          CANCEL    <cancel previous command>\n"));
-  printf(_("          LIST      <list queued commands>\n"));
-  printf(_("          LISTALL   <list queued and last sent commands>\n"));
-  printf(_("          PROBE     <probe all clients for necessity of reload>\n"));
+  printf("%s", _("Commands: RELOAD    <reload configuration>\n"));
+  printf("%s", _("          STOP      <terminate>\n"));
+  printf("%s", _("          SCAN      <initiate file system check\n"));
+  printf("%s", _("          CANCEL    <cancel previous command>\n"));
+  printf("%s", _("          LIST      <list queued commands>\n"));
+  printf("%s", _("          LISTALL   <list queued and last sent commands>\n"));
+  printf("%s", _("          PROBE     <probe all clients for necessity of reload>\n"));
   return;
 }
 
@@ -395,7 +395,7 @@ void fixup_message (char * message)
 
   if ( (strlen(home) + strlen(_("/.yulectl_cred")) + 1) > 4096)
     {
-      fprintf (stderr, _("ERROR: path for $HOME is too long.\n"));
+      fprintf (stderr, "%s", _("ERROR: path for $HOME is too long.\n"));
       exit(EXIT_FAILURE);
     }
   strcat(home, _("/.yulectl_cred"));
@@ -423,7 +423,7 @@ void fixup_message (char * message)
 
   if (NULL == fgets(message2, sizeof(message2), fp))
     {
-      fprintf (stderr, 
+      fprintf (stderr,
 	       _("ERROR: empty or unreadable password file (%s).\n"),
 	       home);
       exit(EXIT_FAILURE);
@@ -433,7 +433,7 @@ void fixup_message (char * message)
 
   if (strlen(message2) > 14)
     {
-      fprintf (stderr, 
+      fprintf (stderr, "%s", 
 	       _("ERROR: Password too long (max. 14 characters).\n"));
       exit(EXIT_FAILURE);
     }
@@ -500,7 +500,7 @@ main (int argc, char * argv[])
 	    --argc; ++num;
 	    if (argv[num] == NULL || argv[num][0] == '\0') {
 	      usage(argv[0]);
-	      fprintf(stderr, _("ERROR: -s: argument missing\n"));
+	      fprintf(stderr, "%s", _("ERROR: -s: argument missing\n"));
 	      return (EXIT_FAILURE);
 	    } else {
 	      if (strlen(argv[num]) > 255) 
@@ -517,7 +517,7 @@ main (int argc, char * argv[])
 	    --argc; ++num;
 	    if (argv[num] == NULL || argv[num][0] == '\0') {
 	      usage(argv[0]);
-	      fprintf(stderr, _("ERROR: -c: argument missing\n"));
+	      fprintf(stderr, "%s", _("ERROR: -c: argument missing\n"));
 	      return (EXIT_FAILURE);
 	    } else {
 	      if (strlen(argv[num]) >= SH_MAXMSG) 
@@ -574,7 +574,7 @@ main (int argc, char * argv[])
 	}
       else
 	{
-	  fprintf(stderr, _("ERROR: this command requires a hostname\n"));
+	  fprintf(stderr, "%s", _("ERROR: this command requires a hostname\n"));
 	  usage(argv[0]);
 	  return (EXIT_FAILURE);
 	}
@@ -622,7 +622,7 @@ main (int argc, char * argv[])
   status = send_to_server (serversock, message);
   if (status < 0)
     {
-      fprintf(stderr, _("ERROR: sending command to server failed\n"));
+      fprintf(stderr, "%s", _("ERROR: sending command to server failed\n"));
       (void) termination_handler(0);
       return (EXIT_FAILURE);
     }
@@ -633,18 +633,18 @@ main (int argc, char * argv[])
       message[2] == 'S' && message[3] == 'T')
     {
       if (verbose)
-	fprintf(stdout, _("# Waiting for listing.\n"));
+	fprintf(stdout, "%s", _("# Waiting for listing.\n"));
     }
   else
     {
       if (verbose)
-	fprintf(stdout, _("# Waiting for confirmation.\n"));
+	fprintf(stdout, "%s", _("# Waiting for confirmation.\n"));
     }
   status = recv_from_server (message);
 
   if (status < 0)
     {
-      fprintf(stderr, _("ERROR: receiving data from server failed.\n"));
+      fprintf(stderr, "%s", _("ERROR: receiving data from server failed.\n"));
       (void) termination_handler(0);
       return (EXIT_FAILURE);
     }

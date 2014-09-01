@@ -33,6 +33,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <ctype.h>
 
 #ifdef MAJOR_IN_MKDEV
 #include <sys/mkdev.h>
@@ -306,6 +307,12 @@ typedef struct file_info {
     NULL
   };
 
+const char * sh_hash_getpolicy(int class)
+{
+  if (class > 0 && class < SH_ERR_T_DIR)
+    return _(policy[class]);
+  return _("[indef]");
+}
 
 /**********************************
  *
@@ -427,8 +434,7 @@ int hashreport_missing( char *fullpath, int level)
   file_type * theFile;
   char * str;
   char hashbuf[KEYBUF_SIZE];
-  int  retval;
-  volatile int flag = 0;
+  volatile int  retval;
 
   /* --------  find the entry for the file ----------------       */
 
@@ -453,9 +459,13 @@ int hashreport_missing( char *fullpath, int level)
   theFile = sh_hash_create_ft (p, fileHash);
   str = all_items(theFile, fileHash, 0);
   tmp = sh_util_safe_name(fullpath);
+
+  SH_MUTEX_LOCK(mutex_thread_nolog);
   sh_error_handle (level, FIL__, __LINE__, 0, 
 		   MSG_FI_MISS2, tmp, str);
-  flag = 1;
+  SH_MUTEX_UNLOCK(mutex_thread_nolog);
+  ++sh.statistics.files_report;
+
   SH_FREE(tmp);
   SH_FREE(str);
   if (theFile->attr_string) SH_FREE(theFile->attr_string);
@@ -567,6 +577,7 @@ static void hash_unvisited (int j,
 		  str = all_items(theFile, fileHash, 0);
 		  sh_error_handle (level, FIL__, __LINE__, 0, 
 				   MSG_FI_MISS2, tmp, str);
+		  ++sh.statistics.files_report;
 		  SH_FREE(str);
 		  if (theFile->attr_string) SH_FREE(theFile->attr_string);
 		  if (theFile->link_path)   SH_FREE(theFile->link_path);
@@ -591,7 +602,7 @@ static void hash_unvisited (int j,
 	      else
 		prev->next = p->next;
 
-	      p = delete_db_entry(p);
+	      delete_db_entry(p);
 
 	      SL_RET0(_("hash_unvisited"));
 #else
@@ -612,6 +623,7 @@ static void hash_unvisited (int j,
 	  str = all_items(theFile, fileHash, 0);
 	  sh_error_handle (level, FIL__, __LINE__, 0, 
 			   MSG_FI_MISS2, tmp, str);
+	  ++sh.statistics.files_report;
 	  SH_FREE(str);
 	  if (theFile->attr_string)
 	    SH_FREE(theFile->attr_string);
@@ -684,7 +696,7 @@ void sh_hash_remove (const char * path)
 	  else
 	    entries.prev->next = p->next;
 	  
-	  p = delete_db_entry(p);
+	  delete_db_entry(p);
 	  
 	  goto end;
 #else
@@ -906,14 +918,16 @@ static void hashinsert (sh_file_t * s)
 	      s = NULL;
 	      SL_RET0(_("hashinsert"));
 	    }
-	  else 
-	    if (p->next == NULL) 
-	      {
-		p->next = s;
-		p->next->next = NULL;
-		SL_RET0(_("hashinsert"));
-	      }
-	  p = p->next;
+	  else if (p && p->next == NULL) 
+	    {
+	      p->next = s;
+	      p->next->next = NULL;
+	      SL_RET0(_("hashinsert"));
+	    }
+	  if (p)
+	    p = p->next;
+	  else /* cannot really happen, but llvm/clang does not know */
+	    break;
 	}
     }
   /* notreached */
@@ -1228,11 +1242,13 @@ sh_file_t *  sh_hash_getdataent (SL_TICKET fd, char * line, int size)
   sh_do_decode(ft.c_group,  sl_strlen(ft.c_group));
   sh_do_decode(ft.checksum, sl_strlen(ft.checksum));
   
-  
+  /* TXT entries are c_mode[0] != 'l' and do not get decoded 
+   */
   if (ft.c_mode[0] == 'l' && linkpath != notalink)
     {  
       sh_do_decode(linkpath, sl_strlen(linkpath));
     }
+
   if ((ft.mark & REC_FLAGS_ATTR) != 0)
     {  
       sh_do_decode(attr_string, sl_strlen(attr_string));
@@ -1294,14 +1310,8 @@ void sh_hash_init ()
 
 #if defined(WITH_GPG) || defined(WITH_PGP)
   extern int get_the_fd (SL_TICKET ticket);
-  FILE *   fin_cp = NULL;
 
-  char * buf  = NULL;
-  int    bufc;
-  int    flag_pgp;
-  int    flag_nohead;
   SL_TICKET fdTmp = (-1);
-  SL_TICKET open_tmp (void);
 #endif
   char hashbuf[KEYBUF_SIZE];
 
@@ -1311,11 +1321,6 @@ void sh_hash_init ()
   SL_ENTER(_("sh_hash_init"));
 
   SH_MUTEX_LOCK(mutex_hash);
-
-#if defined(WITH_GPG) || defined(WITH_PGP)
-  flag_pgp = S_FALSE;
-  flag_nohead = S_FALSE;
-#endif
 
   if (IsInit == 1)
     { 
@@ -1345,7 +1350,7 @@ void sh_hash_init ()
       sl_rewind (fd);
 
       sl_strlcpy (sh.data.hash, 
-		  sh_tiger_hash (file_path('C', 'R'),  
+		  sh_tiger_hash (file_path('D', 'R'),  
 				 fd, TIGER_NOLIM, hashbuf, sizeof(hashbuf)),
 		  KEY_LEN+1);
       sl_rewind (fd);
@@ -1404,79 +1409,21 @@ void sh_hash_init ()
     }
 
 #if defined(WITH_GPG) || defined(WITH_PGP)
-  /* new 1.4.8: also checked for server data */
 
   /* extract the data and copy to temporary file
    */
-  fdTmp = open_tmp();
+  fdTmp = sh_gpg_extract_signed(fd);
 
-  fin_cp = fdopen(dup(get_the_fd(fd)), "rb");
-  buf = SH_ALLOC(FGETS_BUF);
-
-  while (NULL != fgets(buf, FGETS_BUF, fin_cp))
+  if (sig_termfast == 1)  /* SIGTERM */
     {
-      bufc = 0; 
-      while (bufc < FGETS_BUF) { 
-	if (buf[bufc] == '\n') { ++bufc; break; }
-	++bufc;
-      }
-
-      if (sig_termfast == 1)  /* SIGTERM */
-	{
-	  TPT((0, FIL__, __LINE__, _("msg=<Terminate.>\n")));
-	  --sig_raised; --sig_urgent;
-	  retval = 1; exitval = EXIT_SUCCESS;
-	  goto unlock_and_return;
-	}
-
-      if (flag_pgp == S_FALSE &&
-	  (0 == sl_strcmp(buf, _("-----BEGIN PGP SIGNED MESSAGE-----\n"))||
-	   0 == sl_strcmp(buf, _("-----BEGIN PGP MESSAGE-----\n")))
-	  )
-	{
-	  flag_pgp = S_TRUE;
-	  sl_write(fdTmp, buf, bufc);
-	  continue;
-	}
-      
-      if (flag_pgp == S_TRUE && flag_nohead == S_FALSE)
-	{
-	  if (buf[0] == '\n')
-	    {
-	      flag_nohead = S_TRUE;
-	      sl_write(fdTmp, buf, 1);
-	      continue;
-	    }
-	  else if (0 == sl_strncmp(buf, _("Hash:"), 5) ||
-		   0 == sl_strncmp(buf, _("NotDashEscaped:"), 15))
-	    {
-	      sl_write(fdTmp, buf, bufc);
-	      continue;
-	    }
-	  else
-	    continue;
-	}
-    
-      if (flag_pgp == S_TRUE && buf[0] == '\n')
-	{
-	  sl_write(fdTmp, buf, 1);
-	}
-      else if (flag_pgp == S_TRUE)
-	{
-	  /* sl_write_line(fdTmp, buf, bufc); */
-	  sl_write(fdTmp, buf, bufc);
-	}
-      
-      if (flag_pgp == S_TRUE && 
-	  0 == sl_strcmp(buf, _("-----END PGP SIGNATURE-----\n")))
-	break;
+      TPT((0, FIL__, __LINE__, _("msg=<Terminate.>\n")));
+      --sig_raised; --sig_urgent;
+      retval = 1; exitval = EXIT_SUCCESS;
+      goto unlock_and_return;
     }
-  SH_FREE(buf);
-  sl_close(fd);
-  sl_fclose(FIL__, __LINE__, fin_cp); /* fin_cp = fdopen(dup(), "rb"); */
 
+  sl_close(fd);
   fd = fdTmp;
-  sl_rewind (fd);
 
   /* Validate signature of open file.
    */
@@ -1487,7 +1434,6 @@ void sh_hash_init ()
     }
   sl_rewind (fd);
 #endif
-  /* } new 1.4.8 check sig also for files downloaded from server */
 
   line = SH_ALLOC(MAX_PATH_STORE+2);
 
@@ -1531,7 +1477,7 @@ void sh_hash_init ()
    */
   sl_close (fd);
   sh_hash_getline_end();
-  fd = -1;
+  /* fd = -1; */
 
  unlock_and_return:
   ; /* 'label at end of compound statement */
@@ -1571,7 +1517,7 @@ void sh_hash_hashdelete ()
 
  unlock_and_exit:
   ; /* 'label at end of compound statement */
-  SH_MUTEX_UNLOCK(mutex_hash);
+  SH_MUTEX_TRYLOCK_UNLOCK(mutex_hash);
 
   SL_RET0(_("sh_hash_hashdelete"));
 }
@@ -1831,6 +1777,8 @@ static void sh_hash_pushdata_int (file_type * buf, char * fileHash)
     SH_FREE(tmp);
   }
 
+  /* NOTE: TXT entries are c_mode[0] != 'l' and do not get decoded 
+   */
   if (buf != NULL /* && buf->c_mode[0] == 'l' */ && buf->link_path != NULL) 
     {  
 
@@ -3047,6 +2995,7 @@ int sh_hash_compdata (int class, file_type * theFile, char * fileHash,
 	  sh_error_handle (log_severity, FIL__, __LINE__, 0, 
 			   MSG_FI_ADD2, 
 			   tmp, str);
+	  ++sh.statistics.files_report;
 	  SH_FREE(str);
 
 	  SH_FREE(tmp);
@@ -3086,6 +3035,14 @@ int sh_hash_compdata (int class, file_type * theFile, char * fileHash,
       goto unlock_and_return;
     }
 
+  /* ---------  Skip if we don't want to report changes. ------------
+   */
+  
+  if (S_TRUE == sh_ignore_chk_mod(theFile->fullpath))
+    {
+      goto unlock_and_return;
+    }
+
   p->modi_mask = theFile->check_mask;
 
   /* initialize change_code */
@@ -3108,12 +3065,22 @@ int sh_hash_compdata (int class, file_type * theFile, char * fileHash,
 	}
       else
 	{
-	  if (0 != strncmp (&fileHash[KEY_LEN + 1], 
-			    p->theFile.checksum, KEY_LEN))
+	  if (0 != strncmp (&fileHash[KEY_LEN + 1], p->theFile.checksum, KEY_LEN))
 	    {
-	      modi_mask |= MODI_CHK;
-	      change_code[0] = 'C';
-	      TPT ((0, FIL__, __LINE__, _("mod=<checksum>")));
+	      if (S_FALSE == sh_check_rotated_log (theFile->fullpath, (UINT64) p->theFile.size, 
+						   (UINT64) p->theFile.ino, p->theFile.checksum))
+		{
+		  modi_mask |= MODI_CHK;
+		  change_code[0] = 'C';
+		  TPT ((0, FIL__, __LINE__, _("mod=<checksum>")));
+		}
+	      else
+		{
+		  /* logfile has been rotated */
+		  p->theFile.size  = theFile->size;
+		  p->theFile.ino   = theFile->ino;
+		  sl_strlcpy(p->theFile.checksum, fileHash, KEY_LEN+1);
+		}
 	    }
 	  else
 	    {
@@ -3693,6 +3660,7 @@ int sh_hash_compdata (int class, file_type * theFile, char * fileHash,
 		      (long) modi_mask, MSG_FI_CHAN,
 		      (policy_override == NULL) ? _(policy[class]):log_policy,
 		      change_code, tmp_path, msg);
+      ++sh.statistics.files_report;
 
       SH_FREE(tmp_path);
       SH_FREE(tmp);
@@ -3941,7 +3909,7 @@ char * csv_escape(const char * str)
 
   size_t size       = 0;
   size_t flag_quote = 0;
-  int    flag_comma = 0;
+
   char * new;
   char * pnew;
 
@@ -3950,9 +3918,7 @@ char * csv_escape(const char * str)
 
       while (*p) 
 	{
-	  if (*p == ',')
-	    flag_comma = 1;
-	  else if (*p == '"')
+	  if (*p == '"')
 	    ++flag_quote;
 	  
 	  ++size; ++p;
@@ -4007,13 +3973,50 @@ char * csv_escape(const char * str)
   return NULL;
 }
 
-
+int isHexKey(char * s)
+{
+  int i;
+  
+  for (i = 0; i < KEY_LEN; ++i)
+    {
+      if (*s)
+	{
+	  if ((*s >= '0' && *s <= '9') ||
+	      (*s >= 'A' && *s <= 'F') ||
+	      (*s >= 'a' && *s <= 'f'))
+	    {
+	      ++s;
+	      continue;
+	    }
+	}
+      return S_FALSE;
+    }
+  return S_TRUE;
+}
  
+#include "sh_checksum.h"
+
+static char * KEYBUFtolower (char * s, char * result)
+{
+  char * r = result;
+  if (s)
+    {
+      for (; *s; ++s)
+	{ 
+	  *r = tolower((unsigned char) *s); ++r;
+	}
+      *r = '\0';
+    }
+  return result;
+}
+
 void sh_hash_list_db_entry_full_detail (sh_file_t * p)
 {
   char * tmp;
   char * esc;
   char   str[81];
+  char   hexdigest[SHA256_DIGEST_STRING_LENGTH];
+  char   keybuffer[KEYBUF_SIZE];
 
   if (ListWithDelimiter == S_TRUE)
     {
@@ -4054,7 +4057,11 @@ void sh_hash_list_db_entry_full_detail (sh_file_t * p)
   printf( _(" %s"), sh_unix_gmttime (p->theFile.atime, str, sizeof(str)));
   if (ListWithDelimiter == S_TRUE)
     putchar(',');
-  printf( _(" %s"), p->theFile.checksum);
+
+  if (isHexKey(p->theFile.checksum))
+    printf( _(" %s"), KEYBUFtolower(p->theFile.checksum, keybuffer));
+  else
+    printf( _(" %s"), SHA256_Base2Hex(p->theFile.checksum, hexdigest));
   if (ListWithDelimiter == S_TRUE)
     putchar(',');
 

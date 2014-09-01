@@ -47,10 +47,13 @@ int sh_prelink_set_path (const char * str)
       prelink_path = NULL;
       SL_RETURN((-1), _("sh_prelink_set_path")); 
     }
-
+#ifdef SH_EVAL_SHELL
   prelink_path = sh_util_strdup(str);
-
   SL_RETURN(0, _("sh_prelink_set_path")); 
+#else
+  prelink_path = NULL;
+  SL_RETURN((-1), _("sh_prelink_set_path"));
+#endif
 }
 
 int sh_prelink_set_hash (const char * str)
@@ -160,8 +163,6 @@ int sh_prelink_run (char * path, char * file_hash, int alert_timeout)
 
   int    status = 0;
   char * p;
-  struct  sigaction  new_act;
-  struct  sigaction  old_act;
 
   SL_ENTER(_("sh_prelink_run"));
 
@@ -253,11 +254,6 @@ int sh_prelink_run (char * path, char * file_hash, int alert_timeout)
       SL_RETURN ((-1), _("sh_prelink_run"));
     }
 
-  /* ignore SIGPIPE (instead get EPIPE if connection is closed)
-   */
-  new_act.sa_handler = SIG_IGN;
-  (void) retry_sigaction (FIL__, __LINE__, SIGPIPE, &new_act, &old_act);
-
   /* read from pipe
    */
   sl_read_timeout_prep (task.pipeTI);
@@ -270,10 +266,6 @@ int sh_prelink_run (char * path, char * file_hash, int alert_timeout)
 				      hashbuf, sizeof(hashbuf)),
 	       KEY_LEN+1);
   }
-
-  /* restore old signal handler
-   */
-  (void) retry_sigaction (FIL__, __LINE__, SIGPIPE, &old_act, NULL);
 
   /* close pipe and return exit status
    */

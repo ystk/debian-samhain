@@ -14,6 +14,8 @@ void  sh_setgrent(void);
 void  sh_endpwent(void);
 void  sh_setpwent(void);
 struct group * sh_getgrnam(const char *name);
+int sh_getgrnam_r(const char *name, struct group *gbuf,
+               char *buf, size_t buflen, struct group **gbufp);
 
 struct passwd * sh_getpwnam(const char *name);
 int sh_getpwnam_r(const char *name, struct passwd *pwbuf,
@@ -37,6 +39,8 @@ struct hostent * sh_gethostbyname(const char *name);
 #else
 
 #define sh_initgroups initgroups
+#define sh_getgrnam   getgrnam
+#define sh_getgrnam_r getgrnam_r
 #define sh_getgrgid   getgrgid
 #define sh_getgrgid_r getgrgid_r
 #define sh_getpwnam   getpwnam

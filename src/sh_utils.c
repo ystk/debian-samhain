@@ -106,11 +106,42 @@ int sh_util_set_interactive(const char * str)
   (void) str;
 
   sh_ask_update = S_TRUE;
-
   sh_unix_setnodeamon(NULL);
 
   return 0;
 }
+
+static char * sh_update_file = NULL;
+
+int sh_util_update_file (const char * str)
+{
+  if (str)
+    {
+      if (0 == access(str, R_OK)) /* flawfinder: ignore */
+	{
+	  if (NULL != sh_update_file)
+	    SH_FREE(sh_update_file);
+	  sh_update_file = sh_util_strdup(str);
+	  sh_ask_update = S_TRUE;
+	  sh_unix_setnodeamon(NULL);
+	  return 0;
+	}
+      else
+	{
+	  char ebuf[SH_ERRBUF_SIZE];
+	  int  errnum = errno;
+
+	  sh_error_message(errnum, ebuf, sizeof(ebuf));
+	  sh_error_handle (SH_ERR_ERR, FIL__, __LINE__, errnum, MSG_E_SUBGEN,
+			   ebuf, _("sh_util_update_file") );
+	  
+	  return -1;
+	}
+    }
+
+  return -1;
+}
+
 
 #if !defined(STDIN_FILENO)
 #define STDIN_FILENO 0
@@ -119,6 +150,55 @@ int sh_util_set_interactive(const char * str)
 #define STDERR_FILENO 0
 #endif
 
+/* Returns S_FALSE if no update desired 
+ */
+int sh_util_update_checkfile(const char * path)
+{
+  FILE * fd = fopen(sh_update_file, "r");
+  char * line;
+
+  if (!fd)
+    {
+      uid_t  euid;
+      int errnum = errno;
+      sl_get_euid(&euid);
+      sh_error_handle (SH_ERR_ERR, FIL__, __LINE__, errnum, MSG_NOACCESS,
+		       (long) euid, sh_update_file);
+      aud_exit (FIL__, __LINE__, EXIT_FAILURE);
+      return S_FALSE;
+    }
+
+  line = SH_ALLOC(8192);
+
+  while (NULL != fgets(line, 8192, fd))
+    {
+      char * nl = strrchr(line, '\n');
+
+      if (nl)
+	{
+	  *nl = '\0';
+
+	  /* Check for MS Windows line terminator 
+	   */
+	  if (nl > line) --nl;
+	  if (*nl == '\r')
+	    *nl = '\0';
+	}
+
+      if (0 == sl_strcmp(line, path))
+	{
+	  SH_FREE(line);
+	  fclose(fd);
+	  return S_TRUE;
+	}
+    }
+  SH_FREE(line);
+  fclose(fd);
+  return S_FALSE;
+}
+
+/* Returns S_FALSE if no update desired 
+ */
 int sh_util_ask_update(const char * path)
 {
   int    inchar, c;
@@ -129,6 +209,12 @@ int sh_util_ask_update(const char * path)
 
   if (sh_ask_update != S_TRUE)
     {
+      SL_RETURN(i, _("sh_util_ask_update"));
+    }
+
+  if (sh_update_file)
+    {
+      i = sh_util_update_checkfile(path);
       SL_RETURN(i, _("sh_util_ask_update"));
     }
 
@@ -242,16 +328,16 @@ char * sh_util_acl_compact(char * buf, ssize_t len)
     else /* if (state == 0) */ {
       if        (0 == strncmp((char *) p, "user", 4)) {
 	out[rem] = 'u'; ++rem;
-	p += 3; state = 1;
+	p += 3;
       } else if (0 == strncmp((char *) p, "group", 5)) {
 	out[rem] = 'g'; ++rem;
-	p += 4; state = 1; 
+	p += 4; 
       } else if (0 == strncmp((char *) p, "mask", 4)) {
 	out[rem] = 'm'; ++rem;
-	p += 3; state = 1;
+	p += 3;
       } else if (0 == strncmp((char *) p, "other", 5)) {
 	out[rem] = 'o';
-	p += 4; state = 1; ++rem;
+	p += 4; ++rem;
       } else if (*p == '\0') {
 	if (rem > 0) { out[rem-1] = '\0'; }
 	break;
@@ -279,7 +365,7 @@ char * sh_util_strdup_l (const char * str, size_t len)
   SH_VALIDATE_NE(str, NULL);
   SH_VALIDATE_NE(len, 0);
 
-  if (sl_ok_adds (len, 1))
+  if (str && sl_ok_adds (len, 1))
     {
       p   = SH_ALLOC (len + 1);
       (void) memcpy (p, str, len+1);
@@ -300,11 +386,31 @@ char * sh_util_strdup (const char * str)
 
   SH_VALIDATE_NE(str, NULL);
 
-  len = sl_strlen(str);
-  p   = SH_ALLOC (len + 1);
-  (void) memcpy (p, str, len+1);
-
+  if (str)
+    {
+      len = sl_strlen(str);
+      p   = SH_ALLOC (len + 1);
+      (void) memcpy (p, str, len+1);
+    }
   SL_RETURN( p, _("sh_util_strdup"));
+}
+
+char * sh_util_strdup_track (const char * str, char * file, int line) 
+{
+  char * p = NULL;
+  size_t len;
+
+  SL_ENTER(_("sh_util_strdup_track"));
+
+  SH_VALIDATE_NE(str, NULL);
+
+  if (str)
+    {
+      len = sl_strlen(str);
+      p   = SH_OALLOC (len + 1, file, line);
+      (void) memcpy (p, str, len+1);
+    }
+  SL_RETURN( p, _("sh_util_strdup_track"));
 }
 
 /* by the eircom.net computer incident
@@ -320,15 +426,18 @@ char * sh_util_strsep (char **str, const char *delim)
 
   SH_VALIDATE_NE(ret, NULL);
 
-  for (c = *str; *c != '\0'; c++) {
-    for (d = delim; *d != '\0'; d++) {
-      if (*c == *d) {
-        *c = '\0';
-        *str = c + 1;
-        SL_RETURN(ret, _("sh_util_strsep"));
+  if (*str)
+    {
+      for (c = *str; *c != '\0'; c++) {
+	for (d = delim; *d != '\0'; d++) {
+	  if (*c == *d) {
+	    *c = '\0';
+	    *str = c + 1;
+	    SL_RETURN(ret, _("sh_util_strsep"));
+	  }
+	}
       }
     }
-  }
 
   /* If we get to here, there's no delimiters in the string */
   *str = NULL;
@@ -1717,9 +1826,9 @@ int sh_util_obscure_utf8 (const char * c)
 }
 
 
-int sh_util_obscurename (ShErrLevel level, char * name_orig, int flag)
+int sh_util_obscurename (ShErrLevel level, const char * name_orig, int flag)
 {
-  unsigned char * name = (unsigned char *) name_orig;
+  const unsigned char * name = (unsigned char *) name_orig;
   char * safe;
   unsigned int i;
   size_t len = 0;
@@ -1873,15 +1982,18 @@ char * sh_util_basename(const char * fullpath)
 	  --len;
 	}
 
-      c = strrchr(tmp2, '/');
-      if (c)
+      if (tmp2) /* for llvm/clang analyzer */
 	{
-	  retval = sh_util_strdup(++c);
-	  SH_FREE(tmp2);
-	}
-      else
-	{
-	  retval = tmp2;
+	  c = strrchr(tmp2, '/');
+	  if (c)
+	    {
+	      retval = sh_util_strdup(++c);
+	      SH_FREE(tmp2);
+	    }
+	  else
+	    {
+	      retval = tmp2;
+	    }
 	}
     }
 
@@ -2126,36 +2238,39 @@ size_t sh_util_base64_enc (unsigned char * out,
  start:
   if (bto64[0] != '\0')
     {
-      if (instr && *instr)
+      if (instr /* && *instr *//* need to handle binary data */)
 	{
 	  if (lin == 0)
 	    lin = strlen((const char *)instr);
 
-	  do {
-	    ll = 0;
-
-	    if (len < lin) 
-	      { a = *instr; ++instr; ++len; ++ll; }
-	    else 
-	      { a = 0; }
-	    if (len < lin) 
-	      { b = *instr; ++instr; ++len; ++ll; }
-	    else 
-	      { b = 0; }
-	    if (len < lin) 
-	      { c = *instr; ++instr; ++len; ++ll; }
-	    else 
-	      { c = 0; }
-
-	    *out = bto64[ a >> 2 ];
-	    ++j; ++out;
-	    *out = bto64[ ((a & 0x03) << 4) | ((b & 0xf0) >> 4) ];
-	    ++j; ++out;
-	    *out = (unsigned char) (ll > 1 ? bto64[ ((b & 0x0f) << 2) | ((c & 0xc0) >> 6) ] : '?');
-	    ++j; ++out;
-	    *out = (unsigned char) (ll > 2 ? bto64[ c & 0x3f ] : '?');
-	    ++j; ++out;
-	  } while (len < lin);
+	  if (lin > 0)
+	    {
+	      do {
+		ll = 0;
+		
+		if (len < lin) 
+		  { a = *instr; ++instr; ++len; ++ll; }
+		else 
+		  { a = 0; }
+		if (len < lin) 
+		  { b = *instr; ++instr; ++len; ++ll; }
+		else 
+		  { b = 0; }
+		if (len < lin) 
+		  { c = *instr; ++instr; ++len; ++ll; }
+		else 
+		  { c = 0; }
+		
+		*out = bto64[ a >> 2 ];
+		++j; ++out;
+		*out = bto64[ ((a & 0x03) << 4) | ((b & 0xf0) >> 4) ];
+		++j; ++out;
+		*out = (unsigned char) (ll > 1 ? bto64[ ((b & 0x0f) << 2) | ((c & 0xc0) >> 6) ] : '?');
+		++j; ++out;
+		*out = (unsigned char) (ll > 2 ? bto64[ c & 0x3f ] : '?');
+		++j; ++out;
+	      } while (len < lin);
+	    }
 	}
       *out = '\0';
       return j;

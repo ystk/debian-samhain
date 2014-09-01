@@ -172,14 +172,17 @@ static int sh_gpg_checksum (SL_TICKET checkfd, int flag)
     }
 
   k = 0;
-  for (i = 0; i < 127; ++i)
+  if (test_ptr2)
     {
-      if (test_ptr2[i] == '\0')
-	break;
-      if (test_ptr2[i] != ' ')
+      for (i = 0; i < 127; ++i)
 	{
-	  wstrip2[k] = test_ptr2[i];
-	  ++k;
+	  if (test_ptr2[i] == '\0')
+	    break;
+	  if (test_ptr2[i] != ' ')
+	    {
+	      wstrip2[k] = test_ptr2[i];
+	      ++k;
+	    }
 	}
     }
   wstrip2[k] = '\0';
@@ -551,7 +554,7 @@ static FILE * sh_gpg_popen (sh_gpg_popen_t  *source, int fd,
       } while (val_return < 0 && errno == EINTR);
       pfd = val_return;
       sl_close(checkfd);
-      checkfd = -1;
+      /* checkfd = -1; *//* never read */
 
       sl_snprintf(pname, sizeof(pname), _("/proc/self/fd/%d"), pfd);
       if (0 == access(pname, R_OK|X_OK))               /* flawfinder: ignore */
@@ -814,7 +817,8 @@ int sh_gpg_check_file_sign(int fd, char * sign_id, char * sign_fp,
       if (0 == sl_strncmp(_("GOODSIG"), &line[9], 7))
 	{
 	  sl_strlcpy (sign_id, &line[25], SH_MINIBUF+1);
-	  sign_id[sl_strlen(sign_id)-1] = '\0';  /* remove trailing '"' */
+	  if (sign_id)
+	    sign_id[sl_strlen(sign_id)-1] = '\0';  /* remove trailing '"' */
 	  have_id = GOOD;
 	} 
       if (0 == sl_strncmp(_("VALIDSIG"), &line[9], 8))
@@ -838,9 +842,16 @@ int sh_gpg_check_file_sign(int fd, char * sign_id, char * sign_fp,
 	{
 	  ptr = strchr ( line, '"');
 	  ++ptr;
-	  sl_strlcpy (sign_id, ptr, SH_MINIBUF+1);
-	  sign_id[sl_strlen(sign_id)-1] = '\0'; /* remove trailing dot */
-	  sign_id[sl_strlen(sign_id)-2] = '\0'; /* remove trailing '"' */
+	  if (ptr)
+	    {
+	      sl_strlcpy (sign_id, ptr, SH_MINIBUF+1);
+	      sign_id[sl_strlen(sign_id)-1] = '\0'; /* remove trailing dot */
+	      sign_id[sl_strlen(sign_id)-2] = '\0'; /* remove trailing '"' */
+	    }
+	  else
+	    {
+	      sl_strlcpy (sign_id, _("(null)"), SH_MINIBUF+1);
+	    }
 	  have_id = GOOD;
 	}
 #endif
@@ -848,6 +859,7 @@ int sh_gpg_check_file_sign(int fd, char * sign_id, char * sign_fp,
 
   if (ferror(source.pipe) && errno == EAGAIN) 
     {
+      retry_msleep(0,10); /* sleep 10 ms to avoid starving the gpg child writing to the pipe */
       clearerr(source.pipe);
       goto xagain;
     }
@@ -926,6 +938,7 @@ int sh_gpg_check_file_sign(int fd, char * sign_id, char * sign_fp,
 
   if (ferror(source.pipe) && errno == EAGAIN) 
     {
+      retry_msleep(0,10); /* sleep 10 ms to avoid starving the gpg child writing to the pipe */
       clearerr(source.pipe);
       goto yagain;
     }
@@ -1200,6 +1213,82 @@ int sh_gpg_check_sign (long file_1, long file_2, int what)
 
   return (-1); /* make compiler happy */
 }  
+
+#define FGETS_BUF 16384
+
+SL_TICKET sh_gpg_extract_signed(SL_TICKET fd)
+{
+  FILE * fin_cp = NULL;
+  char * buf    = NULL;
+  int    bufc;
+  int    flag_pgp    = S_FALSE;
+  int    flag_nohead = S_FALSE;
+  SL_TICKET fdTmp = (-1);
+  SL_TICKET open_tmp (void);
+
+  /* extract the data and copy to temporary file
+   */
+  fdTmp = open_tmp();
+
+  fin_cp = fdopen(dup(get_the_fd(fd)), "rb");
+  buf = SH_ALLOC(FGETS_BUF);
+
+  while (NULL != fgets(buf, FGETS_BUF, fin_cp))
+    {
+      bufc = 0; 
+      while (bufc < FGETS_BUF) { 
+	if (buf[bufc] == '\n') { ++bufc; break; }
+	++bufc;
+      }
+
+      if (flag_pgp == S_FALSE &&
+	  (0 == sl_strcmp(buf, _("-----BEGIN PGP SIGNED MESSAGE-----\n"))||
+	   0 == sl_strcmp(buf, _("-----BEGIN PGP MESSAGE-----\n")))
+	  )
+	{
+	  flag_pgp = S_TRUE;
+	  sl_write(fdTmp, buf, bufc);
+	  continue;
+	}
+      
+      if (flag_pgp == S_TRUE && flag_nohead == S_FALSE)
+	{
+	  if (buf[0] == '\n')
+	    {
+	      flag_nohead = S_TRUE;
+	      sl_write(fdTmp, buf, 1);
+	      continue;
+	    }
+	  else if (0 == sl_strncmp(buf, _("Hash:"), 5) ||
+		   0 == sl_strncmp(buf, _("NotDashEscaped:"), 15))
+	    {
+	      sl_write(fdTmp, buf, bufc);
+	      continue;
+	    }
+	  else
+	    continue;
+	}
+    
+      if (flag_pgp == S_TRUE && buf[0] == '\n')
+	{
+	  sl_write(fdTmp, buf, 1);
+	}
+      else if (flag_pgp == S_TRUE)
+	{
+	  /* sl_write_line(fdTmp, buf, bufc); */
+	  sl_write(fdTmp, buf, bufc);
+	}
+      
+      if (flag_pgp == S_TRUE && 
+	  0 == sl_strcmp(buf, _("-----END PGP SIGNATURE-----\n")))
+	break;
+    }
+  SH_FREE(buf);
+  sl_fclose(FIL__, __LINE__, fin_cp); /* fin_cp = fdopen(dup(), "rb"); */
+  sl_rewind (fdTmp);
+
+  return fdTmp;
+}
 
 /* #ifdef WITH_GPG */
 #endif

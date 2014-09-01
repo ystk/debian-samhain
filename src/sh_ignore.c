@@ -32,11 +32,15 @@
 #include <regex.h>
 #endif
 
+#include <string.h>
+
 #include "samhain.h"
 #include "sh_mem.h"
 #include "sh_error.h"
 
 #define FIL__ _("sh_ignore.c")
+
+#if defined(SH_WITH_CLIENT) || defined(SH_STANDALONE)
 
 struct sh_ignore_list {
 #ifdef HAVE_REGEX_H
@@ -50,11 +54,15 @@ struct sh_ignore_list {
 
 static struct sh_ignore_list * sh_del_ign = NULL;
 static struct sh_ignore_list * sh_new_ign = NULL;
+static struct sh_ignore_list * sh_mod_ign = NULL;
 
 static struct sh_ignore_list * sh_ignore_add_int(struct sh_ignore_list * list, 
 						 const char * addpath)
 {
   struct sh_ignore_list * new;
+  char                  * reg_expr;
+  size_t                  len;
+
 #ifdef HAVE_REGEX_H
   int                     status = -1;
   char                  * errbuf;
@@ -64,24 +72,30 @@ static struct sh_ignore_list * sh_ignore_add_int(struct sh_ignore_list * list,
 
   SL_ENTER(_("sh_ignore_add"));
 
-  if (addpath == NULL)
+  if ( (addpath == NULL) || (sl_ok_adds(2, strlen(addpath)) == SL_FALSE) )
     {
       SL_RETURN(list, _("sh_ignore_add"));
     }
 
-  new  = SH_ALLOC(sizeof(struct sh_ignore_list));
+  new      = SH_ALLOC(sizeof(struct sh_ignore_list));
+
+  len      = 2 + strlen(addpath);
+  reg_expr = SH_ALLOC(len);
+  sl_strlcpy(reg_expr,     "^", len);
+  sl_strlcat(reg_expr, addpath, len);
 
 #ifdef HAVE_REGEX_H
-  status = regcomp(&(new->preg), addpath, REG_NOSUB|REG_EXTENDED);
+  status = regcomp(&(new->preg), reg_expr, REG_NOSUB|REG_EXTENDED);
   if (status != 0)  
     {
       errbuf = SH_ALLOC(BUFSIZ+2);
       (void) regerror(status, &(new->preg), errbuf, BUFSIZ); 
       errbuf[BUFSIZ] = '\0';
       sh_error_handle ((-1), FIL__, __LINE__, status, MSG_E_REGEX,
-                       errbuf, addpath);
+                       errbuf, reg_expr);
       SH_FREE(errbuf);
       SH_FREE(new);
+      SH_FREE(reg_expr);
       SL_RETURN(list, _("sh_ignore_add"));
     }
 #else
@@ -90,6 +104,7 @@ static struct sh_ignore_list * sh_ignore_add_int(struct sh_ignore_list * list,
   sl_strlcpy(new->path, addpath, size+1);
 #endif
 
+  SH_FREE(reg_expr);
   new->next = list;
 
   SL_RETURN(new, _("sh_ignore_add"));
@@ -112,6 +127,16 @@ int sh_ignore_add_new (const char * addpath)
       return -1;
     }
   sh_new_ign = sh_ignore_add_int (sh_new_ign, addpath);
+  return 0;
+}
+
+int sh_ignore_add_mod (const char * addpath)
+{
+  if ((addpath == NULL) || (addpath[0] != '/'))
+    {
+      return -1;
+    }
+  sh_mod_ign = sh_ignore_add_int (sh_mod_ign, addpath);
   return 0;
 }
 
@@ -156,6 +181,11 @@ int sh_ignore_chk_del (const char * chkpath)
   return (sh_ignore_chk_int(sh_del_ign, chkpath));
 }
 
+int sh_ignore_chk_mod (const char * chkpath)
+{
+  return (sh_ignore_chk_int(sh_mod_ign, chkpath));
+}
+
 int sh_ignore_clean (void)
 {
   struct sh_ignore_list * new;
@@ -188,11 +218,113 @@ int sh_ignore_clean (void)
       new        = sh_del_ign;
     }
 
+  new = sh_mod_ign;
+
+  while (new)
+    {
+      sh_mod_ign = new->next;
+#ifdef HAVE_REGEX_H
+      regfree (&(new->preg));
+#else
+      SH_FREE(new->path);
+#endif
+      SH_FREE(new);
+      new        = sh_mod_ign;
+    }
+
   return 0;
 }
+#endif
 
+#ifdef SH_CUTEST
+#include "CuTest.h"
 
+void Test_ignore_ok (CuTest *tc) {
+#if defined(SH_WITH_CLIENT) || defined(SH_STANDALONE)
 
+  int ret; 
 
+  CuAssertTrue(tc, NULL == sh_del_ign);
+  CuAssertTrue(tc, NULL == sh_new_ign);
+  CuAssertTrue(tc, NULL == sh_mod_ign);
+ 
+  ret = sh_ignore_add_del ("/var/log/foo/.*");
+  CuAssertTrue(tc, 0 == ret);
 
+  CuAssertPtrNotNull(tc, sh_del_ign);
+  CuAssertTrue(tc, NULL == sh_new_ign);
+  CuAssertTrue(tc, NULL == sh_mod_ign);
+
+  ret = sh_ignore_chk_del ("/var/log/foo/test");
+  CuAssertTrue(tc, S_TRUE == ret);
+  
+  ret = sh_ignore_chk_del ("/var/log/footest");
+  CuAssertTrue(tc, S_FALSE == ret);
+
+  ret = sh_ignore_chk_del ("/my/var/log/footest");
+  CuAssertTrue(tc, S_FALSE == ret);
+
+  ret = sh_ignore_chk_del ("/my/var/log/foo/test");
+  CuAssertTrue(tc, S_FALSE == ret);
+
+  sh_ignore_clean();
+  CuAssertTrue(tc, NULL == sh_del_ign);
+  CuAssertTrue(tc, NULL == sh_new_ign);
+  CuAssertTrue(tc, NULL == sh_mod_ign);
+ 
+  ret = sh_ignore_add_new ("/var/log/foo/.*");
+  CuAssertTrue(tc, 0 == ret);
+
+  CuAssertPtrNotNull(tc, sh_new_ign);
+  CuAssertTrue(tc, NULL == sh_del_ign);
+  CuAssertTrue(tc, NULL == sh_mod_ign);
+
+  ret = sh_ignore_chk_new ("/var/log/foo/test");
+  CuAssertTrue(tc, S_TRUE == ret);
+  
+  ret = sh_ignore_chk_new ("/var/log/footest");
+  CuAssertTrue(tc, S_FALSE == ret);
+
+  ret = sh_ignore_chk_new ("/my/var/log/footest");
+  CuAssertTrue(tc, S_FALSE == ret);
+
+  ret = sh_ignore_chk_new ("/my/var/log/foo/test");
+  CuAssertTrue(tc, S_FALSE == ret);
+
+  sh_ignore_clean();
+  CuAssertTrue(tc, NULL == sh_new_ign);
+  CuAssertTrue(tc, NULL == sh_del_ign);
+  CuAssertTrue(tc, NULL == sh_mod_ign);
+
+  ret = sh_ignore_add_mod ("/var/log/foo/.*");
+  CuAssertTrue(tc, 0 == ret);
+
+  CuAssertPtrNotNull(tc, sh_mod_ign);
+  CuAssertTrue(tc, NULL == sh_del_ign);
+  CuAssertTrue(tc, NULL == sh_new_ign);
+
+  ret = sh_ignore_chk_mod ("/var/log/foo/test");
+  CuAssertTrue(tc, S_TRUE == ret);
+  
+  ret = sh_ignore_chk_mod ("/var/log/footest");
+  CuAssertTrue(tc, S_FALSE == ret);
+
+  ret = sh_ignore_chk_mod ("/my/var/log/footest");
+  CuAssertTrue(tc, S_FALSE == ret);
+
+  ret = sh_ignore_chk_mod ("/my/var/log/foo/test");
+  CuAssertTrue(tc, S_FALSE == ret);
+
+  sh_ignore_clean();
+  CuAssertTrue(tc, NULL == sh_new_ign);
+  CuAssertTrue(tc, NULL == sh_del_ign);
+  CuAssertTrue(tc, NULL == sh_mod_ign);
+
+#else
+  (void) tc; /* fix compiler warning */
+#endif
+  return;
+}
+/* #ifdef SH_CUTEST */
+#endif
 

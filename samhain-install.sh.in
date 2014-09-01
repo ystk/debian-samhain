@@ -783,7 +783,7 @@ then
 	ln -f -s @sbindir@/@install_name@  samhain.startAIX
 	rc_main=@sbindir@
 	rc_dirz=
-	rc_inst="/usr/sbin/mkitab -i '@install_name@:2:wait:@sbindir@/@install_name@ start >/dev/console 2>&1'"
+	rc_inst="/usr/sbin/mkitab '@install_name@:2:wait:@sbindir@/@install_name@ start >/dev/console 2>&1'"
 	rc_uinst="/usr/sbin/rmitab @install_name@"
 	;;
 
@@ -1261,6 +1261,19 @@ then
 	    test -z "$verbose" || echo "${ECHO_T}done"
 	else
 	    test -z "$verbose" || echo "${ECHO_T}failed (not empty ?)"
+	fi
+
+	
+	if test -d /etc/logrotate.d; then
+	    if test -f /etc/logrotate.d/@install_name@; then
+		test -z "$verbose" || echo $ECHO_N "  rm -f /etc/logrotate.d/@install_name@ ... $ECHO_C"
+		rm -f /etc/logrotate.d/@install_name@;
+		if test x$? = x0; then
+		     test -z "$verbose" || echo "${ECHO_T}done"
+		else
+		    test -z "$verbose" || echo "${ECHO_T}failed"
+		fi
+	    fi
 	fi
 
 	if test x"$force" = "xyes"

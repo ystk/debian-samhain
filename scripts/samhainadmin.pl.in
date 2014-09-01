@@ -40,6 +40,7 @@ my $action;
 my $file1;
 my $file2;
 my $passphrase;
+my $secretkeyring;
 my $return_from_sign = 0;
 my $no_print_examine = 0;
 my $no_remove_lock   = 0;
@@ -154,6 +155,10 @@ sub usage() {
     print "  -p passphrase --passphrase passphrase\n";
     print "    Set the passphrase for gpg. By default, gpg will ask.\n\n";
 
+    print "  -s secretkeyring --secretkeyring secretkeyring\n";
+    print "    Select an alternate secret keyring for gpg.\n";
+    print "    Will use '$ENV{'HOME'}/.gnupg/secring.gpg' by default.\n\n";
+
     print "  -l            --list\n";
     print "    List the files in database rather than printing the raw file.\n\n";
 
@@ -184,24 +189,38 @@ sub check_gpg_uid () {
 }
     
 sub check_gpg_sign () {
-    if ( (!-d "$ENV{'HOME'}/.gnupg") || (!-e "$ENV{'HOME'}/.gnupg/secring.gpg")) {
-	print "--------------------------------------------------\n";
-	print "\n";
-	if (!-d "$ENV{'HOME'}/.gnupg") {
-	    print " Directory \$HOME/.gnupg not found!\n";
-	} else {
-	    print " Secret keyring \$HOME/.gnupg/secring.gpg not found!\n";
-	}
-	print "\n";
-	print " This indicates that you have never created a \n";
-	print " public/private keypair, and thus cannot sign.\n";
-	print " \n";
-	print " Please use $0 --generate-keys or gpg --gen-key\n";
-	print " to generate a public/private keypair first.\n";
-	print "\n";
-	print "--------------------------------------------------\n";
-	print "\n";
-	exit;
+    if ( defined($secretkeyring)) {
+        if ( (!-d "$secretkeyring")){
+            print "--------------------------------------------------\n";
+            print "\n";
+            print " Secret keyring $secretkeyring not found!\n";
+            print "\n";
+            print " Please check the path/name of the alternate secret keyring.\n";
+            print "\n";
+            print "--------------------------------------------------\n";
+            print "\n";
+            exit;
+        }
+    } else {
+        if ( (!-d "$ENV{'HOME'}/.gnupg") || (!-e "$ENV{'HOME'}/.gnupg/secring.gpg")) {
+	    print "--------------------------------------------------\n";
+	    print "\n";
+	    if (!-d "$ENV{'HOME'}/.gnupg") {
+	        print " Directory \$HOME/.gnupg not found!\n";
+	    } else {
+	        print " Secret keyring \$HOME/.gnupg/secring.gpg not found!\n";
+	    }
+	    print "\n";
+	    print " This indicates that you have never created a \n";
+	    print " public/private keypair, and thus cannot sign.\n";
+	    print " \n";
+	    print " Please use $0 --generate-keys or gpg --gen-key\n";
+	    print " to generate a public/private keypair first.\n";
+	    print "\n";
+	    print "--------------------------------------------------\n";
+	    print "\n";
+	    exit;
+        }
     }
 }
 
@@ -504,12 +523,16 @@ sub sign_file () {
 
     if (defined($passphrase)) {
 	local $SIG{PIPE} = 'IGNORE';
-	my $command = "$gpg --homedir $ENV{'HOME'}/.gnupg --passphrase-fd 0 -a ${KEYTAG} ${TARGETKEYID} --clearsign -o $fileout --not-dash-escaped $file1";
+	my $command = "$gpg --homedir $ENV{'HOME'}/.gnupg --passphrase-fd 0 -a ${KEYTAG} ${TARGETKEYID} --clearsign -o $fileout --not-dash-escaped ";
+        $command .= "--secret-keyring $secretkeyring " if (defined($opts{'s'}));
+	$command .= "$file1";
 	open (FH, "|$command")  or die "can't fork: $!";
 	print FH "$passphrase"  or die "can't write: $!";
 	close FH                or die "can't close: status=$?";
     } else {
-	my $command = "$gpg --homedir $ENV{'HOME'}/.gnupg                   -a ${KEYTAG} ${TARGETKEYID} --clearsign -o $fileout --not-dash-escaped $file1";
+	my $command = "$gpg --homedir $ENV{'HOME'}/.gnupg                   -a ${KEYTAG} ${TARGETKEYID} --clearsign -o $fileout --not-dash-escaped ";
+        $command .= "--secret-keyring $secretkeyring " if (defined($opts{'s'}));
+	$command .= "$file1";
 	system("$command") == 0 
 	    or die "system $command failed: $?";
     }
@@ -545,6 +568,7 @@ GetOptions (\%opts, 'm=s', 'h|help', 'v|verbose', 'l|list',
 	    'c|cfgfile=s',
 	    'd|datafile=s',
 	    'p|passphrase=s',
+	    's|secretkeyring=s',
 	    'create-cfgfile',  # -m F
 	    'print-cfgfile',   # -m f
 	    'create-datafile', # -m D
@@ -567,6 +591,9 @@ if (defined($opts{'d'})) {
 }
 if (defined($opts{'p'})) {
     $passphrase = $opts{'p'};
+}
+if (defined($opts{'s'})) {
+    $secretkeyring = $opts{'s'};
 }
 
 if (defined ($opts{'m'}) && ($opts{'m'} =~ /[FfDdREeG]{1}/) ) {
@@ -659,13 +686,15 @@ if ($action =~ /^e$/) {
     # default: $file2 = stdout
     check_gpg_verify();
     my $i = 0;
+    my $ret = 0;
     while (defined($ARGV[$i])) {
 	print "\n";
 	$file1 = $ARGV[$i];
-	examine ();
+	$ret += examine ();
 	++$i;
 	print "\n--------------------------------\n" if (defined($ARGV[$i]));
     }
+    exit($ret);
 }
 
 if ($action =~ /^f$/) {

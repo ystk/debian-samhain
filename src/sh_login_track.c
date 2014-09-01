@@ -295,9 +295,10 @@ static void save_data_int (struct sh_track * urecord, char * path)
 	{
 	  struct sh_track_entry * entry = urecord->list;
 	  
-	  while (entry)
+	  while (entry && (n > 0))
 	    {
-	      n = fwrite(&(entry->data), sizeof(struct sh_track_entry_data), 1, fp);
+	      n = fwrite(&(entry->data), sizeof(struct sh_track_entry_data), 
+			 1, fp);
 	      entry = entry->next;
 	    }
 	}
@@ -425,9 +426,9 @@ int sh_login_set_user_allow(const char * c)
 	return -1;
     }
 
-  while (*p && (*p == ' ' || *p == '\t')) ++p;
+  while (p && *p && (*p == ' ' || *p == '\t')) ++p;
 
-  if (*p && (i < SH_LTRACK_USIZE) && (*p == ':'))
+  if (p && *p && (i < SH_LTRACK_USIZE) && (*p == ':'))
     {
       user[i] = '\0';
 
@@ -969,9 +970,6 @@ void sh_ltrack_check(struct SH_UTMP_S * ut)
   gres  = (60*60*24)/SH_LTRACK_GTRES;
 
   urecord    = load_data(user);
-  last_login = (urecord->head).last_login;
-
-  urecord = load_data(user);
   last_login = (urecord->head).last_login;
 
   if (   last_login < time &&

@@ -196,8 +196,10 @@ int main (int argc, char * argv[])
 
   p = strrchr(name, '/');
   if (p)
-    ++p;
-  len = strlen(p);
+    {
+      ++p;
+      len = strlen(p);
+    }
 
   /* skip other dependencies
    */
@@ -205,7 +207,7 @@ int main (int argc, char * argv[])
     {
       if (NULL == fgets(line, 1023, fout))
 	break;
-      if (0 == strncmp(line, p, len))
+      if (p && 0 == strncmp(line, p, len))
 	break;
       fprintf(ftmp, "%s", line);
     }

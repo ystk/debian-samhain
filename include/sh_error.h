@@ -186,6 +186,12 @@ int sh_error_setdebug (char * debug_s);
 void sh_error_logoff(void);
 void sh_error_logrestore(void);
 
+/* short errfile
+ */
+void sh_efile_report();
+int sh_efile_path(const char * str);
+int sh_efile_group(const char * str);
+
 /* (re)set the console device(s)
  */
 int sh_log_set_console (const char * address);

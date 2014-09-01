@@ -30,11 +30,17 @@ extern void sh_pthread_mutex_unlock (void *arg);
 #define SH_MUTEX_TRYLOCK(M)						   \
 	do {                                                               \
                 int oldtype;                                               \
-		int executeStack = 0;                                      \
+		volatile int executeStack = 0;                             \
 		pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &oldtype);  \
                 pthread_cleanup_push(sh_pthread_mutex_unlock, (void*)&(M));\
-                pthread_mutex_trylock(&(M));                               \
-		executeStack = 1
+                if (0 == pthread_mutex_trylock(&(M))) {		           \
+		  executeStack = 1
+
+#define SH_MUTEX_TRYLOCK_UNLOCK(M)					   \
+                }                                                          \
+		pthread_cleanup_pop(executeStack);                         \
+                pthread_setcanceltype(oldtype, NULL);                      \
+	} while (0)
 
 #define SH_MUTEX_UNLOCK(M)						   \
 		pthread_cleanup_pop(executeStack);                         \
@@ -157,6 +163,7 @@ int sh_pthread_setsigmask(int how, const void *set, void *oldset);
 #define SH_MUTEX_LOCK(M)			((void)0)
 #define SH_MUTEX_TRYLOCK(M)			((void)0)
 #define SH_MUTEX_UNLOCK(M)			((void)0)
+#define SH_MUTEX_TRYLOCK_UNLOCK(M)		((void)0)
 #define SH_MUTEX_LOCK_UNSAFE(M)			((void)0)
 #define SH_MUTEX_TRYLOCK_UNSAFE(M)		(0)
 #define SH_MUTEX_UNLOCK_UNSAFE(M)		((void)0)

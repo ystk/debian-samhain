@@ -445,6 +445,15 @@
 /* Define if SSP C support is enabled. */
 #undef ENABLE_SSP_CC
 
+/* gcc version major */
+#undef GCC_VERSION_MAJOR
+
+/* gcc version minor */
+#undef GCC_VERSION_MINOR
+
+/* Define if <sys/acct.h> has struct acctv2. */
+#undef HAVE_ACCTV2
+
 /* Define if <sys/acct.h> has struct acct_v3. */
 #undef HAVE_ACCT_V3
 
@@ -527,6 +536,9 @@
 
 /* Define to 1 if you have the `fgetxattr' function. */
 #undef HAVE_FGETXATTR
+
+/* Define to 1 if you have the <fnmatch.h> header file. */
+#undef HAVE_FNMATCH_H
 
 /* Define to 1 if you have the `getaddrinfo' function. */
 #undef HAVE_GETADDRINFO
@@ -706,6 +718,9 @@
 
 /* Define to 1 if you have the <pgsql/libpq-fe.h> header file. */
 #undef HAVE_PGSQL_LIBPQ_FE_H
+
+/* Define if pmap_getmaps available */
+#undef HAVE_PMAP_GETMAPS
 
 /* Define to 1 if you have the `posix_fadvise' function. */
 #undef HAVE_POSIX_FADVISE
@@ -967,8 +982,14 @@
 /* Define if sa_sigaction works */
 #undef SA_SIGACTION_WORKS
 
+/* Define if you want to allow suid execution for samhain */
+#undef SH_ALLOW_SUID
+
 /* Define if compiling static */
 #undef SH_COMPILE_STATIC
+
+/* Define if you want shell expansion in configuration file */
+#undef SH_EVAL_SHELL
 
 /* Kernel number */
 #undef SH_KERNEL_NUMBER

@@ -56,6 +56,7 @@ static unsigned long    keepcount = 0;
 static void sh_keep_free(void * item)
 {
   struct sh_keep * keep = (struct sh_keep *) item;
+
   if (!keep)
     return;
   sh_string_destroy(&(keep->label));
@@ -124,7 +125,7 @@ static sh_string * sh_keep_eval()
 
       while (count < keepcount && keep)
 	{
-	  if ((now > keep->last) && 
+	  if ((now >= keep->last) && 
 	      ((unsigned long)(now - keep->last) <= keep->delay))
 	    {
 	      memcpy(&(arr[count]), keep, sizeof(struct sh_keep));
@@ -162,6 +163,7 @@ static sh_string * sh_keep_eval()
 	}
       SH_FREE(arr);
     }
+
   return res;
 }
 
@@ -171,12 +173,27 @@ struct sh_mkeep
 {
   sh_string       * label;           /* label of match rule     */
   pcre            * rule;            /* compiled regex for rule */
+  time_t            reported;        /* last reported           */
   struct sh_qeval * queue;           /* assigned queue          */
   struct sh_mkeep * next; 
 };
 
 struct sh_mkeep * mkeep_list = NULL;
+unsigned long     mkeep_deadtime = 60;
 
+int sh_keep_deadtime (const char * str)
+{
+  unsigned long  value;
+  char * foo;
+
+  value = (size_t) strtoul(str, &foo, 0);
+
+  if (*foo == '\0') {
+    mkeep_deadtime = value;
+    return 0;
+  }
+  return -1;
+}
 
 int sh_keep_match_add(const char * str, const char * queue, 
 		      const char * pattern)
@@ -231,6 +248,7 @@ int sh_keep_match_add(const char * str, const char * queue,
 
       mkeep->queue = rqueue;
       mkeep->label = sh_string_new_from_lchar(splits[0], strlen(splits[0]));
+      mkeep->reported = 0;
       mkeep->next  = mkeep_list;
       mkeep_list   = mkeep;
     }
@@ -296,21 +314,29 @@ void sh_keep_match()
 	      if (val >= 0)
 		{
 		  sh_string * alias;
-		  SH_MUTEX_LOCK(mutex_thread_nolog);
-		  sh_error_handle (mkeep->queue->severity, FIL__, __LINE__, 0, 
-				   MSG_LOGMON_COR, sh_string_str(mkeep->label),
-				   val);
+		  time_t      now = time(NULL);
 
-		  alias = mkeep->queue->alias;
-		  if (alias)
+		  if ((mkeep->reported < now) &&
+		      (mkeep_deadtime < (unsigned int)(now - mkeep->reported)))
 		    {
-		      sh_error_mail (sh_string_str(alias), 
-				     mkeep->queue->severity, FIL__, __LINE__, 0, 
-				     MSG_LOGMON_COR, sh_string_str(mkeep->label),
-				     val);
+		      mkeep->reported = now;
+
+		      SH_MUTEX_LOCK(mutex_thread_nolog);
+		      sh_error_handle (mkeep->queue->severity, FIL__, __LINE__, 0, 
+				       MSG_LOGMON_COR, sh_string_str(mkeep->label),
+				       val);
+
+		      alias = mkeep->queue->alias;
+		      if (alias)
+			{
+			  sh_error_mail (sh_string_str(alias), 
+					 mkeep->queue->severity, FIL__, __LINE__, 0, 
+					 MSG_LOGMON_COR, sh_string_str(mkeep->label),
+					 val);
+			}
+		      
+		      SH_MUTEX_UNLOCK(mutex_thread_nolog);
 		    }
-		  
-		  SH_MUTEX_UNLOCK(mutex_thread_nolog);
 		}
 	      mkeep = mkeep->next;
 	    }

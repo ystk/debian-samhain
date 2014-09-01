@@ -138,7 +138,7 @@ void Test_sh_util_base64_enc_ok (CuTest *tc) {
   unsigned char   inp4[64] = "ABCD";
 
   ret = sh_util_base64_enc (out, inp0, strlen((char*)inp0));
-  CuAssertIntEquals(tc, ret, 0);
+  CuAssertIntEquals(tc, 0, ret);
   CuAssertStrEquals(tc, "", (char*)out);
   ret = sh_util_base64_dec (ou2, out, strlen((char*)out));
   CuAssertIntEquals(tc, ret, 0);

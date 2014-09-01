@@ -63,10 +63,10 @@
 
 #include "samhain.h"
 #include "sh_pthread.h"
-#include "sh_files.h"
 #include "sh_utils.h"
 #include "sh_error.h"
 #include "sh_unix.h"
+#include "sh_files.h"
 #include "sh_getopt.h"
 #include "sh_readconf.h"
 #include "sh_hash.h"
@@ -392,6 +392,7 @@ void sh_init (void)
   sh.flag.client_class    = S_FALSE;
   sh.flag.hidefile        = S_FALSE;
   sh.flag.loop            = S_FALSE;
+  sh.flag.inotify         = 0;
 
 #ifdef MKB_09
   ErrFlag[1] |= (1 << 8);
@@ -420,8 +421,12 @@ void sh_init (void)
 
   /* The stats.
    */
-  sh.statistics.bytes_speed  = 0;
-  sh.statistics.bytes_hashed = 0;
+  sh.statistics.bytes_speed   = 0;
+  sh.statistics.bytes_hashed  = 0;
+  sh.statistics.files_report  = 0;
+  sh.statistics.files_error   = 0;
+  sh.statistics.files_nodir   = 0;
+
   sh.statistics.mail_success = 0;
   sh.statistics.mail_failed  = 0;
   sh.statistics.time_start   = time(NULL);
@@ -628,6 +633,10 @@ void sh_init (void)
 
   sh.looptime     = 60;
 
+#ifdef SCREW_IT_UP
+  sh.sigtrap_max_duration = 500000; /* 500ms */
+#endif
+
   /* The struct to hold privileged information.
    */
   skey = (sh_key_t *) malloc (sizeof(sh_key_t));
@@ -702,6 +711,7 @@ static void exit_handler(void)
 #endif
 #if defined(SH_WITH_SERVER)
   extern int sh_socket_remove (void);
+  extern int sh_html_zero();
 #endif
 
   SL_ENTER(_("exit_handler"));
@@ -733,7 +743,11 @@ static void exit_handler(void)
   /* --- Write the server stat. ---
    */
 #if defined(SH_WITH_SERVER)
-  sh_forward_html_write();
+  /* zero out the status file at exit, such that the status
+   * of client becomes unknown in the beltane interface
+   */
+  sh_html_zero();
+  /* sh_forward_html_write(); */
 #endif
 
   /* --- Clean up memory to check for problems. ---
@@ -1164,7 +1178,7 @@ static sh_schedule_t * sh_set_schedule_int (const char * str,
       (void) free_sched(FileSchedIn);
       FileSchedIn = NULL;
       *status = 0;
-      return 0;
+      return NULL;
     }
 
   FileSched = SH_ALLOC(sizeof(sh_schedule_t));
@@ -1374,13 +1388,11 @@ int undef_main(int argc, char * argv[])
 
   /* --------  INIT  --------    
    */
+  sh_unix_ign_sigpipe();
 
   /* Restrict error logging to stderr.
    */
   sh_error_only_stderr (S_TRUE);
-
-  BREAKEXIT(sh_derr);
-  (void) sh_derr();
 
   /* Check that first three descriptors are open.
    */
@@ -1398,6 +1410,12 @@ int undef_main(int argc, char * argv[])
 #if (defined (SH_WITH_SERVER) && !defined (SH_WITH_CLIENT))
   sh.flag.isserver = S_TRUE;
 #endif
+
+  /* --- First check for an attached debugger (after setting
+         sh.sigtrap_max_duration which has to be done before). ---
+   */
+  BREAKEXIT(sh_derr);
+  (void) sh_derr();
 
   /* --- Get local hostname. ---
    */
@@ -1708,7 +1726,7 @@ int undef_main(int argc, char * argv[])
    */
   (void) sh_files_setrec();
   (void) sh_files_test_setup();
-
+  sh_audit_commit ();
 
   /* --------  NICE LEVEL   ---------
    */
@@ -1725,8 +1743,11 @@ int undef_main(int argc, char * argv[])
 
   /*  --------  MAIN LOOP  ---------
    */
-  sh.statistics.bytes_speed  = 0;
-  sh.statistics.bytes_hashed = 0;
+  sh.statistics.bytes_speed   = 0;
+  sh.statistics.bytes_hashed  = 0;
+  sh.statistics.files_report  = 0;
+  sh.statistics.files_error   = 0;
+  sh.statistics.files_nodir   = 0;
 
   while (1 == 1) 
     {
@@ -1819,6 +1840,16 @@ int undef_main(int argc, char * argv[])
 	       */
 #ifdef RELOAD_DATABASE
 	      sh_hash_hashdelete();
+
+	      if (0 != sl_strcmp(file_path('D', 'R'), _("REQ_FROM_SERVER")))
+		{
+		  char hashbuf[KEYBUF_SIZE];
+		  (void) sl_strlcpy(sh.data.hash,
+				    sh_tiger_hash (file_path('D', 'R'), 
+						   TIGER_FILE, TIGER_NOLIM, 
+						   hashbuf, sizeof(hashbuf)), 
+				    KEY_LEN+1);
+		}
 #endif
 	      (void) sl_trust_purge_user();
 	      (void) sh_files_hle_reg (NULL);
@@ -1832,6 +1863,8 @@ int undef_main(int argc, char * argv[])
 	      sig_config_read_again = 0;
 	      (void) sh_files_setrec();
 	      (void) sh_files_test_setup();
+	      sh_audit_commit ();
+
 	      if (0 != sh.flag.nice)
 		{
 #ifdef HAVE_SETPRIORITY
@@ -1954,6 +1987,7 @@ int undef_main(int argc, char * argv[])
       /* see whether its time to check files
        */
       if      (sh.flag.checkSum == SH_CHECK_INIT ||
+	       (sh.flag.inotify & SH_INOTIFY_DOSCAN) != 0 ||
 	       (sh.flag.checkSum == SH_CHECK_CHECK &&
 		(sh.flag.isdaemon == S_FALSE && sh.flag.loop == S_FALSE)))
 	{
@@ -1988,6 +2022,7 @@ int undef_main(int argc, char * argv[])
       if (sh.flag.checkSum != SH_CHECK_NONE &&
 	  (flag_check_1 == 1 || flag_check_2 == 1))
 	{
+	  SH_INOTIFY_IFUSED( sh.flag.inotify |= SH_INOTIFY_INSCAN; );
 	  /* Refresh list files matching glob patterns.
 	   */
 	  if (sh.flag.checkSum != SH_CHECK_INIT)
@@ -2001,6 +2036,9 @@ int undef_main(int argc, char * argv[])
 	  sh.statistics.time_start     = time (NULL);
 	  sh.statistics.dirs_checked   = 0;
 	  sh.statistics.files_checked  = 0;
+	  sh.statistics.files_report   = 0;
+	  sh.statistics.files_error    = 0;
+	  sh.statistics.files_nodir    = 0;
 
 	  TPT((0, FIL__, __LINE__, _("msg=<Check directories.>\n")))
 	  BREAKEXIT(sh_dirs_chk);
@@ -2049,6 +2087,8 @@ int undef_main(int argc, char * argv[])
 	  flag_check_1 = 0;
 	  flag_check_2 = 0;
 	  check_done   = 1;
+	  SH_INOTIFY_IFUSED( sh.flag.inotify &= ~SH_INOTIFY_INSCAN; );
+	  SH_INOTIFY_IFUSED( sh.flag.inotify &= ~SH_INOTIFY_DOSCAN; );
 
 	  (void) sh_prelink_run (NULL, NULL, 0);
 
@@ -2080,6 +2120,9 @@ int undef_main(int argc, char * argv[])
 	      sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_CHECK_1,
 			       (long) runtim, 
 			       0.001 * st_1);
+
+	      if (sh.flag.checkSum != SH_CHECK_INIT)
+		sh_efile_report();
 	    }
 	  sh.fileCheck.alarm_last = time (NULL);
 

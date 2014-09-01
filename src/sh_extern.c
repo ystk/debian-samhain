@@ -317,8 +317,11 @@ int sh_ext_popen (sh_tas_t * task)
 	       */
 	      memset(skey, 0, sizeof(sh_key_t));
 
-	      (void) setgid((gid_t) task->run_user_gid);
-	      (void) setuid((uid_t) task->run_user_uid);
+	      if (setgid((gid_t) task->run_user_gid) != 0)
+		_exit(EXIT_FAILURE);
+	      if (setuid((uid_t) task->run_user_uid) != 0)
+		_exit(EXIT_FAILURE);
+
 	      /* make sure we cannot get root again
 	       */
 	      if (setuid(0) >= 0)
@@ -413,7 +416,37 @@ int sh_ext_popen (sh_tas_t * task)
 #endif
               
 	      PDBGC(5);
-	      sl_snprintf(pname, sizeof(pname), _("/proc/self/fd/%d"), pfd);
+	      /* Cannot use sprintf because of deadlock in malloc/free */
+	      {
+		static char digit[] = "0123456789";
+		char str0[128];
+		char str1[128];
+		int ival = pfd;
+		int n = 0;
+		int m = 0;
+
+		if (ival < 0) ival = -ival;
+		do {
+		  str0[n] = digit[ival % 10];
+		  ++n;
+		  ival /= 10;
+		} while (ival);
+
+		if (pfd < 0)
+		  {
+		    str0[n] = '-';
+		    ++n;
+		  }
+		str0[n] = '\0';
+		str1[n] = '\0';
+		while (n > 0)
+		  {
+		    str1[m] = str0[n-1];
+		    ++m; --n;
+		  }
+		sl_strlcpy(pname, _("/proc/self/fd/"), sizeof(pname));
+		sl_strlcat(pname, str1, sizeof(pname));
+	      }
               if (access(pname, R_OK|X_OK) == 0) /* flawfinder: ignore */
 		{
 		  PDBGC(6);
@@ -434,7 +467,7 @@ int sh_ext_popen (sh_tas_t * task)
 		  PDBGC_CLOSE;
 		  /* failed 
 		   */
-		  _exit(EXIT_FAILURE);
+		  _exit((errnum == 0) ? (EXIT_SUCCESS) : (EXIT_FAILURE));
               }
 	      PDBGC_S("fexecve: not working");
 	      /* 
@@ -470,7 +503,7 @@ int sh_ext_popen (sh_tas_t * task)
 	  PDBGC_CLOSE;
 	  /* failed 
 	   */
-	  _exit(EXIT_FAILURE);
+	  _exit((errnum == 0) ? (EXIT_SUCCESS) : (EXIT_FAILURE));
 	}
       /* 
        * if we have forked twice, this is parent::detached_subprocess
@@ -816,10 +849,8 @@ void sh_ext_tas_free(sh_tas_t * tas)
   return;
 }
 
-int sh_ext_popen_init (sh_tas_t * task, char * command)
+static void task_init (sh_tas_t * task)
 {
-  int status;
-
   sh_ext_tas_init(task);
 
   (void) sh_ext_tas_add_envv (task, _("SHELL"), 
@@ -827,17 +858,47 @@ int sh_ext_popen_init (sh_tas_t * task, char * command)
   (void) sh_ext_tas_add_envv (task, _("PATH"),  
 			      _("/sbin:/bin:/usr/sbin:/usr/bin:/usr/ucb")); 
   (void) sh_ext_tas_add_envv (task, _("IFS"), " \n\t"); 
+
   if (sh.timezone != NULL)
     {
       (void) sh_ext_tas_add_envv(task,  "TZ", sh.timezone);
     }
-  
-  sh_ext_tas_command(task,  _("/bin/sh"));
+  return;
+}
 
-  (void) sh_ext_tas_add_argv(task,  _("/bin/sh"));
-  (void) sh_ext_tas_add_argv(task,  _("-c"));
-  (void) sh_ext_tas_add_argv(task,  command);
+int sh_ext_popen_init (sh_tas_t * task, char * command, char * argv0, ...)
+{
+  va_list vl;
+  int status;
+
+  task_init (task);
   
+  if (!argv0)
+    {
+      sh_ext_tas_command(task,  _("/bin/sh"));
+
+      (void) sh_ext_tas_add_argv(task,  _("/bin/sh"));
+      (void) sh_ext_tas_add_argv(task,  _("-c"));
+      (void) sh_ext_tas_add_argv(task,  command);
+    }
+  else
+    {
+      char * s;
+
+      sh_ext_tas_command(task,  command);
+
+      (void) sh_ext_tas_add_argv(task, argv0);
+
+      va_start (vl, argv0);
+      s = va_arg (vl, char * );
+      while (s != NULL)
+	{
+	  (void) sh_ext_tas_add_argv(task, s);
+	  s = va_arg (vl, char * );
+	}
+      va_end (vl);
+
+    }
   task->rw = 'r';
   task->fork_twice = S_FALSE;
 
@@ -848,14 +909,34 @@ int sh_ext_popen_init (sh_tas_t * task, char * command)
 
 /* Execute a system command */
 
-int sh_ext_system (char * command)
+int sh_ext_system (char * command, char * argv0, ...)
 {
   sh_tas_t task;
   int    status;
+  va_list vl;
+  char * s;
 
   SL_ENTER(_("sh_ext_system"));
 
-  status = sh_ext_popen_init (&task, command);
+  task_init (&task);
+  
+  sh_ext_tas_command(&task,  command);
+
+  (void) sh_ext_tas_add_argv(&task, argv0);
+  
+  va_start (vl, argv0);
+  s = va_arg (vl, char * );
+  while (s != NULL)
+    {
+      (void) sh_ext_tas_add_argv(&task, s);
+      s = va_arg (vl, char * );
+    }
+  va_end (vl);
+
+  task.rw = 'r';
+  task.fork_twice = S_FALSE;
+
+  status = sh_ext_popen(&task);
 
   if (status != 0)
     {
@@ -884,7 +965,7 @@ char * sh_ext_popen_str (char * command)
 
   SL_ENTER(_("sh_ext_popen_str"));
 
-  status = sh_ext_popen_init (&task, command);
+  status = sh_ext_popen_init (&task, command, NULL, NULL);
 
   if (status != 0)
     {

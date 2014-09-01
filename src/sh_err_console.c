@@ -68,8 +68,8 @@ static int msgid = -1;
 static int open_ipc(void)
 {
   key_t            key;
-  int              error;
 #if defined(WITH_TPT) 
+  int              error = 0;
   char errbuf[SH_ERRBUF_SIZE];
 #endif
 
@@ -80,7 +80,9 @@ static int open_ipc(void)
   key = ftok ("/tmp", '#');
   if (key == (key_t) -1)
     {
+#if defined(WITH_TPT) 
       error = errno;
+#endif
       TPT(( 0, FIL__, __LINE__, _("msg=<ftok: %s> errno=<%d>\n"), 
 	    sh_error_message(error, errbuf, sizeof(errbuf)), error));
       SL_RETURN(-1, _("open_ipc"));
@@ -92,7 +94,9 @@ static int open_ipc(void)
 
   if (msgid < 0)
     {
+#if defined(WITH_TPT) 
       error = errno;
+#endif
       TPT(( 0, FIL__, __LINE__, _("msg=<msgget: %s> errno=<%d>\n"), 
 	    sh_error_message(error, errbuf, sizeof(errbuf)), error));
       SL_RETURN(-1, _("open_ipc"));
@@ -131,9 +135,9 @@ static int push_message_queue (const char * msg)
   struct sh_msgbuf*   recv_msg = NULL;
   int              rc       = -1;
   static int       status   = -1;
-  int              error;
   int              count    = 0;
 #if defined(WITH_TPT) 
+  int              error = 0;
   char errbuf[SH_ERRBUF_SIZE];
 #endif
 
@@ -204,7 +208,9 @@ static int push_message_queue (const char * msg)
 	}
       else
 	{
+#if defined(WITH_TPT) 
 	  error = errno;
+#endif
 	  TPT(( 0, FIL__, __LINE__, _("msg=<msgsnd: %s> errno=<%d>\n"), 
 		sh_error_message(error, errbuf, sizeof(errbuf)), error));
 	  SH_FREE(recv_msg);
@@ -283,7 +289,6 @@ int  sh_log_console (const /*@null@*/char *errmsg)
   int    retval = -1;
   /* static int logkey_seen = 0; */
   int    error;
-  struct sigaction sa_new, sa_old;
   static int blockMe = 0;
   int    val_return;
 
@@ -304,14 +309,6 @@ int  sh_log_console (const /*@null@*/char *errmsg)
     }
 #endif
 
-  sa_new.sa_handler = SIG_IGN;
-  (void) sigemptyset(&sa_new.sa_mask);
-  sa_new.sa_flags   = 0;
-
-  /* Ignore SIGPIPE in case the console is actually a pipe.
-   */
-  (void) retry_sigaction(FIL__, __LINE__, SIGPIPE, &sa_new, &sa_old);
- 
   if (sh.flag.isdaemon == S_FALSE || OnlyStderr == S_TRUE)
     {
       len = strlen(errmsg);
@@ -324,7 +321,6 @@ int  sh_log_console (const /*@null@*/char *errmsg)
       /* 
        * fprintf (stderr, "%s\n", errmsg); 
        */
-      (void) retry_sigaction(FIL__, __LINE__, SIGPIPE, &sa_old, NULL);
       blockMe = 0;
       SL_RETURN(0, _("sh_log_console"));
     }
@@ -385,7 +381,6 @@ int  sh_log_console (const /*@null@*/char *errmsg)
   else
     retval = 0;
 
-  (void) retry_sigaction(FIL__, __LINE__, SIGPIPE, &sa_old, NULL);
   blockMe = 0;
   SL_RETURN(retval, _("sh_log_console"));
 }

@@ -13,11 +13,14 @@ Source: samhain-%{version}.tar.gz
 BuildRoot: %{_tmppath}/samhain-%{version}-root
 Packager: Andre Oliveira da Costa <brblueser@uol.com.br>
 Provides: %{name}
+Requires(pre): shadow-utils
 
 # dummy (fix configure warning)
 # datarootdir = @datarootdir@
 
 # no quotes here - aparently will be expanded literally
+
+%define password %(echo $PASSWORD)
 
 %define withpwd_prg x@clmytclient@
 %define withstg_prg x@stegin_prg@
@@ -64,9 +67,16 @@ for i in `seq 6` %{?_with_gpg:7}; do ./test/test.sh $i; done
 #
 ./configure @mydefargs@ 
 make
+%if "%{withpwd_prg}" == "xDSH_WITH_CLIENT"
+%if 0%{?password}
+        ./samhain_setpwd samhain new %{password}
+	mv samhain samhain.old
+	mv samhain.new samhain
+%endif
+%endif
+
 
 %install
-
 rm -rf ${RPM_BUILD_ROOT}
 # sstrip shouldn't be used since binaries will be stripped later
 ## cat << EOF > sstrip
@@ -88,6 +98,17 @@ find %{buildroot}/lib/modules \! -type d -print | \
 %clean
 rm -rf ${RPM_BUILD_ROOT}
 
+%pre
+if test "x@install_name@" = "xyule"
+then
+    getent group samhain >/dev/null || groupadd -r samhain
+    getent passwd yule >/dev/null || \
+	useradd -r -g samhain -d  @mydataroot@ -s /sbin/nologin \
+	-c "samhain server daemon" yule
+
+fi
+exit 0
+
 %post
 if test "x@sh_lkm@" = x; then
    :
@@ -99,7 +120,7 @@ fi
 if [ "$1" -ge 1 ]; then
         # Activate boot-time start up
         cd @mydataroot@
-        ./samhain-install.sh --verbose install-boot
+        /bin/sh ./samhain-install.sh --verbose install-boot
 	rm -f ./samhain.startLSB
 	rm -f ./samhain.startLinux
 	if [ -f @sbindir@/@install_name@_stealth ]; then
@@ -154,7 +175,7 @@ if [ "$1" = 0 ]; then
         # remove boot-time scripts and links
         cd @mydataroot@
         if [ -f ./samhain-install.sh ]; then
-	    ./samhain-install.sh --verbose uninstall-boot
+	    /bin/sh ./samhain-install.sh --verbose uninstall-boot
 	else
 	    if test -f /usr/lib/lsb/remove_initd; then
 		/usr/lib/lsb/remove_initd /etc/init.d/@install_name@
@@ -195,9 +216,17 @@ fi
 %endif
 %attr(644,root,root) @mandir@/man5/@install_name@*
 %attr(644,root,root) @mandir@/man8/@install_name@*
+%attr(644,root,root) /etc/logrotate.d/@install_name@
+%if "%{name}" == "yule"
+%attr(750,root,samhain) @mydataroot@ 
+%attr(750,yule,samhain) @mylogdir@ 
+%endif
 %config(noreplace) @myrpmconffile@
 
 %changelog
+* Tue Oct 23 2012 Rainer Wichmann
+- fixes for yule installation
+
 * Tue May 16 2006 Rainer Wichmann
 - fix manual version, noticed by Imre Gergely
 

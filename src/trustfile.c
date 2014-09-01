@@ -98,6 +98,7 @@
 #include <pwd.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 
 #ifndef TRUST_MAIN
@@ -413,12 +414,14 @@ int isin(uid_t n, uid_t *list)
  *  RETURN TRUE if ANYONE in ulist is group member
  */
 /* not static to circumvent stupid gcc 4 bug */ 
-int isingrp(gid_t grp, uid_t *ulist)
+int isingrp(gid_t grp, uid_t *ulist, int * errval)
 {
   struct passwd *w;	        /* info about group member */
   register uid_t *u;		/* points to current ulist member */
   register char **p;		/* points to current group member */
   struct group *g;	        /* pointer to group information */
+
+  int status;
   
 #if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETGRGID_R)
   struct group    gr;
@@ -429,15 +432,22 @@ int isingrp(gid_t grp, uid_t *ulist)
 
   SL_ENTER(_("isingrp"));
 
+  *errval = 0;
+
 #if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETGRGID_R)
   buffer = malloc(SH_GRBUF_SIZE);
-  sh_getgrgid_r(grp, &gr, buffer, SH_GRBUF_SIZE, &g);
+  status = sh_getgrgid_r(grp, &gr, buffer, SH_GRBUF_SIZE, &g);
 #else
+  errno = 0;
   g = sh_getgrgid(grp);
+  status = errno;
 #endif
 
   if (g == NULL)
     {
+      if (status == ERANGE)
+	*errval = status;
+
       goto end_false;
     }
 
@@ -509,13 +519,15 @@ int isingrp(gid_t grp, uid_t *ulist)
  *  RETURN TRUE only if ALL group members are trusted
  */
 /* not static to circumvent stupid gcc 4 bug */ 
-int onlytrustedingrp(gid_t grp, uid_t *ulist)
+int onlytrustedingrp(gid_t grp, uid_t *ulist, int * errval)
 {
   struct passwd *w;	        /* info about group member */
   register uid_t *u;		/* points to current ulist member */
   register char **p;		/* points to current group member */
   struct group *g;	        /* pointer to group information */
   register int flag = -1;       /* group member found */
+
+  int status;
 
 #if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETGRGID_R)
   struct group    gr;
@@ -528,6 +540,8 @@ int onlytrustedingrp(gid_t grp, uid_t *ulist)
 
   SL_ENTER(_("onlytrustedingrp"));
 
+  *errval = 0;
+
 #ifdef TRUST_DEBUG
   fprintf(stderr, "trustfile: group writeable, group_gid: %ld\n", 
 	  (UID_CAST)grp); 
@@ -535,13 +549,18 @@ int onlytrustedingrp(gid_t grp, uid_t *ulist)
 
 #if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETGRGID_R)
   buffer = malloc(SH_GRBUF_SIZE);
-  sh_getgrgid_r(grp, &gr, buffer, SH_GRBUF_SIZE, &g);
+  status = sh_getgrgid_r(grp, &gr, buffer, SH_GRBUF_SIZE, &g);
 #else
+  errno = 0;
   g = sh_getgrgid(grp);
+  status = errno;
 #endif
 
   if (g == NULL)
     {
+      if (status == ERANGE)
+	*errval = status;
+
 #ifdef TRUST_DEBUG
       fprintf(stderr, 
 	      "trustfile: group_gid: %ld, no such group --> ERROR\n", 
@@ -721,6 +740,8 @@ int sl_trustfile(const char *fname, uid_t *okusers, uid_t *badusers)
   struct stat stbuf;	        /* used to check file permissions  */
   char c;			/* used to hold temp char          */
   
+  int errgrp = 0;
+
   SL_ENTER(_("sl_trustfile"));
   if (fname == NULL)
     SL_IRETURN(SL_EBADFILE, _("sl_trustfile"));
@@ -1009,8 +1030,8 @@ int sl_trustfile(const char *fname, uid_t *okusers, uid_t *badusers)
        * (untrusted) users in the group
        */
       if (((stbuf.st_mode & S_IWGRP) == S_IWGRP) &&
-	  ((okusers != NULL && !onlytrustedingrp((gid_t)stbuf.st_gid,okusers))||
-	   (badusers != NULL && isingrp((gid_t)stbuf.st_gid, badusers)))
+	  ((okusers != NULL && !onlytrustedingrp((gid_t)stbuf.st_gid,okusers,&errgrp))||
+	   (badusers != NULL && isingrp((gid_t)stbuf.st_gid, badusers,&errgrp)))
 #ifdef STICKY
 	  && ((stbuf.st_mode&S_IFDIR) != S_IFDIR ||
 	      (stbuf.st_mode&S_ISVTX) != S_ISVTX)
@@ -1034,7 +1055,7 @@ int sl_trustfile(const char *fname, uid_t *okusers, uid_t *badusers)
 
 	  tf_badgid = (gid_t) stbuf.st_gid;
 	  free(fexp);
-	  SL_IRETURN(SL_EBADGID, _("sl_trustfile"));
+	  SL_IRETURN((errgrp == ERANGE) ? SL_ERANGE : SL_EBADGID, _("sl_trustfile"));
 	}
       /*
        * if other can write, bomb; but if the sticky

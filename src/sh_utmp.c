@@ -538,6 +538,11 @@ int sh_utmp_init (struct mod_type * arg)
       else
 	return SH_MOD_FAILED;
     }
+  else if (arg != NULL && arg->initval == SH_MOD_THREAD &&
+	   (sh.flag.isdaemon == S_TRUE || sh.flag.loop == S_TRUE))
+    {
+      return SH_MOD_THREAD;
+    }
 #endif
   return sh_utmp_init_internal();
 }
@@ -552,7 +557,7 @@ static int sh_utmp_login_clean(void);
 #endif
 
 #if defined(HAVE_PTHREAD)
-static sh_watches inotify_watch;
+static sh_watches inotify_watch = SH_INOTIFY_INITIALIZER;
 #endif
 
 int sh_utmp_end ()
@@ -866,12 +871,6 @@ static void sh_utmp_addlogin (struct SH_UTMP_S * ut)
 
   SL_ENTER(_("sh_utmp_addlogin"));
 
-  /* Take the address to keep gcc from putting them into registers. 
-   * Avoids the 'clobbered by longjmp' warning. 
-   */
-  sh_dummy_userold = (void*) &userold;
-  sh_dummy_user    = (void*) &user;
-
   if (ut->ut_line[0] == '\0')
     SL_RET0(_("sh_utmp_addlogin"));
 
@@ -885,6 +884,11 @@ static void sh_utmp_addlogin (struct SH_UTMP_S * ut)
     }
   memcpy (&save_utmp, ut, sizeof(struct SH_UTMP_S));
 
+  /* Take the address to keep gcc from putting them into registers. 
+   * Avoids the 'clobbered by longjmp' warning. 
+   */
+  sh_dummy_userold = (void*) &userold;
+  sh_dummy_user    = (void*) &user;
 
   /* ------- find user -------- 
    */
@@ -987,7 +991,7 @@ static void sh_utmp_addlogin (struct SH_UTMP_S * ut)
 	  }
       
       sh_utmp_login_morechecks(ut);
-      SL_RET0(_("sh_utmp_addlogin"));
+      goto out;
     }
 
 
@@ -1046,11 +1050,11 @@ static void sh_utmp_addlogin (struct SH_UTMP_S * ut)
 			   );
 	  SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	}
-      SL_RET0(_("sh_utmp_addlogin"));
+      goto out;
     }
 
   /* default */
-  SL_RET0(_("sh_utmp_addlogin"));
+  goto out;
 
   /* #ifdef HAVE_UTTYPE                   */
 #else
@@ -1130,8 +1134,13 @@ static void sh_utmp_addlogin (struct SH_UTMP_S * ut)
       user = NULL;
     }
 
-  SL_RET0(_("sh_utmp_addlogin"));
 #endif
+
+ out:
+  sh_dummy_user    = NULL;
+  sh_dummy_userold = NULL;
+
+  SL_RET0(_("sh_utmp_addlogin"));
 }
 
 static time_t        lastmod  = 0;
@@ -1208,7 +1217,7 @@ static void sh_utmp_check_internal (int mode)
   if (mode < 2)
     {
       while (this_read < lastread) {
-	ut = sh_utmp_getutent();
+	(void) sh_utmp_getutent();
 	++this_read;
       }
     }

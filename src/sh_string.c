@@ -46,8 +46,6 @@ char ** split_array(char *line, unsigned int * nfields,
 
       if (*s) 
         {
-          a = s;
-
           /* move a to next delim
            */
           for (a=s; *a && *a != delim; ++a) /* nothing */;
@@ -256,11 +254,12 @@ char ** split_array_braced (char *line, const char * prefix,
 {
   char * s = line;
   char * p;
+  unsigned int sind = (prefix) ? strlen(prefix) : 0;
 
   while ( *s && isspace((int)*s) ) ++s;
   if (prefix && 0 != strncmp(s, prefix, strlen(prefix)))
     return NULL;
-  s = &s[strlen(prefix)];
+  s = &s[sind];
   while ( *s && isspace((int)*s) ) ++s;
   if (!s || (*s != '('))
     return NULL;
@@ -436,7 +435,10 @@ sh_string * sh_string_new_from_lchar(const char * str, size_t len)
   sh_string * s;
   s      = SH_ALLOC(sizeof(sh_string));
   s->str = SH_ALLOC(len+1);
-  memcpy(s->str, str, len);
+  if (str)
+    memcpy(s->str, str, len);
+  else
+    s->str[0] = '\0';
   s->str[len] = '\0';
   s->siz = len+1;
   s->len = len;
@@ -598,7 +600,6 @@ sh_string * sh_string_replace(const sh_string * s,
 
 
   curr = -1;
-  last = -1;
 
   for (i = 0; i < ovecnum; ++i)
     {

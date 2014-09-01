@@ -5,6 +5,7 @@
    The authors can be contacted by:
       Email: dnmalloc@fort-knox.org
       Address:
+#if defined(WITH_TPT) 
       	     Yves Younan
       	     Celestijnenlaan 200A
       	     B-3001 Heverlee
@@ -2852,7 +2853,7 @@ hashtable_remove (mchunkptr p)
 #else
       assert(temp != NULL);
 #endif
-      prevtemp->hash_next = temp->hash_next;
+      if (temp) prevtemp->hash_next = temp->hash_next;
     }
 }
 
@@ -3556,8 +3557,8 @@ static Void_t* sYSMALLOc(nb, av) INTERNAL_SIZE_T nb; mstate av;
     */
     
     else {
-      front_misalign = 0;
-      end_misalign = 0;
+      /* front_misalign = 0; *//*superfluous */
+      /* end_misalign = 0; *//*superfluous */
       correction = 0;
       aligned_brk = brk;
 
@@ -4282,7 +4283,9 @@ DL_STATIC   Void_t* mALLOc(bytes) size_t bytes;
   */
   retval = sYSMALLOc(nb, av);
   if (retval) {
-    victim = mem2chunk(retval);
+#if PARANOIA > 2
+    victim = mem2chunk(retval); /* is used in guard_set macro */
+#endif
     guard_set(av->guard_stored, victim, bytes, nb);
   }
   VALGRIND_MALLOCLIKE_BLOCK(retval, bytes, 0, 0);
@@ -4507,11 +4510,17 @@ DL_STATIC void fREe(mem) Void_t* mem;
     */
 
     else {
+#if  PARANOIA > 0
       int ret;
+#endif
       INTERNAL_SIZE_T offset = (INTERNAL_SIZE_T) p->hash_next;
       av->n_mmaps--;
       av->mmapped_mem -= (size + offset);
+#if  PARANOIA > 0
       ret = munmap((char*) chunk(p) - offset, size + offset);
+#else
+      munmap((char*) chunk(p) - offset, size + offset);
+#endif
       hashtable_remove_mmapped(chunk(p));
       freecilst_add(p);
       /* munmap returns non-zero on failure */
@@ -5006,7 +5015,9 @@ DL_STATIC Void_t* mEMALIGn(alignment, bytes) size_t alignment; size_t bytes;
   chunkinfoptr       remainder;      /* spare room at end to split off */
   CHUNK_SIZE_T    remainder_size; /* its size */
   INTERNAL_SIZE_T size;
+#if PARANOIA > 2
   mstate          av;
+#endif
 
   /* If need less alignment than we give anyway, just relay to malloc */
 
@@ -5037,7 +5048,9 @@ DL_STATIC Void_t* mEMALIGn(alignment, bytes) size_t alignment; size_t bytes;
 
   if (m == 0) return 0; /* propagate failure */
 
+#if PARANOIA > 2
   av = get_malloc_state();
+#endif
 
   p = hashtable_lookup((mchunkptr) m);
 
@@ -5504,7 +5517,7 @@ arc4_stir(void)
                 u_int rnd[(128 - 2*sizeof(struct timeval)) / sizeof(u_int)];
         } rdat;
 #if !defined(__FreeBSD__) && !defined(__OpenBSD__) && !defined(__NetBSD__)
-        size_t sz = 0;
+        ssize_t sz = 0;
 	int    fd;
 #endif
  
@@ -5528,11 +5541,18 @@ arc4_stir(void)
 	 */
         fd = open("/dev/urandom", O_RDONLY);
         if (fd != -1) {
-                sz = (size_t)read(fd, rdat.rnd, sizeof (rdat.rnd));
-                close(fd);
+	        sz = (size_t)read(fd, rdat.rnd, sizeof (rdat.rnd));
+		/* 
+		 * gcc complains if we ignore the return value of read(), and
+		 * the llvm/clang analyzer complains if we don't use it...
+		 */
+		if (sz > (-256)) /* always true */
+		  close(fd);
         }
+	/*
         if (sz > sizeof (rdat.rnd))
                 sz = 0;
+	*/
  #endif
 
 	arc4_stir_pid = getpid();

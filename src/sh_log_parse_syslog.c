@@ -94,6 +94,7 @@ struct sh_logrecord * sh_parse_syslog (sh_string * logline, void * fileinfo)
       size_t lengths[3];
 
       memset(&btime, '\0', sizeof(struct tm));
+      btime.tm_isdst = -1;
 
       /* This is RFC 3164. 
        */

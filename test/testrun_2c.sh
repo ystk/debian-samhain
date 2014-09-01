@@ -235,6 +235,7 @@ testrun2c ()
 	log_skip 1 $MAXTEST 'Client/server w/mysql (or use --really-all)'
 	log_skip 2 $MAXTEST 'Client/server w/mysql (or use --really-all)'
 	log_skip 3 $MAXTEST 'Client/server w/mysql (or use --really-all)'
+	log_skip 4 $MAXTEST 'Client/server w/mysql (or use --really-all)'
 	return 0
     fi
     if [ x"$1" = x ]; then
@@ -245,6 +246,7 @@ testrun2c ()
 	log_skip 1 $MAXTEST "mysql not found";
 	log_skip 2 $MAXTEST "mysql not found";
 	log_skip 3 $MAXTEST "mysql not found";
+	log_skip 4 $MAXTEST "mysql not found";
 	return 1
     else
 	TEST=`echo "DESCRIBE log;" | mysql --password=samhain -u samhain samhain 2>/dev/null`
@@ -252,6 +254,7 @@ testrun2c ()
 	    log_skip 1 $MAXTEST "mysql not default setup"
 	    log_skip 2 $MAXTEST "mysql not default setup"
 	    log_skip 3 $MAXTEST "mysql not default setup"
+	    log_skip 4 $MAXTEST "mysql not default setup"
 	    return 1
 	fi
     fi

@@ -164,7 +164,10 @@ static int    sh_socket_flaguid = 0;
 
 #include "sh_utils.h"
 
-
+/* The reload list stores information about
+ * reloads confirmed by clients (startup and/or
+ * runtime cinfiguration reloaded).
+ */
 struct reload_cmd {
   char          clt[SH_MAXMSGLEN];
   time_t        cti;
@@ -234,6 +237,8 @@ static void sh_socket_probe4reload (void)
 
       if (item->status_now != CLT_INACTIVE)
 	{
+	  int flag = 0;
+
 	  file = get_client_conf_file (item->hostname, &dummy);
 
 #ifdef SH_DEBUG_SOCKET
@@ -249,6 +254,8 @@ static void sh_socket_probe4reload (void)
 #endif
 		  if (0 == sl_strcmp(new->clt, item->hostname))
 		    {
+		      flag = 1; /* Client is in list already */
+
 #ifdef SH_DEBUG_SOCKET
 		      fprintf(stderr, "%lu <> %lu\n", 
 			      (unsigned long) buf.st_mtime, 
@@ -265,9 +272,33 @@ static void sh_socket_probe4reload (void)
 		    }
 		  new = new->next;
 		}
-	    }
-	}
-    }
+
+	      if (flag == 0)
+		{
+		  /* client is active, but start message has been missed; reload 
+		   */
+		  sl_strlcpy(cmd.cmd, _("RELOAD"),    SH_MAXMSGLEN);
+		  sl_strlcpy(cmd.clt, item->hostname, SH_MAXMSGLEN);
+		  sh_socket_add2list (&cmd);
+
+		  /* Add the client to the reload list and set
+		   * time to 0, since we don't know the startup time.
+		   */
+		  sh_socket_add2reload (item->hostname);
+		  new = reloadlist;
+		  while (new)
+		    {
+		      if (0 == sl_strcmp(new->clt, item->hostname))
+			{
+			  new->cti = 0;
+			  break;
+			}
+		      new = new->next;
+		    }
+		}
+	    } /* if stat(file).. */
+	} /* if !CLT_INACTIVE */
+    } /* loop over clients */
   return;
 }
 
@@ -996,7 +1027,7 @@ int sh_socket_read (struct socket_cmd * srvcmd)
   nbytes = sendto (pf_unix_fd, _("END"), 4, 0,
 		   (struct sockaddr *) & name, size);
   */
-  nbytes = send (talkfd, _("END"), 4, 0);
+  /* nbytes = *//* never read */ send (talkfd, _("END"), 4, 0);
   sl_close_fd(FIL__, __LINE__, talkfd);
   return 0;
 }
@@ -1125,7 +1156,6 @@ int sh_socket_poll()
  */
 char * sh_socket_check(const char * client_name)
 {
-  struct socket_cmd * old = cmdlist;
   struct socket_cmd * new = cmdlist;
   static char         out[SH_MAXMSGLEN];
 
@@ -1138,7 +1168,6 @@ char * sh_socket_check(const char * client_name)
 	  sh_socket_rm2list  (client_name);
 	  return out;
 	}
-      old = new;
       new = new->next;
     }
   return NULL;
