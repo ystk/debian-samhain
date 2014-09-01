@@ -457,8 +457,8 @@ void sh_mail_get_subject(const char * message,
   SL_RET0(_("sh_mail_get_subject"));
 }
 
-void sh_mail_signature_block (sh_string  * sigMsg, char * recipient,
-			      char * bufcompress)
+sh_string * sh_mail_signature_block (sh_string  * sigMsg, char * recipient,
+				     char * bufcompress)
 {
   time_t         id_audit;
   char         * theSig;
@@ -510,7 +510,7 @@ void sh_mail_signature_block (sh_string  * sigMsg, char * recipient,
     sigMsg     = sh_string_add_from_char(sigMsg, ibuf);
     sigMsg     = sh_string_add_from_char(sigMsg, _("-----END MESSAGE-----"));
 
-    return;
+    return sigMsg;
 }
 
 int sh_mail_msg (const char * message)
@@ -530,9 +530,6 @@ int sh_mail_msg (const char * message)
 
     static int   failcount = 0;
     FILE       * connfile  = NULL;
-
-    struct  sigaction  old_act;
-    struct  sigaction  new_act;
 
     static  time_t fail_time = 0;
     static  time_t success_time = 0;
@@ -601,7 +598,11 @@ int sh_mail_msg (const char * message)
     /* Don't flush the queue here, because tag_list doesn't know
      * how to filter messages. */
 
-    theMsg = sh_string_new_from_lchar(message, strlen(message));
+    theMsg = sh_string_new_from_lchar(message, sl_strlen(message));
+    if (!theMsg)
+      {
+	SL_RETURN((-1), _("sh_mail_msg"));
+      }
 
     /* ---------- Header  ---------------------------------------- */
 
@@ -671,14 +672,6 @@ int sh_mail_msg (const char * message)
 
     /* ---------- Connect ---------------------------------------- */
 
-    /* -- Catch (ignore) 'broken pipe'.
-     */
-    new_act.sa_handler = SIG_IGN;
-    sigemptyset( &new_act.sa_mask );         /* set an empty mask       */
-    new_act.sa_flags = 0;                    /* init sa_flags           */
-
-    (void) sigaction (SIGPIPE, &new_act, &old_act);
-
     errcount = 0;
 
     if (sh_mail_all_in_one == S_FALSE)
@@ -704,9 +697,9 @@ int sh_mail_msg (const char * message)
 		      {
 			sh_string  * sigMsg  = sh_string_new (0);
 
-			sh_mail_signature_block (sigMsg, 
-						 sh_string_str(address_list->recipient),
-						 bufcompress);
+			sigMsg = sh_mail_signature_block (sigMsg, 
+							  sh_string_str(address_list->recipient),
+							  bufcompress);
 
 			wrlen = fwrite (sh_string_str(sigMsg), 1, 
 					sh_string_len(sigMsg), connfile);
@@ -756,9 +749,9 @@ int sh_mail_msg (const char * message)
 	      {
 		sh_string  * sigMsg  = sh_string_new (0);
 		
-		sh_mail_signature_block (sigMsg, 
-					 NULL,
-					 bufcompress);
+		sigMsg  = sh_mail_signature_block (sigMsg, 
+						   NULL,
+						   bufcompress);
 		
 		wrlen = fwrite (sh_string_str(sigMsg), 1, 
 				sh_string_len(sigMsg), connfile);
@@ -784,8 +777,10 @@ int sh_mail_msg (const char * message)
 		ma_address = ma_address->all_next;
 	      }
 
-	    sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_SRV_FAIL,
-			     _("mail"), sh_string_str(ma_address->recipient));
+	    if (ma_address)
+	      sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_SRV_FAIL,
+			       _("mail"), 
+			       sh_string_str(ma_address->recipient));
 	    errcount = address_num;
 	    ++sh.statistics.mail_failed;
 	  }
@@ -823,10 +818,6 @@ int sh_mail_msg (const char * message)
       {
 	mark_list(fifo_mail);
       }
-
-    /* --- Reset signal. ---
-     */
-    (void) sigaction (SIGPIPE, &old_act, NULL);
 
     if (errcount == address_num)
       {
@@ -1666,7 +1657,7 @@ static dnsrep * get_mx (char *hostname)
       SL_RETURN (NULL, _("get_mx"));
     }
 
-  ret = 0;
+
   header  = (HEADER *) reply;
 
   /* start of data section
@@ -1767,7 +1758,7 @@ static dnsrep * get_mx (char *hostname)
 
       /* CLASS (re-use 'type' var)
        */
-      type = get_short (comp_dn);
+      /* type = get_short (comp_dn); *//* don't care */
       comp_dn += 2;
       if (comp_dn >= eom)
 	{
@@ -1862,7 +1853,6 @@ static int comp_mx_pref (const void * a, const void * b)
  */
 static dnsrep * return_mx (char *domain)
 {
-  struct hostent *host;
   dnsrep * answers = NULL;
   mx     * result;
   dnsrep * retval;
@@ -1907,7 +1897,6 @@ static dnsrep * return_mx (char *domain)
 	}
 
       retval = NULL;
-      host   = NULL;
 
       if (domain != NULL)
 	address = sh_ipvx_canonical(domain, numeric, sizeof(numeric));

@@ -27,6 +27,10 @@
 #include "sh_unix.h"
 #include "sh_error.h"
 
+/* convert to policy string
+ */
+const char * sh_hash_getpolicy(int class);
+
 /* format a uint64
  */
 char * sh_hash_size_format(void);

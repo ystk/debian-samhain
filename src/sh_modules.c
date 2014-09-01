@@ -17,6 +17,7 @@
 #include "sh_portcheck.h"
 #include "sh_logmon.h"
 #include "sh_registry.h"
+#include "sh_fInotify.h"
 
 sh_mtype modList[] = {
 #ifdef SH_USE_UTMP
@@ -168,6 +169,23 @@ sh_mtype modList[] = {
 
     N_("[Registry]"),
     sh_reg_check_table,
+    PTHREAD_MUTEX_INITIALIZER,
+  },
+#endif
+
+#if defined(HAVE_SYS_INOTIFY_H)
+  {
+    N_("INOTIFY"),
+    -1,
+    0,
+    sh_fInotify_init,
+    sh_fInotify_timer,
+    sh_fInotify_run,
+    sh_fInotify_cleanup,
+    sh_fInotify_reconf,
+
+    N_("[Inotify]"),
+    sh_fInotify_table,
     PTHREAD_MUTEX_INITIALIZER,
   },
 #endif

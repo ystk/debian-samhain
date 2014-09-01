@@ -413,7 +413,7 @@ int main (int argc, char * argv[])
        * make sure there is a terminator 
        */
       lseek(fd, off_data, SEEK_SET);
-      add_off = hidein_hex_block(fd, _("[EOF]\n"), 6);
+      add_off = hidein_hex_block(fd, _("\n[EOF]\n"), 7);
       if (add_off == -1)
 	{
 	  fprintf(stderr, _("Error: %s has insufficient capacity\n"),

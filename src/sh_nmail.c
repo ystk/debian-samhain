@@ -956,7 +956,7 @@ int sh_nmail_get_mailkey (const char * alias, char * buf, size_t bufsiz,
       return (t->mailcount);
     }
 
-  mailkeys = zAVLAllocTree (sh_nmail_getkey);
+  mailkeys = zAVLAllocTree (sh_nmail_getkey, zAVL_KEY_STRING);
   goto start;
 }
 

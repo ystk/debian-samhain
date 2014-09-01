@@ -698,6 +698,20 @@ void sh_unix_sigaction (int mysignal)
   return;
 }
 
+void sh_unix_ign_sigpipe()
+{
+  struct sigaction ignact;
+
+  ignact.sa_handler = SIG_IGN;            /* signal action           */
+  sigemptyset( &ignact.sa_mask );         /* set an empty mask       */
+  ignact.sa_flags = 0;                    /* init sa_flags           */
+
+#ifdef SIGPIPE
+  retry_sigaction(FIL__, __LINE__, SIGPIPE,   &ignact, NULL);
+#endif
+
+  return;
+}
 static
 void sh_unix_siginstall (int goDaemon)
 {
@@ -830,11 +844,7 @@ void sh_unix_siginstall (int goDaemon)
   retry_sigaction(FIL__, __LINE__, SIGINT,       &act, &oldact);
 #endif
 #ifdef SIGPIPE
-#ifdef HAVE_PTHREAD
   retry_sigaction(FIL__, __LINE__, SIGPIPE,   &ignact, &oldact);
-#else
-  retry_sigaction(FIL__, __LINE__, SIGPIPE,      &act, &oldact);
-#endif
 #endif
 #ifdef SIGALRM
   retry_sigaction(FIL__, __LINE__, SIGALRM,   &ignact, &oldact);
@@ -992,6 +1002,83 @@ int sh_unix_self_check ()
 
 /* ---------------------------------------------------------------- */
 
+long sh_group_to_gid (const char * g, int * fail)
+{
+  struct group *           w;
+  gid_t                    gid  = 0;
+  int                      status = 0;
+
+#if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETPWNAM_R)
+  struct group     grp;
+  char           * buffer;
+#endif
+
+  *fail = -1;
+
+  if (g)
+    {
+      size_t i;
+      size_t len = strlen(g);
+
+      *fail = 0;
+
+      for (i = 0; i < len; ++i)
+	{
+	  char c = g[i];
+
+	  if (!isdigit((int) c))
+	    goto is_a_name;
+	}
+      return atol(g);
+
+    is_a_name:
+
+#if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETPWNAM_R)
+      buffer = SH_ALLOC(SH_GRBUF_SIZE);
+      status = sh_getgrnam_r(g, &grp, buffer, SH_GRBUF_SIZE, &w);
+#else
+      errno = 0;
+      w = sh_getgrnam(g);
+      status = errno;
+#endif
+
+      if ((status == ERANGE) && (w == NULL)) 
+	{
+	  static int seen = 0;
+	  
+	  if (seen == 0)
+	    {
+	      char errbuf[SH_ERRBUF_SIZE];
+
+	      sh_error_handle (SH_ERR_ERR, FIL__, __LINE__, EINVAL, MSG_E_GRNULL,
+			       sh_error_message(status, errbuf, sizeof(errbuf)),
+			       _("sh_group_to_gid"), (long) -1, _("line too long in group entry"));
+	      ++seen;
+	    }
+	  *fail = -1;
+	}
+      else if (w == NULL)
+	{
+	  char * tmp = sh_util_strdup(g);
+	  sh_error_handle ((-1), FIL__, __LINE__, EINVAL, MSG_EINVALS, 
+			   _("sh_group_to_gid"), tmp);
+	  SH_FREE(tmp);
+	  *fail = -1;
+	}
+      else
+	{
+	  gid = w->gr_gid;
+	}
+#if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETPWNAM_R)
+      SH_FREE(buffer);
+#endif
+    }
+
+  return gid;
+}
+
+/* ---------------------------------------------------------------- */
+
 
 /* added    Tue Feb 22 10:36:44 NFT 2000 Rainer Wichmann            */
 static int tf_add_trusted_user_int(const char * c)
@@ -1097,7 +1184,7 @@ int tf_trust_check (const char * file, int mode)
   char * p;
   int    status;
   int    level;
-  uid_t  ff_euid;
+  uid_t  ff_euid = (uid_t) -1;
 
   SL_ENTER(_("tf_trust_check"));
 
@@ -1125,7 +1212,10 @@ int tf_trust_check (const char * file, int mode)
 	       DEFAULT_IDENT);
 	  aud_exit (FIL__, __LINE__, EXIT_FAILURE);
 	}
-      ff_euid = tempres->pw_uid;
+      else
+	{
+	  ff_euid = tempres->pw_uid;
+	}
 #if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETPWNAM_R)
       SH_FREE(buffer);
 #endif
@@ -1446,9 +1536,15 @@ static void sh_unix_zeroenv(void)
 #endif
 #ifdef WITH_ORACLE
     /* 
-     * Skip the ORACLE_HOME environment variable; Oracle may need it.
+     * Skip the ORACLE_HOME and TNS_ADMIN environment variables; 
+     * Oracle may need them.
      */
     if (0 == sl_strncmp((*env), _("ORACLE_HOME="), 12))
+      {
+	++(env);
+	continue;
+      }
+    if (0 == sl_strncmp((*env), _("TNS_ADMIN="), 10))
       {
 	++(env);
 	continue;
@@ -2168,7 +2264,7 @@ char * t_zone(const time_t * xx)
 {
   struct tm   aa;
   struct tm   bb;
-  struct tm * cc;
+
   int  sign =  0;
   int  diff =  0;
   int  hh, mm;
@@ -2177,17 +2273,15 @@ char * t_zone(const time_t * xx)
   SL_ENTER(_("t_zone"));
 
 #if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GMTIME_R)
-  cc = gmtime_r (xx, &aa);
+  gmtime_r (xx, &aa);
 #else
-  cc = gmtime (xx);
-  memcpy (&aa, cc, sizeof(struct tm));
+  memcpy (&aa, gmtime(xx), sizeof(struct tm));
 #endif
 
 #if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_LOCALTIME_R)
-  cc = localtime_r (xx, &bb);
+  localtime_r (xx, &bb);
 #else
-  cc = localtime (xx);
-  memcpy (&bb, cc, sizeof(struct tm));
+  memcpy (&bb, localtime(xx), sizeof(struct tm));
 #endif
 
   /* Check for datum wrap-around.
@@ -2316,6 +2410,19 @@ char * sh_unix_time (time_t thetime, char * buffer, size_t len)
 	} 
       else /* have a timeserver address */
 	{ 
+	  /* don't call timeserver more than once per second */
+	  static time_t  time_old   = 0;
+	  time_t         time_new;
+	  static time_t  time_saved = 0;
+	  (void) time (&time_new);
+	  if ((time_new == time_old) && (time_saved != 0))
+	    {
+	      time_now = time_saved;
+	      goto end;
+	    }
+	  time_old = time_new;
+
+
 	  fd = connect_port_2 (sh.srvtime.name, sh.srvtime.alt, 
 			       IPPORT_TIMESERVER, 
 			       error_call, &error_num, errmsg, sizeof(errmsg));
@@ -2344,7 +2451,8 @@ char * sh_unix_time (time_t thetime, char * buffer, size_t len)
 	      UINT32          ttmp;
 	      memcpy(&ttmp, net_time, sizeof(UINT32)); ltmp = ttmp;
 	      time_now = ntohl(ltmp) - UNIXEPOCH;
-	      /* fprintf(stderr, "TIME IS %ld\n", time_now); */
+	      time_saved = time_now;
+
 	      if (failerr == 1) {
 		failerr = 0;
 		sh_error_handle ((-1), FIL__, __LINE__, 0, 
@@ -2355,6 +2463,8 @@ char * sh_unix_time (time_t thetime, char * buffer, size_t len)
 	  else
 	    {
 	      (void) time (&time_now);
+	      time_saved = 0;
+
 	      if (failerr == 0)
 		{
 		  failerr = 1;
@@ -2363,6 +2473,8 @@ char * sh_unix_time (time_t thetime, char * buffer, size_t len)
 				   _("time"), sh.srvtime.name);
 		}
 	    }
+	end:
+	  ; /* 'label at end of compound statement' */
 	}
     }
   else 
@@ -2596,9 +2708,12 @@ void sh_userid_destroy ()
 
 static void sh_userid_additem(struct user_id * list, struct user_id * item)
 {
-  while (list && list->next)
-    list = list->next;
-  list->next = item;
+  if (list)
+    {
+      while (list && list->next)
+	list = list->next;
+      list->next = item;
+    }
   return;
 }
 
@@ -2782,6 +2897,26 @@ char *  sh_unix_getGIDname (int level, gid_t gid, char * out, size_t len)
   tempres = sh_getgrgid(gid);
   status = errno;
 #endif
+
+  if (status == ERANGE) 
+    {
+      static int seen = 0;
+
+      if (seen == 0)
+	{
+	  sh_error_handle (SH_ERR_ERR, FIL__, __LINE__, EINVAL, MSG_E_GRNULL,
+			   sh_error_message(status, errbuf, sizeof(errbuf)),
+			   _("getgrgid"), (long) gid, _("line too long in group entry"));
+	  ++seen;
+	}
+      
+#if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETGRGID_R)
+      SH_FREE(buffer);
+#endif
+
+      sh_userid_add(gid, NULL, CACHE_GID);
+      SL_RETURN( NULL, _("sh_unix_getGIDname"));
+    }
 
   if (tempres == NULL) 
     {
@@ -3330,7 +3465,7 @@ extern int flag_err_debug;
 
 #include "sh_ignore.h"
 
-int sh_unix_checksum_size (char * filename, struct stat * fbuf, 
+int sh_unix_checksum_size (char * filename, off_t size, int is_max_size, 
 			   char * fileHash, int alert_timeout, SL_TICKET fd)
 {
   file_type * tmpFile;
@@ -3344,18 +3479,22 @@ int sh_unix_checksum_size (char * filename, struct stat * fbuf,
   if (sh.flag.checkSum != SH_CHECK_INIT)
     {
       /* lookup file in database */
-      status = sh_hash_get_it (filename, tmpFile, NULL);
-      if (status != 0) {
-	goto out;
+      if (is_max_size == S_TRUE) {
+	status = sh_hash_get_it (filename, tmpFile, NULL);
+	if ((status != 0) || (tmpFile->size > size)) {
+	  goto out;
+	}
+      } else {
+	tmpFile->size = size;
       }
     }
   else
     {
-      tmpFile->size = fbuf->st_size;
+      tmpFile->size = size;
     }
 
-  /* if last < current get checksum */
-  if (tmpFile->size < fbuf->st_size)
+  /* if last <= current get checksum */
+  if (tmpFile->size <= size)
     {
       char hashbuf[KEYBUF_SIZE];
       UINT64 local_length = (UINT64) (tmpFile->size < 0 ? 0 : tmpFile->size);
@@ -3376,6 +3515,46 @@ int sh_unix_checksum_size (char * filename, struct stat * fbuf,
   sl_strlcpy(fileHash, SH_KEY_NULL, KEY_LEN+1);
   SL_RETURN( -1, _("sh_unix_checksum_size"));
 }
+
+/********************************************************
+ * Search rotated logfile
+ */
+extern char * sh_rotated_log_search(const char * path, struct stat * buf);
+
+int sh_check_rotated_log (const char * path,  
+			  UINT64 old_size, UINT64 old_inode, const char * old_hash)
+{
+  struct stat obuf;
+  UINT64 length_nolim = TIGER_NOLIM;
+  int retval = S_FALSE;
+
+  if (old_size != length_nolim)
+    {
+      char hashbuf[KEYBUF_SIZE];
+      char * rotated_file;
+
+      obuf.st_ino = old_inode;
+      rotated_file = sh_rotated_log_search(path, &obuf);
+
+      if (rotated_file && (0 != strcmp(path, rotated_file)))
+	{
+	  SL_TICKET fd = sl_open_fastread (FIL__, __LINE__, rotated_file, SL_YESPRIV);
+	  if (!SL_ISERROR(fd))
+	    {
+	      sh_unix_checksum_size (rotated_file, old_size, S_FALSE, hashbuf, 120 /* alert_timeout */, fd);
+	      
+	      sl_close(fd);
+	      
+	      if (strncmp (old_hash, hashbuf, KEY_LEN) == 0) {
+		retval = S_TRUE;
+	      }
+	    }
+	  SH_FREE(rotated_file);
+	}
+    }
+  return retval;
+}
+
 
 int sh_unix_check_selinux = S_FALSE;
 int sh_unix_check_acl     = S_FALSE;
@@ -3568,7 +3747,12 @@ int sh_unix_setcheckacl (const char * c)
 #include <zlib.h>
 #endif    
 
-int sh_unix_getinfo (int level, char * filename, file_type * theFile, 
+
+static void * sh_dummy_filename;
+static void * sh_dummy_tmp;
+static void * sh_dummy_tmp2;
+
+int sh_unix_getinfo (int level, const char * filename, file_type * theFile, 
 		     char * fileHash, int policy)
 {
   char          timestr[81];
@@ -3576,8 +3760,8 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
   struct stat   buf;
   struct stat   lbuf;
   struct stat   fbuf;
-  int           stat_return;
-  int           stat_errno = 0;
+  volatile int  stat_return;
+  volatile int  stat_errno = 0;
 
   ShFileType    type;
   unsigned int  mode;
@@ -3585,17 +3769,17 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
   char        * tmp2;
 
   char        * linknamebuf;
-  int           linksize;
+  volatile int  linksize;
 
   extern int get_the_fd (SL_TICKET ticket);
 
-  SL_TICKET     rval_open;
-  int           err_open = 0;
+  volatile SL_TICKET     rval_open;
+  volatile int           err_open = 0;
 
-  int           fd;
-  int           fstat_return;
-  int           fstat_errno = 0;
-  int           try         = 0;
+  volatile int           fd;
+  volatile int           fstat_return;
+  volatile int           fstat_errno = 0;
+  volatile int           try         = 0;
 
   sh_string   * content = NULL;
       
@@ -3605,11 +3789,29 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 
   char * path = NULL;
 
-  int alert_timeout   = 120;
+  volatile int alert_timeout   = 120;
 
   path = theFile->fullpath;
 
   SL_ENTER(_("sh_unix_getinfo"));
+
+  if (!MODI_INITIALIZED(theFile->check_mask))
+    {
+      tmp2 = sh_util_safe_name (theFile->fullpath);
+      SH_MUTEX_LOCK(mutex_thread_nolog);
+      sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_E_SUBGPATH,
+		       _("Uninitialized check mask"), _("sh_unix_getinfo"),
+		       tmp2);
+      SH_MUTEX_UNLOCK(mutex_thread_nolog);
+      SH_FREE(tmp2);
+    }
+
+  /* Take the address to keep gcc from putting it into a register. 
+   * Avoids the 'clobbered by longjmp' warning. 
+   */
+  sh_dummy_filename = (void *) &filename;
+  sh_dummy_tmp      = (void *) &tmp;
+  sh_dummy_tmp2     = (void *) &tmp2;
 
   /* --- Stat the file, and get checksum. ---
    */
@@ -3639,8 +3841,10 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 	  
 	  if (stale)
 	    {
+	      SH_MUTEX_LOCK(mutex_thread_nolog);
 	      sh_error_handle(SH_ERR_ERR, FIL__, __LINE__, err_open, MSG_E_SUBGEN,
 			      stale, _("sh_unix_getinfo_open"));
+	      SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	    }
 
 	  if (errno == EBADF && try == 0) /* obsolete, but we keep this, just in case */
@@ -3671,8 +3875,10 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
   if ((tend - tstart) > (time_t) /* 60 */ 6)
     {
       tmp2 = sh_util_safe_name (theFile->fullpath);
+      SH_MUTEX_LOCK(mutex_thread_nolog);
       sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_FI_TOOLATE,
 		       (long)(tend - tstart), tmp2);
+      SH_MUTEX_UNLOCK(mutex_thread_nolog);
       SH_FREE(tmp2);
     }
 
@@ -3690,9 +3896,11 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 
 	  if (stale)
 	    {
+	      SH_MUTEX_LOCK(mutex_thread_nolog);
 	      sh_error_handle(SH_ERR_ERR, FIL__, __LINE__, fstat_errno, 
 			      MSG_E_SUBGEN,
 			      stale, _("sh_unix_getinfo_fstat"));
+	      SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	    }
 
 	  if (try == 0) /* obsolete, but we keep this, just in case */
@@ -3725,11 +3933,13 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 	    uid_t euid;
 	    (void) sl_get_euid(&euid);
 	    tmp2 = sh_util_safe_name (theFile->fullpath);
+	    SH_MUTEX_LOCK(mutex_thread_nolog);
 	    sh_error_handle (level, FIL__, __LINE__, stat_return, MSG_FI_STAT,
 			     _("lstat"),
 			     sh_error_message (stat_errno, errbuf, sizeof(errbuf)),
 			     (long) euid,
 			     tmp2);
+	    SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	    SH_FREE(tmp2);
 	  }
 	}
@@ -3761,7 +3971,7 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 	    {
 	      sl_strlcpy(fileHash, SH_KEY_NULL, KEY_LEN+1);
 	    }
-	  else if ((theFile->check_mask & MODI_PREL) != 0 && 
+	  else if ((theFile->check_mask & MODI_PREL) != 0 &&
 		   S_TRUE == sh_prelink_iself(rval_open, fbuf.st_size, 
 					      alert_timeout, theFile->fullpath))
 	    {
@@ -3772,7 +3982,7 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 	  else
 	    {
 	      char hashbuf[KEYBUF_SIZE];
-	      UINT64 length_nolim = TIGER_NOLIM;
+	      UINT64 length_current = TIGER_NOLIM;
 
 	      if (MODI_TXT_ENABLED(theFile->check_mask) && fbuf.st_size < (10 * SH_TXT_MAX))
 		{
@@ -3781,7 +3991,7 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 
 	      sl_strlcpy(fileHash,
 			 sh_tiger_generic_hash (theFile->fullpath, 
-						rval_open, &length_nolim, 
+						rval_open, &length_current, 
 						alert_timeout, 
 						hashbuf, sizeof(hashbuf)),
 			 KEY_LEN+1);
@@ -3791,10 +4001,12 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 
 	      if ((theFile->check_mask & MODI_SGROW) != 0)
 		{
-		  fbuf.st_size = (off_t) length_nolim;
+		  /* Update size so it matches the one for which the checksum
+		     has been computed */
+		  fbuf.st_size = length_current;
 		  buf.st_size  = fbuf.st_size;
 		  sl_rewind(rval_open);
-		  sh_unix_checksum_size (theFile->fullpath, &fbuf, 
+		  sh_unix_checksum_size (theFile->fullpath, length_current, S_TRUE,
 					 &fileHash[KEY_LEN + 1], 
 					 alert_timeout, rval_open);
 		}
@@ -3827,7 +4039,7 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 	  else
 	    {
 	      char hashbuf[KEYBUF_SIZE];
-	      UINT64 length_nolim = TIGER_NOLIM;
+	      UINT64 length_current = TIGER_NOLIM;
 
 	      if (MODI_TXT_ENABLED(theFile->check_mask) && fbuf.st_size < (10 * SH_TXT_MAX))
 		{
@@ -3836,7 +4048,7 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 
 	      sl_strlcpy(fileHash, 
 			 sh_tiger_generic_hash (theFile->fullpath, rval_open, 
-						&length_nolim,
+						&length_current,
 						alert_timeout,
 						hashbuf, sizeof(hashbuf)),
 			 KEY_LEN + 1);
@@ -3846,10 +4058,12 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 
 	      if ((theFile->check_mask & MODI_SGROW) != 0) 
 		{
-		  fbuf.st_size = (off_t) length_nolim;
+		  /* Update size so it matches the one for which the checksum
+		     has been computed */
+		  fbuf.st_size = length_current;
 		  buf.st_size  = fbuf.st_size;
 		  sl_rewind(rval_open);
-		  sh_unix_checksum_size (theFile->fullpath, &fbuf, 
+		  sh_unix_checksum_size (theFile->fullpath, length_current, S_TRUE,
 					 &fileHash[KEY_LEN + 1], 
 					 alert_timeout, rval_open);
 		}
@@ -3877,16 +4091,20 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 	      char errbuf[SH_ERRBUF_SIZE];
 	      (void) sl_get_euid(&euid);
 
+	      SH_MUTEX_LOCK(mutex_thread_nolog);
 	      sh_error_handle (level, FIL__, __LINE__, stat_return, MSG_FI_STAT,
 			       _("fstat"),
 			       sh_error_message (fstat_errno, errbuf, sizeof(errbuf)),
 			       (long) euid,
 			       tmp2);
+	      SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	    }
 	  else if (fd >= 0 && !S_ISREG(fbuf.st_mode))
 	    {
+	      SH_MUTEX_LOCK(mutex_thread_nolog);
 	      sh_error_handle (level, FIL__, __LINE__, fstat_errno, 
 			       MSG_E_NOTREG, tmp2);
+	      SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	    }
 	  else
 	    {
@@ -3894,8 +4112,10 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 	      char errbuf2[SH_ERRBUF_SIZE];
 	      sl_strlcpy(errbuf, sl_error_string(rval_open), sizeof(errbuf));
 	      sh_error_message(err_open, errbuf2, sizeof(errbuf2));
+	      SH_MUTEX_LOCK(mutex_thread_nolog);
 	      sh_error_handle (level, FIL__, __LINE__, err_open, 
 			       MSG_E_READ, errbuf, errbuf2, tmp2);
+	      SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	    }
 	  SH_FREE(tmp2);
 	}
@@ -3987,15 +4207,19 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 
     if (policy == SH_LEVEL_ALLIGNORE)
       {
+	SH_MUTEX_LOCK(mutex_thread_nolog);
 	sh_error_handle (SH_ERR_ALL, FIL__, __LINE__, ENOENT, 
 			 MSG_FI_NOGRP,
 			 (long) buf.st_gid, tmp2);
+	SH_MUTEX_UNLOCK(mutex_thread_nolog);
       }
     else
       {
+	SH_MUTEX_LOCK(mutex_thread_nolog);
 	sh_error_handle (ShDFLevel[SH_ERR_T_NAME], FIL__, __LINE__, ENOENT, 
 			 MSG_FI_NOGRP,
 			 (long) buf.st_gid, tmp2);
+	SH_MUTEX_UNLOCK(mutex_thread_nolog);
       }
     SH_FREE(tmp2);
     sl_snprintf(theFile->c_group, GROUP_MAX+1, "%d", (long) buf.st_gid); 
@@ -4008,15 +4232,19 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 
     if (policy == SH_LEVEL_ALLIGNORE)
       {
+	SH_MUTEX_LOCK(mutex_thread_nolog);
 	sh_error_handle (SH_ERR_ALL, FIL__, __LINE__, ENOENT, 
 			 MSG_FI_NOUSR,
 			 (long) buf.st_uid, tmp2);
+	SH_MUTEX_UNLOCK(mutex_thread_nolog);
       }
     else
       {
+	SH_MUTEX_LOCK(mutex_thread_nolog);
 	sh_error_handle (ShDFLevel[SH_ERR_T_NAME], FIL__, __LINE__, ENOENT, 
 			 MSG_FI_NOUSR,
 			 (long) buf.st_uid, tmp2);
+	SH_MUTEX_UNLOCK(mutex_thread_nolog);
       }
     SH_FREE(tmp2);
     sl_snprintf(theFile->c_owner, USER_MAX+1, "%d", (long) buf.st_uid); 
@@ -4029,6 +4257,7 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
       tmp2 = sh_util_safe_name ((filename == NULL) ? 
 				theFile->fullpath : filename);
       (void) sh_unix_time(theFile->mtime, timestr, sizeof(timestr));
+      SH_MUTEX_LOCK(mutex_thread_nolog);
       sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_FI_LIST,
 		       theFile->c_mode,
 		       theFile->hardlinks,
@@ -4037,6 +4266,7 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 		       (unsigned long) theFile->size,
 		       timestr,
 		       tmp2);
+      SH_MUTEX_UNLOCK(mutex_thread_nolog);
       SH_FREE(tmp2);
     }
 
@@ -4059,8 +4289,10 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 	  char errbuf[SH_ERRBUF_SIZE];
 	  linksize = errno;
 	  tmp2 = sh_util_safe_name (theFile->fullpath);
+	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle (level, FIL__, __LINE__, linksize, MSG_FI_RDLNK,
 			   sh_error_message (linksize, errbuf, sizeof(errbuf)), tmp2);
+	  SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	  SH_FREE(tmp2);
 	  SH_FREE(linknamebuf);
 	  theFile->link_path = sh_util_strdup("-");
@@ -4113,19 +4345,23 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 	      char errbuf[SH_ERRBUF_SIZE];
 
 	      (void) sl_get_euid(&euid);
+	      SH_MUTEX_LOCK(mutex_thread_nolog);
 	      sh_error_handle (level, FIL__, __LINE__, stat_return, 
 			       MSG_FI_STAT,
 			       _("lstat"),
 			       sh_error_message (stat_return,errbuf, sizeof(errbuf)), 
 			       (long) euid,
 			       tmp2);
+	      SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	    }
 	  else 
 	    {
 	      /* a dangling link -- everybody seems to have plenty of them 
 	       */
+	      SH_MUTEX_LOCK(mutex_thread_nolog);
 	      sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_FI_DLNK,
 			       tmp, tmp2);
+	      SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	    }
 	  theFile->linkisok = BAD;
 	  SH_FREE(tmp);
@@ -4158,13 +4394,15 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
       if (theFile->linkisok == GOOD) 
 	{
 	  tmp2 = sh_util_safe_name (linknamebuf);      
+	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_FI_LLNK,
 			   theFile->link_c_mode, tmp2);
+	  SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	  SH_FREE(tmp2);
 	}
       SH_FREE(linknamebuf);
     }
-  else /* not a link */
+  else /* not a link, theFile->c_mode[0] != 'l' */
     {
       if (content)
 	{
@@ -4196,9 +4434,11 @@ int sh_unix_getinfo (int level, char * filename, file_type * theFile,
 		    sl_snprintf(tmsg, sizeof(tmsg), 
 				_("compressed file too large (%lu bytes)"),
 				clen);
+		    SH_MUTEX_LOCK(mutex_thread_nolog);
 		    sh_error_handle (SH_ERR_WARN, FIL__, __LINE__, -1, 
 				     MSG_E_SUBGPATH, tmsg, 
 				     _("sh_unix_getinfo"), tpath);
+		    SH_MUTEX_UNLOCK(mutex_thread_nolog);
 		    SH_FREE(tpath);
 		  }
 	      }
@@ -5308,25 +5548,94 @@ unsigned long first_hex_block(SL_TICKET fd, unsigned long * max)
  * anti-debugger code
  */
 #if defined(SCREW_IT_UP)
-volatile int sh_not_traced = 0;
 
-#ifdef HAVE_GETTIMEOFDAY
-struct timeval  save_tv;
+#if defined(HAVE_PTHREAD)
+
+static pthread_key_t  gSigtrapVariables_key;
+static pthread_once_t gSigtrapVariables_key_once = PTHREAD_ONCE_INIT;
+
+static inline void make_gSigtrapVariables_key()
+{
+    (void) pthread_key_create(&gSigtrapVariables_key, free);
+}
+
+struct sh_sigtrap_variables * sh_sigtrap_variables_get()
+{
+  void * ptr;
+
+  (void) pthread_once(&gSigtrapVariables_key_once, make_gSigtrapVariables_key);
+ 
+  ptr = pthread_getspecific(gSigtrapVariables_key);
+  if (ptr == NULL) {
+    ptr = malloc(sizeof(struct sh_sigtrap_variables));
+    if (ptr == NULL) {
+      return NULL;
+    }
+    (void) pthread_setspecific(gSigtrapVariables_key, ptr);
+  }
+
+  return (struct sh_sigtrap_variables *) ptr;
+}
+
+/* !defined(HAVE_PTHREAD) */
+#else
+
+static struct sh_sigtrap_variables global_sigtrap_variables;
+struct sh_sigtrap_variables * sh_sigtrap_variables_get()
+{
+  return &global_sigtrap_variables;
+}
+
 #endif
+
+int sh_sigtrap_max_duration_set (const char * str)
+{
+  /* For security (prevent reloading with larger value)
+   * this value can only be set once.
+   */
+  static int once = 0;
+  int i;
+
+  SL_ENTER(_("sh_sigtrap_max_duration_set"));
+
+  i = atoi (str);
+
+  if (i >= 0 && once == 0)
+    {
+      sh.sigtrap_max_duration = i;
+      once = 1;
+    }
+  else
+    {
+      SL_RETURN ((-1), _("sh_sigtrap_max_duration_set"));
+    }
+  SL_RETURN( (0), _("sh_sigtrap_max_duration_set"));
+}
 
 void sh_sigtrap_handler (int signum)
 {
+  struct sh_sigtrap_variables * sigtrap_variables;
+  sigtrap_variables = sh_sigtrap_variables_get();
+  if (sigtrap_variables == NULL) {
+    /* Perhaps, it's better to not die, and to continue using Samhain,
+       even if this part does not work. */
+    return;
+  }
+
 #ifdef HAVE_GETTIMEOFDAY
-  struct timeval  tv;
-  long   difftv;
-  
-  gettimeofday(&tv, NULL);
-  difftv = (tv.tv_sec - save_tv.tv_sec) * 1000000 + 
-    (tv.tv_usec - save_tv.tv_usec);
-  if (difftv > 500000)
-    raise(SIGKILL);
+  {
+    struct timeval  tv;
+    long   difftv;
+    
+    gettimeofday(&tv, NULL);
+    difftv = (tv.tv_sec - sigtrap_variables->save_tv.tv_sec) * 1000000 + 
+      (tv.tv_usec - sigtrap_variables->save_tv.tv_usec);
+    if (difftv > sh.sigtrap_max_duration)
+      raise(SIGKILL);
+  }
 #endif
-  sh_not_traced += signum;
+
+  sigtrap_variables->not_traced = signum;
   return;
 }
 #endif

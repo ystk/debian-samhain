@@ -1140,7 +1140,7 @@ static int get_login_info(char *msg, idmef_alert_t *alert)
         return 0;
 }
 
-
+#if defined(SH_WITH_SERVER)
 static int node_set_address(idmef_node_t *node, const char *addr)
 {
         int ret;
@@ -1167,11 +1167,12 @@ static int node_set_address(idmef_node_t *node, const char *addr)
  err:
         return -1;
 }
-
+#endif
                                           
 
 static int samhain_alert_prelude(int priority, int sh_class, 
-				 char *message, unsigned long msgid, char * inet_peer_ip)
+				 char *message, unsigned long msgid, 
+				 char * inet_peer_ip)
 {
         int ret;
         idmef_time_t *time;
@@ -1186,6 +1187,8 @@ static int samhain_alert_prelude(int priority, int sh_class,
         prelude_string_t *str;
 #if defined(SH_WITH_SERVER)
         idmef_node_t *node;
+#else
+	(void) inet_peer_ip;
 #endif
                 
         if ( !client || sh_class == STAMP)

@@ -26,6 +26,7 @@
  */
 #if !defined(__sun__) && !defined(__sun)
 #define _XOPEN_SOURCE 600
+#undef  _GNU_SOURCE
 #endif
 #include <string.h>
 #include <stdio.h>     
@@ -350,6 +351,7 @@ char * sh_error_message (int tellme, char * str, size_t len)
 {
 
 #if defined(HAVE_STRERROR_R)
+  if (len > 0) str[0] = '\0';
   strerror_r(tellme, str, len);
   return str;
 #elif defined(HAVE_STRERROR)
@@ -645,6 +647,10 @@ int sh_error_set_level(const char * str_in, int * facility)
 	}
     }
 
+  if (!str_s)
+    {
+      SL_RETURN ((-1), _("sh_error_set_level"));
+    }
   /* skip to end of string
    */
   while (*str_s != '\0' && *str_s != ';' && *str_s != ',' && 
@@ -860,7 +866,52 @@ void sh_error_set_peer(const char * str)
     sl_strlcpy(inet_peer, str, sizeof(inet_peer));
 }
 #endif
-  
+
+#if defined(SH_WITH_CLIENT) || defined(SH_STANDALONE)
+#include "sh_checksum.h"
+static char * sh_error_replace(const char * msg)
+{
+  char * ret   = NULL;
+
+  if (sh_tiger_get_hashtype () == SH_SHA256)
+    {
+      char * store = NULL;
+
+#ifdef SH_USE_XML
+      char c_end  = '"';
+      char * str  = _("chksum_old=\"");
+      char * str2 = _("chksum_new=\"");
+#else
+      char c_end  = '>';
+      char * str  = _("chksum_old=<");
+      char * str2 = _("chksum_new=<");
+#endif
+
+      ret = SHA256_ReplaceBaseByHex(msg, str, c_end);
+
+      if (ret) {
+	store = ret;
+	ret   = SHA256_ReplaceBaseByHex(ret, str2, c_end);
+	if (ret)
+	  SH_FREE(store);
+	else
+	  ret = store;
+      } else {
+	ret   = SHA256_ReplaceBaseByHex(msg, str2, c_end);
+      }
+    }
+  return ret;
+}
+static void sh_replace_free(char * msg)
+{
+  if (msg)
+    SH_FREE(msg);
+  return;
+}
+#else
+static char * sh_error_replace(const char * msg) { (void) msg; return NULL; }
+static void sh_replace_free(char * msg) { (void) msg; return; }
+#endif
 
 /**********************************************************
  **********************************************************
@@ -875,7 +926,7 @@ void sh_error_set_peer(const char * str)
 
 SH_MUTEX_RECURSIVE(mutex_err_handle);
 
-void sh_error_handle (int sev, const char * file, long line, 
+void sh_error_handle (int sev1, const char * file, long line, 
 		      long status, unsigned long msg_id, ...)
 {
   va_list         vl;                 /* argument list          */
@@ -884,6 +935,7 @@ void sh_error_handle (int sev, const char * file, long line,
   int    severity;
   unsigned int class;
   char * fmt;
+  volatile int sev = sev1;            /* Avoids the 'clobbered by longjmp' warning. */
 
   int    flag_inet;
 
@@ -901,6 +953,8 @@ void sh_error_handle (int sev, const char * file, long line,
 #if defined(WITH_DATABASE)
   char   * escape_msg;
 #endif
+
+  char   * hexmsg = NULL;
 
   static int    own_block = 0;
 
@@ -992,6 +1046,16 @@ void sh_error_handle (int sev, const char * file, long line,
   if (sev != (-1))
     severity = sev;
 
+  /* --- Some statistics. ---
+   */
+#if defined (SH_WITH_CLIENT) || defined (SH_STANDALONE)
+  if ( ((1 << class) & ERROR_CLA) && 
+       (severity & (SH_ERR_ERR|SH_ERR_SEVERE|SH_ERR_FATAL)))
+    {
+      ++sh.statistics.files_error;
+    }
+#endif
+
   /* these are messages from remote sources
    */
   if ((severity  & SH_ERR_INET) != 0)
@@ -1065,6 +1129,7 @@ void sh_error_handle (int sev, const char * file, long line,
   va_end (vl);
   own_block = 0;
 
+  hexmsg = sh_error_replace(lmsg->msg);
 
   /* Log to stderr.
    */
@@ -1085,7 +1150,7 @@ void sh_error_handle (int sev, const char * file, long line,
 	  /*
 	   *  Reports first error after failure. Always tries.
 	   */
-	  (void) sh_log_console (lmsg->msg);
+	  (void) sh_log_console (hexmsg ? hexmsg : lmsg->msg);
 	  print_block = 0;
 	}
     }
@@ -1113,7 +1178,7 @@ void sh_error_handle (int sev, const char * file, long line,
 	      /*
 	       * Ignores errors. Always tries.
 	       */
-	      (void) sh_log_syslog (lmsg->severity, lmsg->msg);
+	      (void) sh_log_syslog (lmsg->severity, hexmsg ? hexmsg : lmsg->msg);
 	      syslog_block = 0;
 	    }
 	}
@@ -1135,7 +1200,7 @@ void sh_error_handle (int sev, const char * file, long line,
 	      /*
 	       *  Reports first error after failure. Always tries.
 	       */
-	      (void) sh_ext_execute ('l', 'o', 'g', lmsg->msg, 0);
+	      (void) sh_ext_execute ('l', 'o', 'g', hexmsg ? hexmsg : lmsg->msg, 0);
 	      external_block = 0;
 	    }
 	}
@@ -1252,9 +1317,9 @@ void sh_error_handle (int sev, const char * file, long line,
 
 	      BREAKEXIT(sh_nmail_msg);
 	      if ( (severity & SH_ERR_FATAL) == 0) 
-		retval = sh_nmail_pushstack (severity, lmsg->msg, NULL);
+		retval = sh_nmail_pushstack (severity, hexmsg ? hexmsg : lmsg->msg, NULL);
 	      else 
-		retval = sh_nmail_msg (severity, lmsg->msg, NULL);
+		retval = sh_nmail_msg (severity, hexmsg ? hexmsg : lmsg->msg, NULL);
 
 	      mail_block = 0;
 	      if (retval == -2)
@@ -1288,11 +1353,11 @@ void sh_error_handle (int sev, const char * file, long line,
 	       */
 #if defined(HAVE_LIBPRELUDE) && defined(SH_WITH_SERVER) 
 	      (void) sh_prelude_alert (severity, (int) class, 
-				       lmsg->msg, lmsg->status, msg_id, 
+				       hexmsg ? hexmsg : lmsg->msg, lmsg->status, msg_id, 
 				       local_inet_peer_ip);
 #else
 	      (void) sh_prelude_alert (severity, (int) class, 
-				       lmsg->msg, lmsg->status, msg_id, 
+				       hexmsg ? hexmsg : lmsg->msg, lmsg->status, msg_id, 
 				       NULL);
 #endif
 	      prelude_block = 0;
@@ -1333,7 +1398,7 @@ void sh_error_handle (int sev, const char * file, long line,
                     (void) sh_log_file (lmsg->msg, local_inet_peer);
 		}
 #else
-              (void) sh_log_file (lmsg->msg, NULL);
+              (void) sh_log_file (hexmsg ? hexmsg : lmsg->msg, NULL);
 #endif
 	      /* sh_log_file (lmsg->msg); */
 	      log_block = 0;
@@ -1348,6 +1413,7 @@ void sh_error_handle (int sev, const char * file, long line,
 
   if (lmsg->msg)
     SH_FREE( lmsg->msg );
+  sh_replace_free(hexmsg);
 
   memset ( lmsg, (int) '\0', sizeof(struct _log_t) );
   MUNLOCK( (char *) lmsg,       sizeof(struct _log_t) );

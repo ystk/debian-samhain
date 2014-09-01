@@ -19,6 +19,10 @@
 
 #include "config_xor.h"
 
+#if defined(HAVE_PTHREAD_MUTEX_RECURSIVE)
+#define _XOPEN_SOURCE 500
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,6 +35,15 @@
  */
 #include <sys/types.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#if !defined(O_NOATIME)
+#if defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__PPC__))
+#define O_NOATIME 01000000
+#endif
+#endif
 
 #include <utime.h>
 
@@ -55,6 +68,10 @@
 #ifdef HAVE_GLOB_H
 #include <glob.h>
 #endif
+#ifdef HAVE_FNMATCH_H
+#include <fnmatch.h>
+#endif
+
 
 #include "samhain.h"
 
@@ -68,14 +85,17 @@
 #include "sh_tiger.h"
 #include "sh_hash.h"
 #include "sh_ignore.h"
+#include "sh_inotify.h"
 #include "zAVLTree.h"
 
 #undef  FIL__
 #define FIL__  _("sh_files.c")
 
+extern sh_watches sh_file_watches;
+
 static char * sh_files_C_dequote (char * s, size_t * length)
 {
-  size_t i, j, len = *length;
+  size_t i, len = *length;
   int    flag = 0;
   char  *p, *q, *po, *pend;
   
@@ -95,7 +115,7 @@ static char * sh_files_C_dequote (char * s, size_t * length)
 
   po = SH_ALLOC(len+1); *po = '\0'; p = po; pend = &po[len];
 
-  i = 0; j = 0; q = s;
+  q = s;
 
   do
     {
@@ -277,16 +297,15 @@ static zAVLTree * zdirListOne   = NULL;
 static zAVLTree * zdirListTwo   = NULL;
 static zAVLTree * zfileList     = NULL;
 
+SH_MUTEX_STATIC(mutex_zfiles,      PTHREAD_MUTEX_INITIALIZER);
+SH_MUTEX_STATIC(mutex_zglob,       PTHREAD_MUTEX_INITIALIZER);
+SH_MUTEX_RECURSIVE(mutex_zdirs);
 
-static int        sh_files_fullpath  (char * testdir, char * d_name, 
+static int        sh_files_fullpath  (const char * testdir, 
+				      const char * d_name, 
 				      char * statpath);
 static int        sh_files_pushdir   (int class, const char * str_s);
 static int        sh_files_pushfile  (int class, const char * str_s);
-static int        sh_files_checkdir  (int class, int rdepth, char * dirName,
-				      char * relativeName);
-static ShFileType sh_files_filecheck (int class, char * dirName, 
-				      char * fileName, int * reported,
-				      int rsrcflag);
 
 static long MaxRecursionLevel = 0;
 
@@ -350,15 +369,25 @@ unsigned long sh_files_chk ()
 	  
 	  if (flag_err_info == SL_TRUE)
 	    {
+	      char pstr[32];
 #if !defined(WITH_TPT)
 	      tmp = sh_util_safe_name (ptr->name);
 #endif
-	      sh_error_handle ((-1),  FIL__, __LINE__, 0, MSG_FI_CHK, tmp);
+	      sl_strlcpy(pstr, sh_hash_getpolicy(ptr->class), sizeof(pstr));
+	      sh_error_handle ((-1),  FIL__, __LINE__, 0, 
+			       MSG_FI_CHK, pstr, tmp);
+	    }
+
+	  if ((sh.flag.inotify & SH_INOTIFY_INSCAN) != 0)
+	    {
+	      sh_inotify_add_watch_later(ptr->name, &sh_file_watches, NULL,
+					 ptr->class, ptr->check_mask, 
+					 SH_INOTIFY_FILE, 0);
 	    }
 
 	  BREAKEXIT(sh_files_filecheck);
 	  tmp_reported = ptr->is_reported; /* fix aliasing warning */ 
-	  status = sh_files_filecheck (ptr->class, dir, file, 
+	  status = sh_files_filecheck (ptr->class, ptr->check_mask, dir, file, 
 				       &tmp_reported, 0);
 	  ptr->is_reported = tmp_reported;
 	  
@@ -387,6 +416,7 @@ unsigned long sh_files_chk ()
 					 ShDFLevel[SH_ERR_T_FILE],
 					 FIL__, __LINE__, 0, MSG_FI_MISS,
 					 tmp);
+			++sh.statistics.files_report;
 		      }
 		    }
 		}
@@ -421,6 +451,7 @@ unsigned long sh_files_chk ()
 		{
 		  CLEAR_SH_FFLAG_REPORTED(ptr->is_reported);
 		}
+
 	      /* Catchall
 	       */
 	      else if (status == SH_FILE_UNKNOWN)
@@ -445,6 +476,7 @@ unsigned long sh_files_chk ()
 					     ShDFLevel[SH_ERR_T_FILE],
 					     FIL__, __LINE__, 0, MSG_FI_MISS,
 					     tmp);
+			    ++sh.statistics.files_report;
 			  }
 			}
 #ifndef REPLACE_OLD
@@ -492,8 +524,10 @@ int sh_files_delfilestack ()
 {
   SL_ENTER(_("sh_files_delfilestack"));
 
+  SH_MUTEX_LOCK(mutex_zfiles);
   zAVLFreeTree (zfileList, free_dirstack);
   zfileList = NULL;
+  SH_MUTEX_UNLOCK(mutex_zfiles);
 
   SL_RETURN(0, _("sh_files_delfilestack"));
 }
@@ -521,8 +555,14 @@ int sh_files_setrec_int (zAVLTree * tree)
 
 int sh_files_setrec ()
 {
+  volatile int ret;
+  SH_MUTEX_RECURSIVE_INIT(mutex_zdirs);
+  SH_MUTEX_RECURSIVE_LOCK(mutex_zdirs);
   sh_files_setrec_int(zdirListOne);
-  return sh_files_setrec_int(zdirListTwo);
+  ret = sh_files_setrec_int(zdirListTwo);
+  SH_MUTEX_RECURSIVE_UNLOCK(mutex_zdirs);
+
+  return ret;
 }
 
 zAVLTree * sh_files_deldirstack_int (zAVLTree * ptr)
@@ -536,8 +576,11 @@ zAVLTree * sh_files_deldirstack_int (zAVLTree * ptr)
 
 int sh_files_deldirstack ()
 {
+  SH_MUTEX_RECURSIVE_INIT(mutex_zdirs);
+  SH_MUTEX_RECURSIVE_LOCK(mutex_zdirs);
   zdirListOne = sh_files_deldirstack_int(zdirListOne);
   zdirListTwo = sh_files_deldirstack_int(zdirListTwo);
+  SH_MUTEX_RECURSIVE_UNLOCK(mutex_zdirs);
   return 0;
 }
 
@@ -548,10 +591,11 @@ void sh_files_reset()
 
   SL_ENTER(_("sh_files_reset"));
 
+  SH_MUTEX_LOCK(mutex_zfiles);
   for (ptr = (dirstack_t *) zAVLFirst(&avlcursor, zfileList); ptr;
        ptr = (dirstack_t *) zAVLNext(&avlcursor))
     ptr->checked = 0;
-
+  SH_MUTEX_UNLOCK(mutex_zfiles);
   SL_RET0(_("sh_files_reset"));
 }
 
@@ -563,6 +607,8 @@ void sh_dirs_reset()
 
   SL_ENTER(_("sh_dirs_reset"));
 
+  SH_MUTEX_RECURSIVE_INIT(mutex_zdirs);
+  SH_MUTEX_RECURSIVE_LOCK(mutex_zdirs);
   for (ptr = (dirstack_t *) zAVLFirst(&avlcursor1, zdirListOne); ptr;
        ptr = (dirstack_t *) zAVLNext(&avlcursor1))
     ptr->checked = 0;
@@ -570,6 +616,7 @@ void sh_dirs_reset()
   for (ptr = (dirstack_t *) zAVLFirst(&avlcursor2, zdirListTwo); ptr;
        ptr = (dirstack_t *) zAVLNext(&avlcursor2))
     ptr->checked = 0;
+  SH_MUTEX_RECURSIVE_UNLOCK(mutex_zdirs);
 
   SL_RET0(_("sh_dirs_reset"));
 }
@@ -661,6 +708,8 @@ static int sh_files_parse_mask (unsigned long * mask, const char * str)
   
   SL_ENTER(_("sh_files_parse_mask"));
 
+  myword[0] = '\0';
+
   if (str == NULL)
     {
       SL_RETURN ( (-1), _("sh_files_parse_mask"));
@@ -669,8 +718,10 @@ static int sh_files_parse_mask (unsigned long * mask, const char * str)
     l = sl_strlen(str);
 
   while (i < l) {
+
     if (str[i] == '\0')
       break;
+
     if (str[i] == ' ' || str[i] == '\t' || str[i] == ',')
       {
 	++i;
@@ -680,15 +731,18 @@ static int sh_files_parse_mask (unsigned long * mask, const char * str)
     if (str[i] == '+')
       {
 	act = +1; ++i;
-	continue;
+	myword[0] = '\0';
+	goto getword;
       }
     else if (str[i] == '-')
       {
 	act = -1; ++i;
-	continue;
+	myword[0] = '\0';
+	goto getword;
       }
     else /* a word */
       {
+      getword:
 	k = 0;
 	while (k < 63 && str[i] != ' ' && str[i] != '\t' && str[i] != ','
 	       && str[i] != '+' && str[i] != '-' && str[i] != '\0') {
@@ -697,54 +751,65 @@ static int sh_files_parse_mask (unsigned long * mask, const char * str)
 	}
 	myword[k] = '\0';
 
+	if (sl_strlen(myword) == 0)
+	  {
+	    SL_RETURN ( (-1), _("sh_files_parse_mask"));
+	  }
+
 /* checksum     */
-	if (0 == strncmp(myword, _("CHK"), 3))
+	if      (0 == strcmp(myword, _("CHK")))
 	  sh_files_set_mask (mask, MODI_CHK, act);
 /* link         */
-	if (0 == strncmp(myword, _("LNK"), 3))
+	else if (0 == strcmp(myword, _("LNK")))
 	  sh_files_set_mask (mask, MODI_LNK, act);
 /* inode        */
-	if (0 == strncmp(myword, _("RDEV"), 3))
+	else if (0 == strcmp(myword, _("RDEV")))
 	  sh_files_set_mask (mask, MODI_RDEV, act);
 /* inode        */
-	if (0 == strncmp(myword, _("INO"), 3))
+	else if (0 == strcmp(myword, _("INO")))
 	  sh_files_set_mask (mask, MODI_INO, act);
 /* user         */
-	if (0 == strncmp(myword, _("USR"), 3))
+	else if (0 == strcmp(myword, _("USR")))
 	  sh_files_set_mask (mask, MODI_USR, act);
 /* group        */
-	if (0 == strncmp(myword, _("GRP"), 3))
+	else if (0 == strcmp(myword, _("GRP")))
 	  sh_files_set_mask (mask, MODI_GRP, act);
 /* mtime        */
-	if (0 == strncmp(myword, _("MTM"), 3))
+	else if (0 == strcmp(myword, _("MTM")))
 	  sh_files_set_mask (mask, MODI_MTM, act);
 /* ctime        */
-	if (0 == strncmp(myword, _("CTM"), 3))
+	else if (0 == strcmp(myword, _("CTM")))
 	  sh_files_set_mask (mask, MODI_CTM, act);
 /* atime        */
-	if (0 == strncmp(myword, _("ATM"), 3))
+	else if (0 == strcmp(myword, _("ATM")))
 	  sh_files_set_mask (mask, MODI_ATM, act);
 /* size         */
-	if (0 == strncmp(myword, _("SIZ"), 3))
+	else if (0 == strcmp(myword, _("SIZ")))
 	  sh_files_set_mask (mask, MODI_SIZ, act);
 /* file mode    */
-	if (0 == strncmp(myword, _("MOD"), 3))
+	else if (0 == strcmp(myword, _("MOD")))
 	  sh_files_set_mask (mask, MODI_MOD, act);
 /* hardlinks    */
-	if (0 == strncmp(myword, _("HLN"), 3))
+	else if (0 == strcmp(myword, _("HLN")))
 	  sh_files_set_mask (mask, MODI_HLN, act);
 /* size may grow */
-	if (0 == strncmp(myword, _("GROW"), 3))
+	else if (0 == strcmp(myword, _("SGROW")))
 	  sh_files_set_mask (mask, MODI_SGROW, act);
 /* use prelink */
-	if (0 == strncmp(myword, _("PRE"), 3))
+	else if (0 == strcmp(myword, _("PRE")))
 	  sh_files_set_mask (mask, MODI_PREL, act);
 /* get content */
-	if (0 == strncmp(myword, _("TXT"), 3))
+	else if (0 == strcmp(myword, _("TXT")))
 	  sh_files_set_mask (mask, MODI_TXT, act);
 /* get content */
-	if (0 == strncmp(myword, _("AUDIT"), 3))
+	else if (0 == strcmp(myword, _("AUDIT")))
 	  sh_files_set_mask (mask, MODI_AUDIT, act);
+	else
+	  {
+	    SL_RETURN ( (-1), _("sh_files_parse_mask"));
+	  }
+	act       = 0;
+	myword[0] = '\0';
       }
   }
   SL_RETURN ( (0), _("sh_files_parse_mask"));
@@ -804,29 +869,29 @@ unsigned long sh_files_maskof (int class)
   switch (class)
     {
     case SH_LEVEL_READONLY:
-      return (unsigned long) mask_READONLY;
+      return (unsigned long) (mask_READONLY | MODI_INIT);
     case SH_LEVEL_ATTRIBUTES:
-      return (unsigned long) mask_ATTRIBUTES;
+      return (unsigned long) (mask_ATTRIBUTES | MODI_INIT);
     case SH_LEVEL_LOGFILES:
-      return (unsigned long) mask_LOGFILES;
+      return (unsigned long) (mask_LOGFILES | MODI_INIT);
     case SH_LEVEL_LOGGROW:
-      return (unsigned long) mask_LOGGROW;
+      return (unsigned long) (mask_LOGGROW | MODI_INIT);
     case SH_LEVEL_ALLIGNORE:
-      return (unsigned long) mask_ALLIGNORE;
+      return (unsigned long) (mask_ALLIGNORE | MODI_INIT);
     case SH_LEVEL_NOIGNORE:
-      return (unsigned long) mask_NOIGNORE;
+      return (unsigned long) (mask_NOIGNORE | MODI_INIT);
     case SH_LEVEL_USER0:
-      return (unsigned long) mask_USER0;
+      return (unsigned long) (mask_USER0 | MODI_INIT);
     case SH_LEVEL_USER1:
-      return (unsigned long) mask_USER1;
+      return (unsigned long) (mask_USER1 | MODI_INIT);
     case SH_LEVEL_USER2:
-      return (unsigned long) mask_USER2;
+      return (unsigned long) (mask_USER2 | MODI_INIT);
     case SH_LEVEL_USER3:
-      return (unsigned long) mask_USER3;
+      return (unsigned long) (mask_USER3 | MODI_INIT);
     case SH_LEVEL_USER4:
-      return (unsigned long) mask_USER4;
+      return (unsigned long) (mask_USER4 | MODI_INIT);
     case SH_LEVEL_PRELINK:
-      return (unsigned long) mask_PRELINK;
+      return (unsigned long) (mask_PRELINK | MODI_INIT);
     default:
       return (unsigned long) 0;
     }
@@ -871,11 +936,13 @@ int sh_files_globerr (const char * epath, int errnum)
  */
 #endif
 
-int sh_files_push_file_int (int class, const char * str_s, size_t len)
+int sh_files_push_file_int (int class, const char * str_s, size_t len, 
+			    unsigned long check_mask)
 {
   dirstack_t * new_item_ptr;
   char  * fileName;
   int     ret;
+  volatile int     count = 0;
 
   SL_ENTER(_("sh_files_push_file_int"));
 
@@ -886,15 +953,16 @@ int sh_files_push_file_int (int class, const char * str_s, size_t len)
 
   new_item_ptr->name           = fileName;
   new_item_ptr->class          = class;
-  new_item_ptr->check_mask     = sh_files_maskof(class);
+  new_item_ptr->check_mask     = check_mask;
   new_item_ptr->rdepth         = 0;
   new_item_ptr->checked        = S_FALSE;
   new_item_ptr->is_reported    = 0;
   new_item_ptr->childs_checked = S_FALSE;
 
+  SH_MUTEX_LOCK(mutex_zfiles);
   if (zfileList == NULL)
     {
-      zfileList = zAVLAllocTree (zdirstack_key);
+      zfileList = zAVLAllocTree (zdirstack_key, zAVL_KEY_STRING);
       if (zfileList == NULL) 
 	{
 	  (void) safe_logger (0, 0, NULL);
@@ -903,14 +971,14 @@ int sh_files_push_file_int (int class, const char * str_s, size_t len)
     }
 
   ret = zAVLInsert (zfileList, new_item_ptr);
+  SH_MUTEX_UNLOCK(mutex_zfiles);
 
   if (-1 == ret)
     {
       (void) safe_logger (0, 0, NULL);
       aud__exit(FIL__, __LINE__, EXIT_FAILURE);
     }
-
-  if (3 == ret)
+  else if (3 == ret)
     { 
       if (sh.flag.started != S_TRUE)
 	sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_FI_DOUBLE,
@@ -919,21 +987,39 @@ int sh_files_push_file_int (int class, const char * str_s, size_t len)
       SH_FREE(new_item_ptr);
       new_item_ptr = NULL;
     }
-
-  if (new_item_ptr && MODI_AUDIT_ENABLED(new_item_ptr->check_mask))
+  else
     {
-      sh_audit_mark(new_item_ptr->name);
+      int           reported;
+      unsigned long check_mask = sh_files_maskof(class);
+
+      if ((sh.flag.inotify & SH_INOTIFY_INSCAN) != 0)
+	{
+	  sh_files_filecheck (class, check_mask, str_s, NULL,
+			      &reported, 0);
+	  if (SH_FFLAG_REPORTED_SET(reported))
+	    sh_files_set_file_reported(str_s);
+	  sh_inotify_add_watch_later(str_s, &sh_file_watches, NULL,
+				     class, check_mask, 
+				     SH_INOTIFY_FILE, 0);
+	}
+
+      if (MODI_AUDIT_ENABLED(check_mask))
+	{
+	  sh_audit_mark(str_s);
+	}
+      ++count;
     }
-  SL_RETURN(0, _("sh_files_push_file_int"));
+  SL_RETURN(count, _("sh_files_push_file_int"));
 }
 
-int sh_files_push_dir_int (int class, char * tail, size_t len, int rdepth);
+int sh_files_push_dir_int (int class, char * tail, size_t len, int rdepth, unsigned long check_mask);
 
 #ifdef HAVE_GLOB_H
 
 typedef struct globstack_entry {
   char                  * name;
   int                     class;
+  unsigned long           check_mask;
   int                     rdepth;
   short                   type;
   /* struct dirstack_entry * next; */
@@ -941,11 +1027,15 @@ typedef struct globstack_entry {
 
 static zAVLTree * zglobList   = NULL;
 
-static void sh_files_pushglob (int class, int type, const char * p, int rdepth)
+static int sh_files_pushglob (int class, int type, const char * p, int rdepth,
+			       unsigned long check_mask_in, int flag)
 {
   int     globstatus = -1;
   unsigned int     gloop;
   glob_t  pglob;
+
+  volatile int     count = 0;
+  volatile unsigned long check_mask = (flag == 0) ? sh_files_maskof(class) : check_mask_in;
   
   SL_ENTER(_("sh_files_pushglob"));
 
@@ -961,18 +1051,20 @@ static void sh_files_pushglob (int class, int type, const char * p, int rdepth)
 	  char  * fileName;
 	  int     ret;
 	  
+	  SH_MUTEX_TRYLOCK(mutex_zfiles);
 	  fileName = sh_util_strdup (p);
 	  
 	  new_item_ptr = (sh_globstack_t *) SH_ALLOC (sizeof(sh_globstack_t));
 	  
 	  new_item_ptr->name           = fileName;
 	  new_item_ptr->class          = class;
+	  new_item_ptr->check_mask     = check_mask;
 	  new_item_ptr->rdepth         = rdepth;
 	  new_item_ptr->type           = type;
 	  
 	  if (zglobList == NULL)
 	    {
-	      zglobList = zAVLAllocTree (zdirstack_key);
+	      zglobList = zAVLAllocTree (zdirstack_key, zAVL_KEY_STRING);
 	      if (zglobList == NULL) 
 		{
 		  (void) safe_logger (0, 0, NULL);
@@ -987,21 +1079,22 @@ static void sh_files_pushglob (int class, int type, const char * p, int rdepth)
 	      SH_FREE(fileName);
 	      SH_FREE(new_item_ptr);
 	    }
+	  SH_MUTEX_TRYLOCK_UNLOCK(mutex_zfiles);
 	}
 
       for (gloop = 0; gloop < (unsigned int) pglob.gl_pathc; ++gloop)
 	{
 	  if (type == SH_LIST_FILE)
 	    {
-	      sh_files_push_file_int (class, pglob.gl_pathv[gloop], 
-				      sl_strlen(pglob.gl_pathv[gloop]));
+	      count += sh_files_push_file_int (class, pglob.gl_pathv[gloop], 
+					       sl_strlen(pglob.gl_pathv[gloop]), check_mask);
 	    }
 	  else
 	    {
 	      which_dirList = type;
 
-	      sh_files_push_dir_int  (class, pglob.gl_pathv[gloop], 
-				      sl_strlen(pglob.gl_pathv[gloop]), rdepth);
+	      count += sh_files_push_dir_int  (class, pglob.gl_pathv[gloop], 
+					       sl_strlen(pglob.gl_pathv[gloop]), rdepth, check_mask);
 	    }
 	}
     }
@@ -1040,8 +1133,31 @@ static void sh_files_pushglob (int class, int type, const char * p, int rdepth)
     }
   
   globfree(&pglob);
-  SL_RET0(_("sh_files_pushglob"));
-  return;
+  SL_RETURN(count, _("sh_files_pushglob"));
+  return count;
+}
+
+void sh_files_check_globFilePatterns()
+{
+  sh_globstack_t * testPattern;
+  zAVLCursor   cursor;
+
+  SL_ENTER(_("sh_files_check_globPatterns"));
+
+  SH_MUTEX_LOCK(mutex_zglob);
+  for (testPattern = (sh_globstack_t *) zAVLFirst (&cursor, zglobList); 
+       testPattern;
+       testPattern = (sh_globstack_t *) zAVLNext  (&cursor))
+    {
+      if (testPattern->type == SH_LIST_FILE)
+	{
+	  sh_files_pushglob(testPattern->class, testPattern->type, 
+			    testPattern->name, testPattern->rdepth,
+			    testPattern->check_mask, 1);
+	}
+    }
+  SH_MUTEX_UNLOCK(mutex_zglob);
+  SL_RET0(_("sh_files_check_globPatterns"));
 }
 
 void sh_files_check_globPatterns()
@@ -1051,12 +1167,16 @@ void sh_files_check_globPatterns()
 
   SL_ENTER(_("sh_files_check_globPatterns"));
 
-  for (testPattern = (sh_globstack_t *) zAVLFirst (&cursor, zglobList); testPattern;
+  SH_MUTEX_LOCK(mutex_zglob);
+  for (testPattern = (sh_globstack_t *) zAVLFirst (&cursor, zglobList); 
+       testPattern;
        testPattern = (sh_globstack_t *) zAVLNext  (&cursor))
     {
       sh_files_pushglob(testPattern->class, testPattern->type, 
-			testPattern->name, testPattern->rdepth);
+			testPattern->name, testPattern->rdepth,
+			testPattern->check_mask, 1);
     }
+  SH_MUTEX_UNLOCK(mutex_zglob);
   SL_RET0(_("sh_files_check_globPatterns"));
 }
 
@@ -1080,12 +1200,14 @@ void free_globstack (void * inptr)
 
 int sh_files_delglobstack ()
 {
-  SL_ENTER(_("sh_files_delfilestack"));
+  SL_ENTER(_("sh_files_delglobstack"));
 
+  SH_MUTEX_LOCK(mutex_zglob);
   zAVLFreeTree (zglobList, free_globstack);
   zglobList = NULL;
+  SH_MUTEX_UNLOCK(mutex_zglob);
 
-  SL_RETURN(0, _("sh_files_delfilestack"));
+  SL_RETURN(0, _("sh_files_delglobstack"));
 }
   
 
@@ -1183,15 +1305,15 @@ static int sh_files_pushfile (int class, const char * str_s)
 #ifdef HAVE_GLOB_H
   if (0 == sh_files_has_metachar(p))
     {
-      sh_files_push_file_int (class, p, len);
+      sh_files_push_file_int (class, p, len, sh_files_maskof(class));
     }
   else
     {
-      sh_files_pushglob (class, SH_LIST_FILE, p, 0);
+      sh_files_pushglob (class, SH_LIST_FILE, p, 0, 0, 0);
     }
 
 #else
-  sh_files_push_file_int (class, p, len);
+  sh_files_push_file_int (class, p, len, sh_files_maskof(class));
 #endif
 
   SH_FREE(p);
@@ -1223,12 +1345,21 @@ int sh_files_is_allignore_int (char * str, zAVLTree * tree)
 
 int sh_files_is_allignore (char * str)
 {
-  if (1 == sh_files_is_allignore_int(str, zdirListOne))
-    return 1;
-  if (NULL == zdirListTwo)
-    return 0;
-  return sh_files_is_allignore_int(str, zdirListTwo);
+  int retval = 0;
+
+  SH_MUTEX_RECURSIVE_INIT(mutex_zdirs);
+  SH_MUTEX_RECURSIVE_LOCK(mutex_zdirs);
+  retval = sh_files_is_allignore_int(str, zdirListOne);
+
+  if (NULL != zdirListTwo && retval == 0)
+    {
+      retval = sh_files_is_allignore_int(str, zdirListTwo);
+    }
+  SH_MUTEX_RECURSIVE_UNLOCK(mutex_zdirs);
+  return retval;
 }
+
+static void * sh_dummy_ptr;
 
 unsigned long sh_dirs_chk (int which)
 {
@@ -1237,11 +1368,15 @@ unsigned long sh_dirs_chk (int which)
   dirstack_t * ptr;
   dirstack_t * dst_ptr;
   int          status;
-  unsigned long dcount = 0;
+  volatile unsigned long dcount = 0;
   char       * tmp;
   
   SL_ENTER(_("sh_dirs_chk"));
 
+  sh_dummy_ptr = (void *) &ptr;
+  
+  SH_MUTEX_RECURSIVE_INIT(mutex_zdirs);
+  SH_MUTEX_RECURSIVE_LOCK(mutex_zdirs);
   if (which == 1)
     tree = zdirListOne;
   else
@@ -1251,11 +1386,12 @@ unsigned long sh_dirs_chk (int which)
        ptr = (dirstack_t *) zAVLNext(&cursor))
     {
       if (sig_urgent > 0) {
-	SL_RETURN(dcount, _("sh_dirs_chk"));
+	goto out;
       }
 
       if (ptr->checked == S_FALSE)
 	{
+	  SH_MUTEX_LOCK(mutex_zfiles);
 	  /* 28 Aug 2001 check the top level directory
 	   */
 	  status        = S_FALSE;
@@ -1265,7 +1401,8 @@ unsigned long sh_dirs_chk (int which)
 	      if (dst_ptr->checked == S_FALSE)
 		{
 		  BREAKEXIT(sh_files_filecheck);
-		  sh_files_filecheck (dst_ptr->class,  ptr->name,  
+		  sh_files_filecheck (dst_ptr->class, dst_ptr->check_mask, 
+				      ptr->name,  
 				      NULL,  &status, 0);
 		  dst_ptr->checked = S_TRUE;
 		  status           = S_TRUE;
@@ -1275,12 +1412,15 @@ unsigned long sh_dirs_chk (int which)
 		  status           = S_TRUE;
 		}
 	    }
+	  SH_MUTEX_UNLOCK(mutex_zfiles);
 
 	  if (status == S_FALSE)
-	    sh_files_filecheck (ptr->class,  ptr->name,  NULL,  &status, 0);
+	    sh_files_filecheck (ptr->class,  ptr->check_mask, 
+				ptr->name,  NULL,  &status, 0);
 
 	  BREAKEXIT(sh_files_checkdir);
-	  status = sh_files_checkdir (ptr->class, ptr->rdepth, ptr->name, 
+	  status = sh_files_checkdir (ptr->class, ptr->check_mask, 
+				      ptr->rdepth, ptr->name, 
 				      ptr->name);
 
 	  if (status < 0 && (!SH_FFLAG_REPORTED_SET(ptr->is_reported))) 
@@ -1298,6 +1438,7 @@ unsigned long sh_dirs_chk (int which)
 				     ShDFLevel[ptr->class] : 
 				     ShDFLevel[SH_ERR_T_DIR], FIL__, __LINE__,
 				     0, MSG_FI_MISS, tmp);
+		    ++sh.statistics.files_report;
 		    SH_FREE(tmp);
 		  }
 		}
@@ -1321,6 +1462,7 @@ unsigned long sh_dirs_chk (int which)
 				   ShDFLevel[SH_ERR_T_DIR],
 				   FIL__, __LINE__, 0, MSG_FI_ADD,
 				   tmp);
+		  ++sh.statistics.files_report;
 		  SH_FREE(tmp);
 #endif
 		}
@@ -1344,10 +1486,14 @@ unsigned long sh_dirs_chk (int which)
 	}
 
       if (sig_urgent > 0) {
-	SL_RETURN(dcount, _("sh_dirs_chk"));
+	goto out;
       }
 
     }
+ out:
+  ; /* 'label at end of compound statement' */
+  SH_MUTEX_RECURSIVE_UNLOCK(mutex_zdirs);
+
   SL_RETURN(dcount, _("sh_dirs_chk"));
 }
 
@@ -1420,7 +1566,7 @@ int set_dirList (int which)
   return 0;
 }
 
-int sh_files_push_dir_int (int class, char * tail, size_t len, int rdepth)
+int sh_files_push_dir_int (int class, char * tail, size_t len, int rdepth, unsigned long check_mask)
 {
   zAVLTree   * tree;
   dirstack_t * new_item_ptr;
@@ -1436,12 +1582,14 @@ int sh_files_push_dir_int (int class, char * tail, size_t len, int rdepth)
 
   new_item_ptr->name           = dirName;
   new_item_ptr->class          = class;
-  new_item_ptr->check_mask     = sh_files_maskof(class);
+  new_item_ptr->check_mask     = check_mask;
   new_item_ptr->rdepth         = rdepth;
   new_item_ptr->checked        = S_FALSE;
   new_item_ptr->is_reported    = 0;
   new_item_ptr->childs_checked = S_FALSE;
 
+  SH_MUTEX_RECURSIVE_INIT(mutex_zdirs);
+  SH_MUTEX_RECURSIVE_LOCK(mutex_zdirs);
   if (which_dirList == SH_LIST_DIR1)
     {
       tree = zdirListOne;
@@ -1453,7 +1601,7 @@ int sh_files_push_dir_int (int class, char * tail, size_t len, int rdepth)
 
   if (tree == NULL)
     {
-      tree = zAVLAllocTree (zdirstack_key);
+      tree = zAVLAllocTree (zdirstack_key, zAVL_KEY_STRING);
       if (tree == NULL) 
 	{
 	  (void) safe_logger (0, 0, NULL);
@@ -1466,6 +1614,7 @@ int sh_files_push_dir_int (int class, char * tail, size_t len, int rdepth)
     }
 
   ret = zAVLInsert (tree, new_item_ptr);
+  SH_MUTEX_RECURSIVE_UNLOCK(mutex_zdirs);
 
   if (-1 == ret)
     {
@@ -1481,12 +1630,13 @@ int sh_files_push_dir_int (int class, char * tail, size_t len, int rdepth)
       SH_FREE(new_item_ptr);
       new_item_ptr = NULL;
     }
-
-  if (new_item_ptr && MODI_AUDIT_ENABLED(new_item_ptr->check_mask))
+  else
     {
-      sh_audit_mark(new_item_ptr->name);
+      if (MODI_AUDIT_ENABLED(check_mask))
+	{
+	  sh_audit_mark(tail);
+	}
     }
-
   SL_RETURN(0, _("sh_files_push_dir_int"));
 }
 
@@ -1594,14 +1744,14 @@ static int sh_files_pushdir (int class, const char * str_s)
 #ifdef HAVE_GLOB_H
   if (0 == sh_files_has_metachar(tail))
     {
-      sh_files_push_dir_int (class, tail, len, rdepth);
+      sh_files_push_dir_int (class, tail, len, rdepth, sh_files_maskof(class));
     }
   else
     {
-      sh_files_pushglob (class, which_dirList, tail, rdepth);
+      sh_files_pushglob (class, which_dirList, tail, rdepth, 0, 0);
     }
 #else  
-  sh_files_push_dir_int (class, tail, len, rdepth);
+  sh_files_push_dir_int (class, tail, len, rdepth, sh_files_maskof(class));
 #endif
 
   SH_FREE(p);
@@ -1736,14 +1886,27 @@ static int sh_files_hle_test (int offset, char * path)
 	}
       tmp = tmp->next;
     }
+#ifdef HAVE_FNMATCH_H
+  if ( (offset == 1) && (0 == fnmatch(_("/run/user/*"), path, FNM_PATHNAME)) )
+    {
+      /* gvfs directory in /run/user/username/ */
+      SL_RETURN(0, _("sh_files_hle_test"));
+    }
+#endif
+
   SL_RETURN(-1, _("sh_files_hle_test"));
 }
 #endif
 
-/* -- check a single directory and its content
+static void * sh_dummy_dirlist;
+static void * sh_dummy_tmpcat;
+
+/* -- Check a single directory and its content. Does not
+ *    check the directory inode itself.
  */
-static int sh_files_checkdir (int iclass, int idepth, char * iname, 
-			      char * relativeName)
+int sh_files_checkdir (int iclass, unsigned long check_mask, 
+		       int idepth, char * iname, 
+		       char * relativeName)
 {
   struct sh_dirent * dirlist;
   struct sh_dirent * dirlist_orig;
@@ -1763,12 +1926,14 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
 
   int             rdepth = 0;
   int             class  = 0;
-  int             rdepth_next;
-  int             class_next;
-  int             file_class_next;
+  volatile int    rdepth_next;
+  volatile int    class_next;
+  volatile int    file_class_next;
+  volatile unsigned long   check_mask_next;
+  volatile unsigned long   file_check_mask_next;
 
-  int             checked_flag  = S_FALSE;
-  int             cchecked_flag = S_FALSE;
+  volatile int    checked_flag  = S_FALSE;
+  volatile int    cchecked_flag = S_FALSE;
 
   dirstack_t *    dst_ptr;
   dirstack_t *    tmp_ptr;
@@ -1807,7 +1972,10 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
 
   if (flag_err_info == SL_TRUE)
     {
-      sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_FI_CHK, tmpname);
+      char pstr[32];
+
+      sl_strlcpy(pstr, sh_hash_getpolicy(iclass), sizeof(pstr));
+      sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_FI_CHK, pstr, tmpname);
     }
 
   /* ---- check input ----
@@ -1830,14 +1998,14 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
       SH_FREE(tmpname);
       SL_RETURN((-1), _("sh_files_checkdir"));
     }
-    
-    
+
   /* ---- stat the directory ----
    */
   theFile = SH_ALLOC(sizeof(file_type));
   sl_strlcpy (theFile->fullpath, iname, PATH_MAX);
   theFile->attr_string = NULL;
   theFile->link_path   = NULL;
+  theFile->check_mask  = check_mask;
 
   (void) relativeName;
   status = sh_unix_getinfo (ShDFLevel[SH_ERR_T_DIR], 
@@ -1849,15 +2017,16 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
       if (theFile->attr_string) SH_FREE(theFile->attr_string);
       if (theFile->link_path)   SH_FREE(theFile->link_path);
       SH_FREE(theFile);
+      SH_FREE(tmpname);
       SL_RETURN((0), _("sh_files_checkdir"));
     }
 
   if (status == -1)
     {
-      SH_FREE(tmpname); 
       if (theFile->attr_string) SH_FREE(theFile->attr_string);
       if (theFile->link_path)   SH_FREE(theFile->link_path);
       SH_FREE(theFile);
+      SH_FREE(tmpname);
       SL_RETURN((-1), _("sh_files_checkdir"));
     }
 
@@ -1866,13 +2035,20 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
       sh_error_handle (ShDFLevel[SH_ERR_T_DIR], FIL__, __LINE__, 0,
 		       MSG_FI_NODIR,
 		       tmpname);
-      SH_FREE(tmpname); 
+      ++sh.statistics.files_nodir;
       if (theFile->attr_string) SH_FREE(theFile->attr_string);
       if (theFile->link_path)   SH_FREE(theFile->link_path);
       SH_FREE(theFile);
+      SH_FREE(tmpname);
       SL_RETURN((-1), _("sh_files_checkdir"));
     }
 
+  if ((sh.flag.inotify & SH_INOTIFY_INSCAN) != 0)
+    {
+      sh_inotify_add_watch_later(iname, &sh_file_watches, &status,
+				 iclass, check_mask, SH_INOTIFY_DIR, idepth);
+    }
+   
   hardlink_num = theFile->hardlinks;
 
   if (theFile->attr_string) SH_FREE(theFile->attr_string);
@@ -1911,6 +2087,9 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
   theDir->TotalBytes  = 0;
   sl_strlcpy (theDir->DirPath, iname, PATH_MAX); 
 
+
+  sh_dummy_dirlist = (void *) &dirlist;
+  sh_dummy_tmpcat  = (void *) &tmpcat;
 
   /* ---- read ----
    */
@@ -1956,6 +2135,7 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
     if (sig_termfast == 1) 
       {
 	SH_FREE(theDir);
+	SH_FREE(tmpname);
 	SL_RETURN((0), _("sh_files_checkdir"));
       }
 
@@ -1977,7 +2157,9 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
     
     rdepth_next     = rdepth - 1;
     class_next      = class;
+    check_mask_next = check_mask;
     file_class_next = class;
+    file_check_mask_next = check_mask;
     checked_flag    = -1;
     cchecked_flag   = -1;
 
@@ -1985,6 +2167,8 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
      * this fixes the problem that the directory special file
      * is checked with the policy of the parent directory
      */
+    SH_MUTEX_RECURSIVE_INIT(mutex_zdirs);
+    SH_MUTEX_RECURSIVE_LOCK(mutex_zdirs);
     dst_ptr         = (dirstack_t *) zAVLSearch(zdirListOne, tmpcat);
 
     if (dst_ptr) 
@@ -1994,6 +2178,7 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
 	 * inode erroneously becomes a policy for the directory itself.
 	 */
 	file_class_next    = dst_ptr->class;
+	file_check_mask_next = dst_ptr->check_mask;
 	checked_flag       = dst_ptr->checked;
 	cchecked_flag      = dst_ptr->childs_checked;
       }
@@ -2009,11 +2194,14 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
 	     * inode erroneously becomes a policy for the directory itself.
 	     */
 	    file_class_next    = dst_ptr->class;
+	    file_check_mask_next = dst_ptr->check_mask;
 	    checked_flag       = dst_ptr->checked;
 	    cchecked_flag      = dst_ptr->childs_checked;
 	  }
       }
+    SH_MUTEX_RECURSIVE_UNLOCK(mutex_zdirs);
 
+    SH_MUTEX_LOCK_UNSAFE(mutex_zfiles);
     dst_ptr         = (dirstack_t *) zAVLSearch(zfileList, tmpcat);
 
     if (dst_ptr) 
@@ -2023,10 +2211,20 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
 	 * inode erroneously becomes a policy for the directory itself.
 	 */
 	file_class_next    = dst_ptr->class;
+	file_check_mask_next = dst_ptr->check_mask;
 	checked_flag       = dst_ptr->checked;
 	/* not set, hence always FALSE                   */
 	/* cchecked_flag      = dst_ptr->childs_checked; */
+
+	if (checked_flag != S_TRUE)
+	  {
+	    /* -- need to check the file itself --
+	     */
+	    if (sh.flag.reportonce == S_TRUE)
+	      dummy = dst_ptr->is_reported;
+	  }
       }
+    SH_MUTEX_UNLOCK_UNSAFE(mutex_zfiles);
     
     /* ---- Has been checked already. ----
      */
@@ -2056,20 +2254,31 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
       {
 	/* -- need to check the file itself --
 	 */
-	if (dst_ptr && sh.flag.reportonce == S_TRUE)
-	  dummy = dst_ptr->is_reported;
+	/* -- moved up -- 
+	 * if (dst_ptr && sh.flag.reportonce == S_TRUE)
+	 *   dummy = dst_ptr->is_reported;
+	 */
 
-	checkit = sh_files_filecheck (file_class_next, 
+	checkit = sh_files_filecheck (file_class_next, file_check_mask_next, 
 				      iname, 
 				      dirlist->sh_d_name,
 				      &dummy, 0);
 
+	
+	SH_MUTEX_LOCK_UNSAFE(mutex_zfiles);
+	dst_ptr         = (dirstack_t *) zAVLSearch(zfileList, tmpcat);
+
 	if (dst_ptr && checked_flag == S_FALSE)
 	  dst_ptr->checked = S_TRUE;
+
 	/* Thu Mar  7 15:09:40 CET 2002 Propagate the 'reported' flag
 	 */
 	if (dst_ptr && sh.flag.reportonce == S_TRUE)
 	  dst_ptr->is_reported = dummy;
+
+	if (dst_ptr)
+	  dst_ptr->childs_checked = S_TRUE;
+	SH_MUTEX_UNLOCK_UNSAFE(mutex_zfiles);
       }
     
     if      (checkit == SH_FILE_REGULAR)   
@@ -2078,6 +2287,7 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
     else if (checkit == SH_FILE_DIRECTORY) 
       {
 	++theDir->NumDirs;
+
 	if (rdepth_next >= 0 && cchecked_flag != S_TRUE) 
 	  {
 	    rdepth_next = rdepth - 1;
@@ -2088,6 +2298,8 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
 	    checked_flag  = -1;
 	    cchecked_flag = -1;
 	    
+	    SH_MUTEX_RECURSIVE_INIT(mutex_zdirs);
+	    SH_MUTEX_RECURSIVE_LOCK(mutex_zdirs);
 	    tmp_ptr     = (dirstack_t *) zAVLSearch(zdirListOne, tmpcat);
 
 	    if (tmp_ptr) 
@@ -2097,6 +2309,7 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
 		     tmp_ptr->name, tmp_ptr->rdepth));
 		rdepth_next   = tmp_ptr->rdepth;
 		class_next    = tmp_ptr->class;
+		check_mask_next = tmp_ptr->check_mask;
 		/* 28. Aug 2001 reversed
 		 */
 		cchecked_flag = tmp_ptr->childs_checked;
@@ -2114,26 +2327,36 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
 			 tmp_ptr->name, tmp_ptr->rdepth));
 		    rdepth_next   = tmp_ptr->rdepth;
 		    class_next    = tmp_ptr->class;
+		    check_mask_next = tmp_ptr->check_mask;
 		    /* 28. Aug 2001 reversed
 		     */
 		    cchecked_flag = tmp_ptr->childs_checked;
 		    checked_flag  = tmp_ptr->checked;
 		  }
 	      }
-	    
-	    if (cchecked_flag == S_FALSE)
+
+	    if (tmp_ptr && cchecked_flag == S_FALSE)
 	      {
-		sh_files_checkdir (class_next, rdepth_next, tmpcat, 
-				   dirlist->sh_d_name);
 		tmp_ptr->childs_checked = S_TRUE;
 		/*
 		 * 04. Feb 2006 avoid double checking
 		 */
 		tmp_ptr->checked        = S_TRUE;
 	      }
+	    SH_MUTEX_RECURSIVE_UNLOCK(mutex_zdirs);
+
+	    if (cchecked_flag == S_FALSE)
+	      {
+		sh_files_checkdir (class_next, check_mask_next, rdepth_next, 
+				   tmpcat, dirlist->sh_d_name);
+		/*
+		  tmp_ptr->childs_checked = S_TRUE;
+		  tmp_ptr->checked        = S_TRUE;
+		*/
+	      }
 	    else if (checked_flag == -1)
-	      sh_files_checkdir (class_next, rdepth_next, tmpcat, 
-				 dirlist->sh_d_name);
+	      sh_files_checkdir (class_next, check_mask_next, rdepth_next, 
+				 tmpcat, dirlist->sh_d_name);
 	    
 	  }
       }
@@ -2151,14 +2374,18 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
     if ((sig_termfast == 1) || (sig_terminate == 1)) 
       {
 	SH_FREE(theDir);
+	sh_dummy_dirlist = NULL;
+	SH_FREE(tmpname);
 	SL_RETURN((0), _("sh_files_checkdir"));
       }
     
     dirlist = dirlist->next;
 
-    if (dst_ptr)
-      dst_ptr->childs_checked = S_TRUE;
-    
+    /* -- moved up, only affects zfileList anyway
+     * if (dst_ptr)
+     *   dst_ptr->childs_checked = S_TRUE;
+     */
+
   } while (dirlist != NULL);
 
   if (flag_err_info == SL_TRUE)
@@ -2200,6 +2427,8 @@ static int sh_files_checkdir (int iclass, int idepth, char * iname,
   SH_FREE(tmpname);
   SH_FREE(theDir);
 
+  sh_dummy_dirlist = NULL;
+
   SL_RETURN((0), _("sh_files_checkdir"));
 }
 
@@ -2212,10 +2441,15 @@ int sh_files_use_rsrc(const char * str)
   return sh_util_flagval(str, &sh_use_rsrc);
 }
 
-static ShFileType sh_files_filecheck (int class, char * dirName, 
-				      char * infileName,
-				      int * reported, 
-				      int rsrcflag)
+static void * sh_dummy_fileName;
+static void * sh_dummy_tmpname;
+static void * sh_dummy_tmpdir;
+
+ShFileType sh_files_filecheck (int class, unsigned long check_mask,
+			       const char * dirName, 
+			       const char * infileName,
+			       int * reported, 
+			       int rsrcflag)
 {
   /* 28 Aug 2001 allow NULL fileName
    */
@@ -2225,8 +2459,10 @@ static ShFileType sh_files_filecheck (int class, char * dirName,
   file_type     * theFile;
   char          * tmpdir;
   char          * tmpname;
-  char          * fileName;
+  const char    * fileName;
+#if !defined(O_NOATIME)
   struct utimbuf  utime_buf;
+#endif
   static unsigned int state = 1;
   char            sc;
 
@@ -2234,6 +2470,13 @@ static ShFileType sh_files_filecheck (int class, char * dirName,
 
   fullpath = SH_ALLOC(PATH_MAX);
   theFile  = SH_ALLOC(sizeof(file_type));
+
+  /* Take the address to keep gcc from putting it into a register. 
+   * Avoids the 'clobbered by longjmp' warning. 
+   */
+  sh_dummy_fileName = (void *) &fileName;
+  sh_dummy_tmpname  = (void *) &tmpname;
+  sh_dummy_tmpdir   = (void *) &tmpdir;
 
   BREAKEXIT(sh_derr);
 
@@ -2257,7 +2500,9 @@ static ShFileType sh_files_filecheck (int class, char * dirName,
    */
   if (dirName == NULL /* || fileName == NULL */)
     {
+      SH_MUTEX_LOCK(mutex_thread_nolog);
       sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_FI_NULL);
+      SH_MUTEX_UNLOCK(mutex_thread_nolog);
       SH_FREE(fullpath);
       SH_FREE(theFile);
       SL_RETURN(SH_FILE_UNKNOWN, _("sh_files_filecheck"));
@@ -2270,18 +2515,22 @@ static ShFileType sh_files_filecheck (int class, char * dirName,
       if ((dirName != NULL) && (dirName[0] == '/') && (dirName[1] == '\0')) 
 	{
 	  tmpname = sh_util_safe_name (fileName);
+	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle (ShDFLevel[SH_ERR_T_NAME], FIL__, __LINE__, 0,
 			   MSG_FI_OBSC2,
 			   "", tmpname);
+	  SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	  SH_FREE(tmpname);
 	}
       else
 	{
 	  tmpdir  = sh_util_safe_name (dirName);
 	  tmpname = sh_util_safe_name (fileName);
+	  SH_MUTEX_LOCK(mutex_thread_nolog);
 	  sh_error_handle (ShDFLevel[SH_ERR_T_NAME], FIL__, __LINE__, 0,
 			   MSG_FI_OBSC2,
 			   tmpdir, tmpname);
+	  SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	  SH_FREE(tmpname);
 	  SH_FREE(tmpdir);
 	}
@@ -2293,9 +2542,11 @@ static ShFileType sh_files_filecheck (int class, char * dirName,
     { 
       tmpdir  = sh_util_safe_name (dirName);
       tmpname = sh_util_safe_name (fileName);
+      SH_MUTEX_LOCK(mutex_thread_nolog);
       sh_error_handle (ShDFLevel[SH_ERR_T_FILE],  FIL__, __LINE__, 0,
 		       MSG_FI_2LONG2,
 		       tmpdir, tmpname);
+      SH_MUTEX_UNLOCK(mutex_thread_nolog);
       SH_FREE(tmpname);
       SH_FREE(tmpdir);
       SH_FREE(fullpath);
@@ -2307,7 +2558,7 @@ static ShFileType sh_files_filecheck (int class, char * dirName,
   /* stat the file and determine checksum (if a regular file)
    */
   sl_strlcpy (theFile->fullpath, fullpath, PATH_MAX);
-  theFile->check_mask    = sh_files_maskof(class);
+  theFile->check_mask    = check_mask /* sh_files_maskof(class) */;
   theFile->file_reported = (*reported);
   theFile->attr_string   = NULL;
   theFile->link_path     = NULL;
@@ -2341,8 +2592,10 @@ static ShFileType sh_files_filecheck (int class, char * dirName,
   if ((flag_err_debug == SL_TRUE) && (theFile->c_mode[0] == '-'))
     {
       tmpname = sh_util_safe_name (fullpath); /* fixed in 1.5.4 */
+      SH_MUTEX_LOCK(mutex_thread_nolog);
       sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_FI_CSUM,
 		       fileHash, tmpname);
+      SH_MUTEX_UNLOCK(mutex_thread_nolog);
       SH_FREE(tmpname);
     } 
   ++sh.statistics.files_checked;
@@ -2363,14 +2616,15 @@ static ShFileType sh_files_filecheck (int class, char * dirName,
 
   /* reset the access time 
    */
+#if !defined(O_NOATIME)
   if (class == SH_LEVEL_NOIGNORE && (theFile->check_mask & MODI_ATM) != 0)
     {
       utime_buf.actime   = (time_t) theFile->atime;
       utime_buf.modtime  = (time_t) theFile->mtime;
-#if !defined(O_NOATIME)
+
       retry_aud_utime (FIL__, __LINE__, fullpath, &utime_buf);
-#endif
     }
+#endif
   
 #if defined(HOST_IS_DARWIN)
   /*
@@ -2395,7 +2649,7 @@ static ShFileType sh_files_filecheck (int class, char * dirName,
 	{
 	  if (S_TRUE == sh_unix_file_exists (testpath))
 	    {
-	      sh_files_filecheck (class, fullpath, rsrc, &dummy, 1);
+	      sh_files_filecheck (class, check_mask, fullpath, rsrc, &dummy, 1);
 	    }
 	}
       SH_FREE(testpath);
@@ -2432,7 +2686,8 @@ static ShFileType sh_files_filecheck (int class, char * dirName,
 
 /* concatenate statpath = testdir"/"d_name
  */
-static int sh_files_fullpath (char * testdir, char * d_name, char * statpath)
+static int sh_files_fullpath (const char * testdir, const char * d_name, 
+			      char * statpath)
 {
   int llen = 0;
 
@@ -2457,6 +2712,162 @@ static int sh_files_fullpath (char * testdir, char * d_name, char * statpath)
   SL_RETURN((0),_("sh_files_fullpath"));
 }
 
+/* -----------------------------------
+ * Routines required for inotify 
+ * -----------------------------------
+ */
+int sh_files_search_dir(char * name, int * class, 
+			unsigned long *check_mask, int *reported,
+			int * rdepth)
+{
+  volatile int retval = 0;
+#if defined(HAVE_GLOB_H) && defined(HAVE_FNMATCH_H)
+  sh_globstack_t * testPattern;
+  zAVLCursor   cursor;
+#endif
+  dirstack_t * item;
+
+  SH_MUTEX_RECURSIVE_INIT(mutex_zdirs);
+  SH_MUTEX_RECURSIVE_LOCK(mutex_zdirs);
+
+  item = zAVLSearch(zdirListOne, name);
+
+  if (item)
+    {
+      *check_mask = item->check_mask;
+      *class      = item->class;
+      *reported   = item->is_reported;
+      *rdepth     = item->rdepth;
+      item->checked        = S_FALSE;
+      item->childs_checked = S_FALSE;
+      item->is_reported    = S_FALSE;
+      retval = 1;
+      goto out;
+    }
+
+  item = zAVLSearch(zdirListTwo, name);
+
+  if (item)
+    {
+      *check_mask = item->check_mask;
+      *class      = item->class;
+      *reported   = item->is_reported;
+      *rdepth     = item->rdepth;
+      item->checked        = S_FALSE;
+      item->childs_checked = S_FALSE;
+      item->is_reported    = S_FALSE;
+      retval = 1;
+      goto out;
+    }
+
+#if defined(HAVE_GLOB_H) && defined(HAVE_FNMATCH_H)
+  SH_MUTEX_LOCK(mutex_zglob);
+  for (testPattern = (sh_globstack_t *) zAVLFirst (&cursor, zglobList); 
+       testPattern;
+       testPattern = (sh_globstack_t *) zAVLNext  (&cursor))
+    {
+      if (testPattern->type == SH_LIST_DIR1 || 
+	  testPattern->type == SH_LIST_DIR2)
+	{
+	  if (0 == fnmatch(testPattern->name, name, FNM_PATHNAME|FNM_PERIOD))
+	    {
+	      *check_mask = testPattern->check_mask;
+	      *class      = testPattern->class;
+	      *rdepth     = testPattern->rdepth;
+	      retval = 1;
+	      break;
+	    }
+	
+	}
+    }
+  SH_MUTEX_UNLOCK(mutex_zglob);
+#endif
+ out:
+  ; /* 'label at end of compound statement' */
+  SH_MUTEX_RECURSIVE_UNLOCK(mutex_zdirs);
+  return retval;
+}
+
+int sh_files_search_file(char * name, int * class, 
+			 unsigned long *check_mask, int *reported)
+{
+  volatile int retval = 0;
+#if defined(HAVE_GLOB_H) && defined(HAVE_FNMATCH_H)
+  sh_globstack_t * testPattern;
+  zAVLCursor   cursor;
+#endif
+  dirstack_t * item;
+
+  SH_MUTEX_LOCK(mutex_zfiles);
+  item = zAVLSearch(zfileList, name);
+
+  if (item)
+    {
+      *check_mask = item->check_mask;
+      *class      = item->class;
+      *reported   = item->is_reported;
+      retval = 1;
+    }
+  SH_MUTEX_UNLOCK(mutex_zfiles);
+
+#if defined(HAVE_GLOB_H) && defined(HAVE_FNMATCH_H)
+  if (retval == 0)
+    {
+      SH_MUTEX_LOCK(mutex_zglob);
+      for (testPattern = (sh_globstack_t *) zAVLFirst (&cursor, zglobList); 
+	   testPattern;
+	   testPattern = (sh_globstack_t *) zAVLNext  (&cursor))
+	{
+	  if (testPattern->type == SH_LIST_FILE)
+	    {
+	      if (0 == fnmatch(testPattern->name, name, 
+			       FNM_PATHNAME|FNM_PERIOD))
+		{
+		  *check_mask = testPattern->check_mask;
+		  *class      = testPattern->class;
+		  retval = 1;
+		  break;
+		}
+	      
+	    }
+	}
+      SH_MUTEX_UNLOCK(mutex_zglob);
+    }
+#endif
+
+  return retval;
+}
+
+void sh_files_set_file_reported(const char * name)
+{
+  dirstack_t * item;
+
+  SH_MUTEX_LOCK_UNSAFE(mutex_zfiles);
+  item = zAVLSearch(zfileList, name);
+
+  if (item)
+    {
+      if (sh.flag.reportonce == S_TRUE)
+	SET_SH_FFLAG_REPORTED(item->is_reported);
+    }
+  SH_MUTEX_UNLOCK_UNSAFE(mutex_zfiles);
+  return;
+}
+
+void sh_files_clear_file_reported(const char * name)
+{
+  dirstack_t * item;
+
+  SH_MUTEX_LOCK_UNSAFE(mutex_zfiles);
+  item = zAVLSearch(zfileList, name);
+
+  if (item)
+    {
+      CLEAR_SH_FFLAG_REPORTED(item->is_reported);
+    }
+  SH_MUTEX_UNLOCK_UNSAFE(mutex_zfiles);
+  return;
+}
 
 /* -----------------------------------
  * 
@@ -2470,6 +2881,7 @@ static int check_file(char * name)
 {
   dirstack_t * pfilL;
   zAVLCursor   cursor;
+  volatile int retval = -1;
 
   SL_ENTER(_("check_file"));
 
@@ -2483,11 +2895,17 @@ static int check_file(char * name)
 	  (pfilL->check_mask & MODI_ATM) == 0 &&
 	  (pfilL->check_mask & MODI_CTM) == 0 &&
 	  (pfilL->check_mask & MODI_MTM) == 0)
-	SL_RETURN(0, _("check_file"));
+	{
+	  retval = 0;
+	  break;
+	}
     }
-  SL_RETURN((-1), _("check_file"));
+
+  SL_RETURN(retval, _("check_file"));
 }
-  
+
+static void * sh_dummy_pdirL;
+
 int sh_files_test_setup_int (zAVLTree * tree)
 {
   int dlen, flen;
@@ -2499,11 +2917,14 @@ int sh_files_test_setup_int (zAVLTree * tree)
 
   SL_ENTER(_("sh_files_test_setup"));
 
+  sh_dummy_pdirL = (void *) &pdirL;
+
   for (pdirL = (dirstack_t *) zAVLFirst (&cursor1, tree); pdirL;
        pdirL = (dirstack_t *) zAVLNext  (&cursor1))
     {
       dlen = strlen(pdirL->name);
 
+      SH_MUTEX_LOCK(mutex_zfiles);
       for (pfilL = (dirstack_t *) zAVLFirst (&cursor2, zfileList); pfilL;
 	   pfilL = (dirstack_t *) zAVLNext  (&cursor2))
 	{
@@ -2534,6 +2955,7 @@ int sh_files_test_setup_int (zAVLTree * tree)
 		}
 	    }
 	}
+      SH_MUTEX_UNLOCK(mutex_zfiles);
     }
 
   SL_RETURN((0), _("sh_files_test_setup"));
@@ -2563,8 +2985,10 @@ extern void     aud_exit   (const char * file, int line, int fd);
       
 int sh_files_test_setup ()
 {
-  int retval = 0;
+  int retval;
 
+  SH_MUTEX_RECURSIVE_INIT(mutex_zdirs);
+  SH_MUTEX_RECURSIVE_LOCK(mutex_zdirs);
   /* Test for modifications allowed in ReadOnly directory
    */  
   sh_files_test_setup_int (zdirListOne);
@@ -2579,13 +3003,8 @@ int sh_files_test_setup ()
   retval = sh_files_test_double (zdirListTwo, zdirListOne);
   if (retval != 0)
     aud_exit(FIL__, __LINE__, EXIT_FAILURE);
+  SH_MUTEX_RECURSIVE_UNLOCK(mutex_zdirs);
 
-
-  /*
-  retval = sh_files_test_double (zfileList,   NULL);
-  if (retval != 0)
-    aud_exit(FIL__, __LINE__, EXIT_FAILURE);
-  */
   return 0;
 }
 

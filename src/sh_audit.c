@@ -210,20 +210,22 @@ void sh_audit_delete_all ()
 
   if (p >= 0)
     {
-      char command[64];
+      char ctl[64];
 
-      sl_snprintf(command, sizeof(command), _("%s -D -k samhain"),
+      sl_snprintf(ctl, sizeof(ctl), _("%s -D -k samhain"),
 		  _(actl_paths[p]));
       sh_error_handle (SH_ERR_ALL, FIL__, __LINE__, 
 		       0, MSG_E_SUBGEN,
 		       _("Deleting audit daemon rules with key samhain"),
 		       _("sh_audit_delete_all") );
-      sh_ext_system(command);
+
+      sl_strlcpy(ctl, _(actl_paths[p]), sizeof(ctl));
+      sh_ext_system(ctl, ctl, "-D", "-k", _("samhain"), NULL);
     }
   return;
 }
 
-void sh_audit_mark (char * file)
+static void sh_audit_mark_int (const char * file)
 {
   static int flushRules = 0;
 
@@ -242,6 +244,7 @@ void sh_audit_mark (char * file)
       size_t len = strlen(file) + 64;
       char * command = SH_ALLOC(len);
       char * safe;
+      char   ctl[64];
 
       sl_snprintf(command, len, _("%s -w %s -p wa -k samhain"),
 		  _(actl_paths[p]),
@@ -254,11 +257,109 @@ void sh_audit_mark (char * file)
 		       _("sh_audit_mark") );
       SH_FREE(safe);
 
-      sh_ext_system(command);
+      sl_strlcpy(ctl, _(actl_paths[p]), sizeof(ctl));
+      sl_strlcpy(command, file, len);
+
+      sh_ext_system(ctl, ctl, "-w", command, "-p", "wa", "-k", _("samhain"), NULL);
+
+      SH_FREE(command);
     }
   return;
 }
 
+struct aud_list {
+  char * file;
+  struct aud_list * next;
+};
+
+struct aud_list * mark_these = NULL;
+
+static void add_this (char * file)
+{
+  struct aud_list * this = SH_ALLOC(sizeof(struct aud_list));
+  this->file = sh_util_strdup(file);
+  this->next = mark_these;
+  mark_these = this;
+  return;
+}
+
+static int test_exchange (struct aud_list * this, char * file)
+{
+  size_t len0 = sl_strlen(this->file);
+  size_t len1 = sl_strlen(file);
+  int    ret  = -1;
+
+  if (len0 == len1)
+    {
+      return strcmp(this->file, file);
+    }
+  else
+    {
+      char * s0 = SH_ALLOC(len0 + 2);
+      char * s1 = SH_ALLOC(len1 + 2);
+
+       sl_strlcpy(s0, this->file, len0 + 2); 
+       sl_strlcpy(s1, file,       len1 + 2); 
+
+       if (s0 < s1)
+	 {
+	   sl_strlcat(s0, "/", len0 + 2);
+	   ret = strncmp(s0, s1, len0 + 1);
+	 }
+       else
+	 {
+	   sl_strlcat(s1, "/", len1 + 2);
+	   if (0 == strncmp(s0, s1, len1 + 1))
+	     {
+	       SH_FREE(this->file);
+	       this->file = sh_util_strdup(file);
+	       ret = 0;
+	     }
+	 }
+       SH_FREE(s0);
+       SH_FREE(s1);
+    }
+  
+  return ret;
+}
+
+void sh_audit_mark (char * file)
+{
+  struct aud_list * this = mark_these;
+
+  if (!mark_these) {
+    add_this (file);
+    return;
+  }
+
+  while (this)
+    {
+      if (0 == test_exchange(this, file))
+	return;
+      this = this->next;
+    }
+
+  add_this (file);
+  return;
+}
+
+void sh_audit_commit ()
+{
+  struct aud_list * next;
+  struct aud_list * this = mark_these;
+
+  mark_these = NULL;
+
+  while (this)
+    {
+      sh_audit_mark_int (this->file);
+      next = this->next;
+      SH_FREE(this->file);
+      SH_FREE(this);
+      this = next;
+    }
+  
+}
 
 static int sh_audit_checkdaemon()
 {
@@ -371,12 +472,16 @@ char * sh_audit_fetch (char * file, time_t time, char * result, size_t rsize)
 
   return 0;
 }
-void sh_audit_mark (char * file)
+void sh_audit_mark (const char * file)
 {
   (void) file;
   return;
 }
 void sh_audit_delete_all ()
+{
+  return;
+}
+void sh_audit_commit ()
 {
   return;
 }

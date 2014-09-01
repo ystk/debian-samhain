@@ -39,7 +39,7 @@ cat_entry msg_cat[] = {
 #if defined(SH_WITH_CLIENT) || defined(SH_STANDALONE)
   { MSG_FI_CSUM,     SH_ERR_ALL,     FIL,   N_("msg=\"Checksum\" chk=\"%s\" path=\"%s\"")},
   { MSG_FI_DSUM,     SH_ERR_INFO,    FIL,   N_("msg=\"d: %3ld, -: %3ld, l: %3ld, |: %3ld, s: %3ld, c: %3ld, b: %3ld\"")},
-  { MSG_FI_CHK,      SH_ERR_INFO,    FIL,   N_("msg=\"Checking\" path=\"%s\"")},
+  { MSG_FI_CHK,      SH_ERR_INFO,    FIL,   N_("msg=\"Checking %16s\" path=\"%s\"")},
 #endif
 
   { MSG_EXIT_ABORTS, SH_ERR_FATAL,   PANIC, N_("msg=\"PANIC %s\" program=\"%s\" subroutine=\"%s\"")},
@@ -168,9 +168,9 @@ cat_entry msg_cat[] = {
 #endif
 
 #ifdef USE_REGISTRY_CHECK
-  { MSG_REG_MISS,   SH_ERR_SEVERE,  EVENT, N_("msg=\"POLICY [RegistryKeyMissing]\" path=\"%s\" %s")},
-  { MSG_REG_NEW,    SH_ERR_SEVERE,  EVENT, N_("msg=\"POLICY [RegistryKeyNew]\" path=\"%s\" %s")},
-  { MSG_REG_CHANGE, SH_ERR_SEVERE,  EVENT, N_("msg=\"POLICY [RegistryKeyChanged]\" path=\"%s\" %s")},
+  { MSG_REG_MISS,   SH_ERR_SEVERE,  EVENT, N_("msg=\"POLICY [RegistryKeyMissing] %s\" path=\"%s\" %s")},
+  { MSG_REG_NEW,    SH_ERR_SEVERE,  EVENT, N_("msg=\"POLICY [RegistryKeyNew] %s\" path=\"%s\" %s")},
+  { MSG_REG_CHANGE, SH_ERR_SEVERE,  EVENT, N_("msg=\"POLICY [RegistryKeyChanged] %s\" path=\"%s\" %s")},
 #endif
 
 #if defined(SH_WITH_CLIENT) || defined(SH_STANDALONE)
@@ -180,7 +180,7 @@ cat_entry msg_cat[] = {
 #if 0
   { MSG_FI_CSUM,     SH_ERR_ALL,     FIL,   N_("msg=\"Checksum\" chk=\"%s\" path=\"%s\"")},
   { MSG_FI_DSUM,     SH_ERR_INFO,    FIL,   N_("msg=\"d: %3ld, -: %3ld, l: %3ld, |: %3ld, s: %3ld, c: %3ld, b: %3ld\"")},
-  { MSG_FI_CHK,      SH_ERR_INFO,    FIL,   N_("msg=\"Checking\" path=\"%s\"")},
+  { MSG_FI_CHK,      SH_ERR_INFO,    FIL,   N_("msg=\"Checking %16s\" path=\"%s\"")},
 #endif
 
   { MSG_FI_NULL,     SH_ERR_ERR,     FIL,   N_("msg=\"Path is NULL\"")},
@@ -381,7 +381,7 @@ cat_entry msg_cat[] = {
 #if defined(SH_WITH_CLIENT) || defined(SH_STANDALONE)
   { MSG_FI_CSUM,     SH_ERR_ALL,     FIL,   N_("msg=<Checksum>, chk=<%s>, path=<%s>")},
   { MSG_FI_DSUM,     SH_ERR_INFO,    FIL,   N_("msg=<d: %3ld, -: %3ld, l: %3ld, |: %3ld, s: %3ld, c: %3ld, b: %3ld>")},
-  { MSG_FI_CHK,      SH_ERR_INFO,    FIL,   N_("msg=<Checking>, path=<%s>")},
+  { MSG_FI_CHK,      SH_ERR_INFO,    FIL,   N_("msg=<Checking %16s>, path=<%s>")},
 #endif
 
   { MSG_EXIT_ABORTS, SH_ERR_FATAL,   PANIC, N_("msg=<PANIC %s>, program=<%s>, subroutine=<%s>")},
@@ -521,7 +521,7 @@ cat_entry msg_cat[] = {
 #if 0
   { MSG_FI_CSUM,     SH_ERR_ALL,     FIL,   N_("msg=<Checksum>, chk=<%s>, path=<%s>")},
   { MSG_FI_DSUM,     SH_ERR_INFO,    FIL,   N_("msg=<d: %3ld, -: %3ld, l: %3ld, |: %3ld, s: %3ld, c: %3ld, b: %3ld>")},
-  { MSG_FI_CHK,      SH_ERR_INFO,    FIL,   N_("msg=<Checking>, path=<%s>")},
+  { MSG_FI_CHK,      SH_ERR_INFO,    FIL,   N_("msg=<Checking %16s>, path=<%s>")},
 #endif
 
   { MSG_FI_NULL,     SH_ERR_ERR,     FIL,   N_("msg=<Path is NULL>")},

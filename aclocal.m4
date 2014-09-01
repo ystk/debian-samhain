@@ -408,7 +408,7 @@ verbose=
 x_includes=NONE
 x_libraries=NONE
 DESTDIR=
-SH_ENABLE_OPTS="ssp db-reload xml-log message-queue login-watch process-check port-check mounts-check logfile-monitor userfiles debug ptrace static network udp nocl stealth micro-stealth install-name identity khide suidcheck base largefile mail external-scripts encrypt srp dnmalloc ipv6"
+SH_ENABLE_OPTS="asm ssp db-reload xml-log message-queue login-watch process-check port-check mounts-check logfile-monitor userfiles debug ptrace static network udp nocl stealth micro-stealth install-name identity khide suidcheck base largefile mail external-scripts encrypt srp dnmalloc ipv6 shellexpand suid"
 SH_WITH_OPTS="prelude libprelude-prefix database libwrap cflags libs console altconsole timeserver alttimeserver rnd egd-socket port logserver altlogserver kcheck gpg keyid checksum fp recipient sender trusted tmp-dir config-file log-file pid-file state-dir data-file html-file"
 
 # Installation directory options.
@@ -1313,7 +1313,7 @@ return 0;
 	AC_MSG_RESULT(yes)
 	samhain_64=yes
 	tiger_src=sh_tiger1_64.c
-	AC_DEFINE([TIGER_OPT_ASM],1,[Define to use tiger x86_64 optimized assembly])
+	samhain_64_asm=yes
 	],
 	[
 	AC_MSG_RESULT([no])
@@ -1326,6 +1326,7 @@ return 0;
 AC_DEFUN([SAMHAIN_64],[
 samhain_64=no
 tiger_src=sh_tiger1.c
+samhain_64_asm=no
 #
 # if sizeof(unsigned long) = 4, try compiler macros for 64bit
 #
@@ -1343,8 +1344,14 @@ if test "x$ac_cv_sizeof_unsigned_long" = x4; then
 	  samhain_i386=no
           $CC -E -dM - < /dev/null | egrep '__i386__' >/dev/null 2>&1 
           if test $? = 0; then
-            # apples gcc does not understand the assembly we provide
-            $CC -E -dM - < /dev/null | egrep '(__sun__|__APPLE__|__CYGWIN__)' >/dev/null 2>&1 || samhain_i386=yes
+	    case "$host_os" in
+	    	 *linux*)
+            	 # apples gcc does not understand the assembly we provide
+            	 $CC -E -dM - < /dev/null | egrep '(__sun__|__APPLE__|__CYGWIN__)' >/dev/null 2>&1 || samhain_i386=yes
+	    	 ;;
+	    	 *)
+	    	 ;;
+	    esac
           fi
 	  AC_MSG_RESULT([$samhain_i386])
 	  if test "x$samhain_i386" = xyes; then
@@ -1372,7 +1379,17 @@ else
   # check for x86_64 (enables assembly optimizations)
   #
   if test "x$GCC" = xyes; then
-    SAMHAIN_X86_64
+     case "$host_os" in
+     	*linux*)
+    	SAMHAIN_X86_64
+	;;
+     	*bsd*)
+    	SAMHAIN_X86_64
+	;;
+     	*)
+    	SAMHAIN_X86_64
+	;;
+      esac	
   fi
 fi
 if test "x$samhain_64" = xyes; then 
@@ -2099,7 +2116,29 @@ AC_MSG_RESULT([no])
 AC_MSG_RESULT([no])
 ])])
 
-
+AC_DEFUN([SH_GCC_VERSION], [
+  GCC_VERSION=""
+  gcc_VERSION_MAJOR=0
+  gcc_VERSION_MINOR=0
+  AC_MSG_CHECKING([for gcc version])
+  if test "x$GCC" = "xyes"
+  then
+	$CC -dumpversion >/dev/null 2>&1
+	if test $? -eq 0
+	then
+		GCC_VERSION=`$CC -dumpversion`
+      		gcc_VERSION_MAJOR=`echo $GCC_VERSION | cut -d'.' -f1`
+      		gcc_VERSION_MINOR=`echo $GCC_VERSION | cut -d'.' -f2`
+      		AC_DEFINE_UNQUOTED(GCC_VERSION_MAJOR, [${gcc_VERSION_MAJOR}], [gcc version major])
+      		AC_DEFINE_UNQUOTED(GCC_VERSION_MINOR, [${gcc_VERSION_MINOR}], [gcc version minor])
+		AC_MSG_RESULT([$GCC_VERSION])
+	else
+		AC_MSG_RESULT([$CC -dumpversion working])
+	fi
+  else
+	AC_MSG_RESULT([compiler is not gcc])
+  fi
+])
 
 
 

@@ -20,7 +20,7 @@
 #
 
 # dnmalloc + flawfinder + (36 * 3)
-MAXTEST=110; export MAXTEST
+MAXTEST=116; export MAXTEST
 
 run_dnmalloc ()
 {
@@ -202,6 +202,7 @@ run_smatch ()
 
 testmake ()
 {
+
 	fail=0
 	#
 	# Compiler warnings can be OS specific, but at least
@@ -273,9 +274,14 @@ testcompile ()
 	    if [ $? -eq 0 ]; then
 		C_LOGFILE=" --enable-logfile-monitor "
 	    else
-		ls /usr/local/lib/libpcre* >/dev/null 2>&1
+		ls /usr/lib/*/libpcre* >/dev/null 2>&1
 		if [ $? -eq 0 ]; then
 		    C_LOGFILE=" --enable-logfile-monitor "
+		else
+		    ls /usr/local/lib/libpcre* >/dev/null 2>&1
+		    if [ $? -eq 0 ]; then
+			C_LOGFILE=" --enable-logfile-monitor "
+		    fi
 		fi
 	    fi
 	fi
@@ -684,6 +690,54 @@ testcompile ()
 	run_uno $? $num || let "numfail = numfail + 1"  >/dev/null
 
 	#
+	# test client/server compilation w/prelude
+	#
+	TEST="${S}client/server application w/prelude${E}"
+	#
+	if [ -z "$doall" ]; then
+	    let "num = num + 1" >/dev/null
+	    [ -z "$quiet" ] && log_skip $num ${MAXTEST} "$TEST";
+	    let "num = num + 1" >/dev/null
+	    [ -z "$quiet" ] && log_skip $num ${MAXTEST} "$TEST (smatch)";
+	    let "num = num + 1" >/dev/null
+	    [ -z "$quiet" ] && log_skip $num ${MAXTEST} "$TEST (uno)";
+
+	    let "num = num + 1" >/dev/null
+	    [ -z "$quiet" ] && log_skip $num ${MAXTEST} "$TEST";
+	    let "num = num + 1" >/dev/null
+	    [ -z "$quiet" ] && log_skip $num ${MAXTEST} "$TEST (smatch)";
+	    let "num = num + 1" >/dev/null
+	    [ -z "$quiet" ] && log_skip $num ${MAXTEST} "$TEST (uno)";
+	else
+	    if test -r "Makefile"; then
+		$MAKE clean
+	    fi
+	    #
+	    ${TOP_SRCDIR}/configure --quiet --enable-network=client  --enable-srp --prefix=$PW_DIR --localstatedir=$PW_DIR --with-config-file=$PW_DIR/samhainrc.test   --with-prelude > /dev/null 2>> test_log   
+	    #
+	    let "num = num + 1" >/dev/null
+	    testmake $? $num || let "numfail = numfail + 1" >/dev/null
+	    let "num = num + 1" >/dev/null
+	    run_smatch $? $num || let "numfail = numfail + 1"  >/dev/null
+	    let "num = num + 1" >/dev/null
+	    run_uno $? $num || let "numfail = numfail + 1"  >/dev/null
+	    
+	    if test -r "Makefile"; then
+		$MAKE clean
+	    fi
+	    #
+	    ${TOP_SRCDIR}/configure --quiet --enable-network=server  --enable-srp --prefix=$PW_DIR --localstatedir=$PW_DIR --with-config-file=$PW_DIR/samhainrc.test   --with-prelude > /dev/null 2>> test_log   
+	    #
+	    let "num = num + 1" >/dev/null
+	    testmake $? $num || let "numfail = numfail + 1" >/dev/null
+	    let "num = num + 1" >/dev/null
+	    run_smatch $? $num || let "numfail = numfail + 1"  >/dev/null
+	    let "num = num + 1" >/dev/null
+	    run_uno $? $num || let "numfail = numfail + 1"  >/dev/null
+	    #
+	fi
+
+	#
 	# test client/server compilation
 	#
 	TEST="${S}client/server application static w/timeserver${E}"
@@ -764,13 +818,13 @@ testcompile ()
 	#
 	# test client/server compilation
 	#
-	TEST="${S}client/server application w/o srp${E}"
+	TEST="${S}client/server application w/o srp, w/udp${E}"
 	#
 	if test -r "Makefile"; then
 		$MAKE clean
 	fi
 	#
-	${TOP_SRCDIR}/configure --quiet --enable-network=server --disable-srp --prefix=$PW_DIR --localstatedir=$PW_DIR --with-config-file=$PW_DIR/samhainrc.test > /dev/null 2>> test_log   
+	${TOP_SRCDIR}/configure --quiet --enable-network=server --enable-udp --disable-srp --prefix=$PW_DIR --localstatedir=$PW_DIR --with-config-file=$PW_DIR/samhainrc.test > /dev/null 2>> test_log   
 	#
 	let "num = num + 1" >/dev/null
 	testmake $? $num || let "numfail = numfail + 1" >/dev/null
@@ -857,13 +911,13 @@ testcompile ()
 	#
 	# test  client/server compilation w/logwatch
 	#
-	TEST="${S}client/server application w/login-watch${E}"
+	TEST="${S}client/server application w/login-watch,udp,no_ipv6${E}"
 	#
 	if test -r "Makefile"; then
 		$MAKE clean
 	fi
 	#
-	${TOP_SRCDIR}/configure --quiet --enable-network=server  --enable-srp --enable-login-watch --prefix=$PW_DIR --localstatedir=$PW_DIR --with-config-file=$PW_DIR/samhainrc.test  > /dev/null 2>> test_log  
+	${TOP_SRCDIR}/configure --quiet --enable-network=server  --enable-udp --disable-ipv6 --enable-srp --enable-login-watch --prefix=$PW_DIR --localstatedir=$PW_DIR --with-config-file=$PW_DIR/samhainrc.test  > /dev/null 2>> test_log  
 	#
 	let "num = num + 1" >/dev/null
 	testmake $? $num || let "numfail = numfail + 1" >/dev/null
@@ -876,7 +930,7 @@ testcompile ()
 		$MAKE clean
 	fi
 	#
-	${TOP_SRCDIR}/configure --quiet --enable-network=client  --enable-srp --enable-login-watch --prefix=$PW_DIR --localstatedir=$PW_DIR --with-config-file=$PW_DIR/samhainrc.test  > /dev/null 2>> test_log  
+	${TOP_SRCDIR}/configure --quiet --enable-network=client  --disable-ipv6 --enable-srp --enable-login-watch --prefix=$PW_DIR --localstatedir=$PW_DIR --with-config-file=$PW_DIR/samhainrc.test  > /dev/null 2>> test_log  
 	#
 	let "num = num + 1" >/dev/null
 	testmake $? $num || let "numfail = numfail + 1" >/dev/null

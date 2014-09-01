@@ -22,12 +22,18 @@
 
 #include "rijndael-boxes-fst.h"
 
+#if defined(GCC_VERSION_MAJOR)
+#if (GCC_VERSION_MAJOR > 4) || ((GCC_VERSION_MAJOR == 4) && (GCC_VERSION_MINOR > 4))
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+#endif
+#endif
+
 int rijndaelKeySched(word8 k[MAXKC][4], word8 W[MAXROUNDS+1][4][4], int ROUNDS) {
 	/* Calculate the necessary round keys
 	 * The number of calculations depends on keyBits and blockBits
 	 */ 
 	int j, r, t, rconpointer = 0;
-	word8 tk[MAXKC][4];
+	word8 tk[MAXKC][4] = { { 0 } }; /* init for llvm/clang analyzer */
 	int KC = ROUNDS - 6;
 	word32 tmp;
 

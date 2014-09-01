@@ -596,7 +596,7 @@ SetFileCheckTime = 7200
 
 ## Path to the PID file
 #
-# SetLockPath = (default: compiled-in)
+# SetLockfilePath = (default: compiled-in)
 
 
 ## The digest/checksum/hash algorithm

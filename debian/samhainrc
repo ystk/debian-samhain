@@ -595,7 +595,7 @@ SetMailAddress=root@localhost
 
 ## Mail relay (IP address)
 #
-# SetMailRelay = NULL
+SetMailRelay = localhost
 
 ## Custom subject format
 #

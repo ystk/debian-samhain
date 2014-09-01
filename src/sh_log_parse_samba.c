@@ -75,6 +75,8 @@ struct sh_logrecord * sh_parse_samba (sh_string * logline, void * fileinfo)
 	  char * ptr;
 
 	  memset(&btime, '\0', sizeof(struct tm));
+	  btime.tm_isdst = -1;
+
 	  ptr = strptime(sh_string_str(logline), format_1, &btime);
 
 	  if (ptr && *ptr == '\0') /* no error, whole string consumed */

@@ -11,7 +11,7 @@ AC_ARG_VAR([LIBS], [libraries to link against, e.g. -lintl])
 dnl
 dnl start
 dnl
-AM_INIT_AUTOMAKE(samhain, 2.8.3a)
+AM_INIT_AUTOMAKE(samhain, 3.1.0)
 AC_DEFINE([SAMHAIN], 1, [Application is samhain])
 AC_CANONICAL_HOST
 
@@ -33,6 +33,10 @@ SH_PROG_LD
 AC_PATH_PROG(cmd_hostname,hostname)
 AC_SUBST(cmd_hostname)
 AC_SUBST(BUILD_CC)
+
+if test "x$GCC" = "xyes"; then
+   SH_GCC_VERSION
+fi
 
 AC_HEADER_STDC
 dnl
@@ -90,17 +94,31 @@ case "$host_os" in
 	AC_MSG_RESULT([no trusted paths and no dnmalloc])
 	;;
 
-	*darwin*) 
+	*darwin*|*apple*) 
 	AC_DEFINE(HOST_IS_DARWIN)
 	dnmalloc_ok=no
 	AC_MSG_RESULT([check resource forks, no dnmalloc])
 	;;
 
+	*freebsd8*|*freebsd9*)
+	AC_DEFINE(HOST_IS_FREEBSD)
+	selectconfig=freebsd
+	case "$host_cpu" in
+		amd64|x86_64)
+		dnmalloc_ok=no
+		AC_MSG_RESULT([no dnmalloc])
+		;;
+		*)
+		AC_MSG_RESULT([none])
+		;;
+	esac
+	;;
+	
 	*freebsd7*)
 	AC_DEFINE(HOST_IS_FREEBSD)
 	selectconfig=freebsd
 	case "$host_cpu" in
-		amd64)
+		amd64|x86_64)
 		sh_use_pie=no
 		dnmalloc_ok=no
 		AC_MSG_RESULT([no dnmalloc and broken compiler toolchain])
@@ -228,7 +246,7 @@ AC_CHECK_HEADERS(stddef.h libgen.h sched.h malloc.h sys/uio.h \
 	sys/mman.h sys/param.h sys/inotify.h \
 	sys/vfs.h mntent.h \
 	sys/select.h sys/socket.h netinet/in.h \
-	regex.h glob.h \
+	regex.h glob.h fnmatch.h \
 	linux/ext2_fs.h linux/fs.h ext2fs/ext2_fs.h asm/segment.h \
 	elf.h linux/elf.h auparse.h \
 	paths.h arpa/nameser.h arpa/nameser_compat.h \
@@ -241,20 +259,14 @@ AC_CHECK_HEADERS(stddef.h libgen.h sched.h malloc.h sys/uio.h \
 
 AC_CHECK_HEADER(utmpx.h, sh_utmpx="yes", sh_utmpx="no")
 if test "x$sh_utmpx" = "xyes"; then
-  if cat "/usr/include/utmpx.h" 2>&5 |
-    	egrep "WTMPX_FILE" >/dev/null 2>&1; then
-  		AC_DEFINE(HAVE_UTMPX_H)
-  		AC_EGREP_HEADER(ut_host, utmpx.h, AC_DEFINE(HAVE_UTHOST) )
-  		AC_EGREP_HEADER(ut_addr, utmpx.h, AC_DEFINE(HAVE_UTADDR) )
-  		AC_EGREP_HEADER(ut_addr_v6, utmpx.h, AC_DEFINE(HAVE_UTADDR_V6) )
-  		AC_EGREP_HEADER(ut_xtime,utmpx.h, AC_DEFINE(HAVE_UTXTIME) )
-  		AC_EGREP_HEADER(ut_type, utmpx.h, AC_DEFINE(HAVE_UTTYPE) )
-  else
-  		AC_EGREP_HEADER(ut_addr, utmp.h, AC_DEFINE(HAVE_UTADDR) )
-  		AC_EGREP_HEADER(ut_host, utmp.h, AC_DEFINE(HAVE_UTHOST) )
-  		AC_EGREP_HEADER(ut_type, utmp.h, AC_DEFINE(HAVE_UTTYPE) )
-  fi
+  AC_DEFINE(HAVE_UTMPX_H)
+  AC_EGREP_HEADER(ut_host, utmpx.h, AC_DEFINE(HAVE_UTHOST) )
+  AC_EGREP_HEADER(ut_addr, utmpx.h, AC_DEFINE(HAVE_UTADDR) )
+  AC_EGREP_HEADER(ut_addr_v6, utmpx.h, AC_DEFINE(HAVE_UTADDR_V6) )
+  AC_EGREP_HEADER(ut_xtime,utmpx.h, AC_DEFINE(HAVE_UTXTIME) )
+  AC_EGREP_HEADER(ut_type, utmpx.h, AC_DEFINE(HAVE_UTTYPE) )
 else
+  AC_EGREP_HEADER(ut_addr, utmp.h, AC_DEFINE(HAVE_UTADDR) )
   AC_EGREP_HEADER(ut_host, utmp.h, AC_DEFINE(HAVE_UTHOST) )
   AC_EGREP_HEADER(ut_type, utmp.h, AC_DEFINE(HAVE_UTTYPE) )
 fi
@@ -329,6 +341,9 @@ AC_CHECK_HEADER(sys/acct.h,
 								[Define if <sys/acct.h> uses the COMP_T type.]))
 		AC_HEADER_EGREP([struct acct_v3],   sys/acct.h, AC_DEFINE(HAVE_ACCT_V3, ,
 								[Define if <sys/acct.h> has struct acct_v3.]))
+		AC_HEADER_EGREP([struct acctv2],    sys/acct.h, AC_DEFINE(HAVE_ACCTV2, ,
+								[Define if <sys/acct.h> has struct acctv2.]))
+
  )
 
 
@@ -789,6 +804,27 @@ AC_ARG_ENABLE(mail,
 	[AC_DEFINE(SH_WITH_MAIL)]
 )
 
+AC_ARG_ENABLE(suid,
+	[  --enable-suid		allow suid],
+	[
+	if test "x${enable_suid}" = xyes; then
+		AC_DEFINE(SH_ALLOW_SUID, [1], [Define if you want to allow suid execution for samhain])
+	fi
+	]
+)
+
+AC_ARG_ENABLE(shellexpand,
+	[  --disable-shellexpand		disable shell expansion in config file],
+	[
+	if test "x${enable_shellexpand}" = xno; then
+		:
+	else
+		AC_DEFINE(SH_EVAL_SHELL, [1], [Define if you want shell expansion in configuration file])
+	fi
+	],
+	[AC_DEFINE(SH_EVAL_SHELL, [1], [Define if you want shell expansion in configuration file])]
+)
+
 AC_ARG_ENABLE(external-scripts,
         [  --disable-external-scripts	disable interface to external scripts],
         [
@@ -1046,6 +1082,8 @@ else
       CFLAGS="$CFLAGS $PIE_CFLAGS"
    fi
 fi
+AC_CHECK_FUNC(pmap_getmaps, 
+	AC_DEFINE([HAVE_PMAP_GETMAPS], [], [Define if pmap_getmaps available]), [],[])
 
 	
 #
@@ -1386,30 +1424,58 @@ AC_ARG_WITH(database,
           AC_DEFINE(WITH_DATABASE)
 
 	elif test "x${withval}" = "xoracle"; then
-	  AC_MSG_CHECKING(for oracle in /usr /usr/local ORACLE_HOME)
+
+	  AC_MSG_CHECKING(for oracle in ORACLE_HOME /usr/local /usr)
+
 	  oracle_directory="/usr /usr/local ${ORACLE_HOME}"
   	  for i in $oracle_directory; do 
-    	    if test -r $i/rdbms/demo/oci.h; then
-            ORACLE_DIR=$i
-          fi  
-          done
+
+	      ff=`find $i -name oci.h 2>/dev/null | tail -1`
+	      if test "x$ff" = "x"; then
+	      	 :
+	      else
+		 ORACLE_INC=`dirname $ff`
+	      fi
+
+	      fg=`find $i -name libclntsh.so 2>/dev/null | tail -1`
+	      if test "x$fg" = "x"; then
+	      	 :
+	      else
+		 ORACLE_LIB=`dirname $fg`
+	      fi
+
+           done
 	  
-          if test -z "$ORACLE_DIR"; then
+          if test -z "$ORACLE_INC"; then
+
               tmp=""
               for i in $oracle_directory; do
-                tmp="$tmp $i/rdbms/demo"
+                tmp="$tmp $i"
               done
-              FAIL_MESSAGE("OCI header file (oci.h)", $tmp)
-          else 
-            for i in rdbms/demo rdbms/public network/public; do
-              ORACLE_CPP_FLAGS="$ORACLE_CPP_FLAGS -I$ORACLE_DIR/$i"
-            done
-            ORACLE_LIB_DIR="$ORACLE_DIR/lib"
-            AC_MSG_RESULT(yes)
+              FAIL_MESSAGE("OCI header file (oci.h) please define ORACLE_INC directory where oci.h resides", $tmp)
+
+	  elif test -z "$ORACLE_LIB"; then
+
+              tmp=""
+              for i in $oracle_directory; do
+                tmp="$tmp $i"
+              done
+              FAIL_MESSAGE("OCI library file (libclntsh.so) please define ORACLE_LIB directory where libclntsh.so resides", $tmp)
+
+          else
+
+            ORACLE_CPP_FLAGS="-I$ORACLE_INC"
+            ORACLE_LIB_DIR="$ORACLE_LIB"
+
+            AC_MSG_RESULT([$ORACLE_INC $ORACLE_LIB])
 
             CPPFLAGS="${CPPFLAGS} ${ORACLE_CPP_FLAGS}"
 
             ORACLE_LIBS="-lclntsh"
+
+	    if test -r $ORACLE_LIB_DIR/libnnz11.so; then
+	      ORACLE_LIBS="${ORACLE_LIBS} -lnnz11"
+	    fi
             if test -r $ORACLE_LIB_DIR/libwtc9.so; then
               ORACLE_LIBS="${ORACLE_LIBS} -lwtc9"
             elif test -r $ORACLE_LIB_DIR/libwtc8.so; then
@@ -1588,6 +1654,21 @@ AC_ARG_ENABLE(debug,
 )
 AC_SUBST(mydebugdef)
 
+sh_enable_asm=yes
+AC_ARG_ENABLE(asm,
+        [  --disable-asm			disable asm inline code],
+        [
+        if test "x${enable_asm}" = xno; then
+	    sh_enable_asm=no
+	fi
+	]
+)
+
+if test "x${samhain_64_asm}" = xyes; then
+   	if test "x${sh_enable_asm}" = xyes; then
+	   AC_DEFINE([TIGER_OPT_ASM],1,[Define to use tiger x86_64 optimized assembly])
+	fi
+fi
 
 AC_ARG_ENABLE(ipv6,
         [  --disable-ipv6			disable ipv6 support],
@@ -1982,6 +2063,12 @@ AC_ARG_ENABLE(khide,
 	[  --enable-khide=SYSTEM_MAP	use kernel module to hide (Linux only)[[/boot/System.map]]],
 	[
 	if test "x${enable_khide}" != xno; then
+
+	   kernel_testsupport=`uname -r | sed s,^3.*,LINUX3,`
+	   if test "x${kernel_testsupport}" = "xLINUX3"; then
+	      AC_MSG_ERROR([The --enable-khide option is not supported on Linux kernel version 3.x or above.])
+	   fi
+
 	   if test "x${enableval}" != "xyes"; then
 		khidemap="${enableval}"
 	   fi
@@ -2117,9 +2204,19 @@ AC_ARG_WITH(kcheck,
 			LIBS="$LIBS -lkvm"
 			sh_libkvm="-lkvm"
 		elif test -f "${systemmap}"; then
-		     	if test -c /dev/kmem; then 
-			   :
-			else
+
+		        test_kmap_open=no
+
+		     	if test -c /dev/kmem; then
+			   AC_MSG_CHECKING([whether /dev/kmem is useable])
+			   dd bs=4 count=16 if=/dev/kmem of=/dev/null >/dev/null 2>&1 
+			   if test $? -eq 0; then
+			      test_kmap_open=yes
+			   fi
+			   AC_MSG_RESULT([${test_kmap_open}])
+			fi
+
+			if test x"${test_kmap_open}" = xno; then
 			   # need kernel module
 
 	   		   if test -f /lib/modules/${kernelversion}/build/include/linux/kernel.h; then
@@ -2141,7 +2238,7 @@ AC_ARG_WITH(kcheck,
 			   fi
 
 			   AC_MSG_CHECKING([for vmlist])
-			   sh_vmlist_lock=`egrep ['[bdBD] vmlist$'] ${systemmap} | awk '{print $1}'` 
+			   sh_vmlist=`egrep ['[bdBD] vmlist$'] ${systemmap} | awk '{print $1}'` 
 			   if test x"$sh_vmlist" = x; then 
 			       AC_MSG_RESULT(no)
 			   else
@@ -2267,7 +2364,15 @@ AC_ARG_WITH(gpg,
 			  echo "use existing ${sampre} for gpg checksum"
 			  mychk0=`${sampre} -H ${withval} 2>/dev/null`
 			  if test "x$?" != "x0"; then
-			    :
+			    if test "x${nocl_code}" != "x"; then
+			       mychk0=`echo -H ${withval} | ${sampre} ${nocl_code} 2>/dev/null`
+			       if test "x$?" != "x0"; then
+			       	  :
+			       else
+			          mychk="${mychk0}"
+				  mychktest=yes
+			       fi 
+			    fi
 			  else
 			    mychk="${mychk0}"
 			    mychktest=yes
@@ -2612,8 +2717,13 @@ AC_ARG_WITH(pid-file,
 	changequote([, ])dnl
 	],
 	[
-	mylockfile="${localstatedir}/run/${install_name}.pid"
-	mylockdir="${localstatedir}/run"
+	if test -h /var/run && test -d /run; then
+		mylockfile="/run/${install_name}.pid"
+		mylockdir="/run"
+	else
+		mylockfile="${localstatedir}/run/${install_name}.pid"
+		mylockdir="${localstatedir}/run"
+	fi
 	]
 )
 AC_DEFINE_UNQUOTED(DEFAULT_ERRLOCK, _("${mylockfile}") )
@@ -2711,6 +2821,7 @@ samhain.spec
 rules.deb
 rules.deb-light
 hp_ux.psf
+scripts/logrotate
 scripts/samhain.spec
 scripts/redhat_i386.client.spec
 scripts/samhain.ebuild

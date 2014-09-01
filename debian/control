@@ -1,8 +1,8 @@
 Source: samhain
 Section: admin
 Priority: optional
-Maintainer: Javier Fernandez-Sanguino Pen~a <jfs@debian.org>
-Build-Depends: debhelper (>= 4.1.16), autoconf, procps, libgmp3-dev, e2fslibs-dev, libprelude-dev
+Maintainer: Javier Fernández-Sanguino Peña <jfs@debian.org>
+Build-Depends: debhelper (>= 4.1.16), autoconf, procps, libgmp3-dev, e2fslibs-dev, libprelude-dev, libauparse-dev [linux-any], autotools-dev
 Standards-Version: 3.5.8
 Homepage: http://la-samhna.de/samhain/index.html
 

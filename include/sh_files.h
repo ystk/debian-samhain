@@ -20,7 +20,8 @@
 #ifndef SH_FILES_H
 #define SH_FILES_H
 
-void sh_audit_mark (char * file);
+void sh_audit_mark (const char * file);
+void sh_audit_commit ();
 void sh_audit_delete_all ();
 char * sh_audit_fetch (char * file, time_t time, char * result, size_t rsize);
 
@@ -45,9 +46,13 @@ struct sh_dirent * addto_sh_dirlist (struct dirent * thisEntry,
  */
 int sh_files_hle_reg (const char * str);
 
-/* Check for new files matching configured glob patterns.
+/* Check for new files/dirs matching configured glob patterns.
  */
 void sh_files_check_globPatterns();
+
+/* Check for new files (only) matching configured glob patterns.
+ */
+void sh_files_check_globFilePatterns();
 
 /* check the setup
  */
@@ -220,6 +225,23 @@ int sh_files_redef_attributes(const char * str);
 int sh_files_redef_noignore(const char * str);
 int sh_files_redef_allignore(const char * str);
 
+ShFileType sh_files_filecheck (int class, unsigned long check_mask,
+			       const char * dirName, 
+			       const char * infileName,
+			       int * reported, 
+			       int rsrcflag);
+
+int sh_files_checkdir (int iclass, unsigned long check_mask, 
+		       int idepth, char * iname, 
+		       char * relativeName);
+
+int sh_files_search_file(char * name, int * class, 
+			 unsigned long *check_mask, int * reported);
+int sh_files_search_dir(char * name, int * class, 
+			unsigned long *check_mask, int *reported,
+			int * rdepth);
+void sh_files_set_file_reported(const char * name);
+void sh_files_clear_file_reported(const char * name);
 
 #endif
 

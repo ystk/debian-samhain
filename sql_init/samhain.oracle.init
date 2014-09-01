@@ -27,7 +27,7 @@ CREATE TABLE log (
         tty           VARCHAR2(16),
         peer          VARCHAR2(64),
         fromhost      VARCHAR2(64),
-        obj           VARCHAR2(128),
+        obj           VARCHAR2(4000),
         interface     VARCHAR2(64),
         time          VARCHAR2(64),
         dir           CLOB,

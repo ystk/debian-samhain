@@ -576,71 +576,8 @@ void sh_check_watches()
 /********************************************************
  * Search rotated logfile
  */
-#include <unistd.h>
-#include <libgen.h>
-#include <dirent.h>
+extern char * sh_rotated_log_search(const char * path, struct stat * buf);
 
-char * sh_rotated_log_search(const char * path, struct stat * buf)
-{
-
-  size_t size;
-  int    i;
-  char * searchpath;
-  struct stat sbuf;
-  DIR  * dp;
-  char * dname;
-  char * bname;
-
-  dname  = sh_util_dirname(path);
-  bname  = sh_util_basename(path);
-
-  size = strlen(dname) + strlen(bname) + 4;
-  searchpath = SH_ALLOC(size);
-
-  for (i = 0; i < 2; ++i)
-    {
-      snprintf(searchpath, size, "%s/%s.%1d", dname, bname, i);
-      if (0 == stat(searchpath, &sbuf) && sbuf.st_ino == buf->st_ino)
-	{
-	  SH_FREE(dname);
-	  SH_FREE(bname);
-	  return searchpath;
-	}
-    }
-
-  SH_FREE(searchpath);
-
-  if (NULL != (dp = opendir(dname)))
-    {
-      struct dirent * de;
-
-      while (NULL != (de = readdir(dp)))
-	{
-	  if (0 == strcmp(de->d_name, ".") || 0 == strcmp(de->d_name, ".."))
-	    continue;
-
-	  size = strlen(dname) + strlen(de->d_name) + 2;
-	  searchpath = SH_ALLOC(size);
-	  snprintf(searchpath, size, "%s/%s", dname, de->d_name);
-
-	  if (0 == stat(searchpath, &sbuf) && sbuf.st_ino == buf->st_ino)
-	    {
-	      SH_FREE(dname);
-	      SH_FREE(bname);
-	      closedir(dp);
-	      return searchpath;
-	    }
-	  
-	  SH_FREE(searchpath);
-	}
-      closedir(dp);
-    }
-
-  SH_FREE(dname);
-  SH_FREE(bname);
-
-  return NULL;
-}
 
 /* Open file, position at stored offset
  */
@@ -875,9 +812,6 @@ sh_string * sh_command_reader (sh_string * s, struct sh_logfile * logfile)
 {
   struct task_entry * entry;
 
-  struct  sigaction   new_act;
-  struct  sigaction   old_act;
-
   volatile int        status;
   char * tmp;
 
@@ -885,21 +819,9 @@ sh_string * sh_command_reader (sh_string * s, struct sh_logfile * logfile)
 
   if (logfile->fp)
     {
-      /* ignore SIGPIPE (instead get EPIPE if connection is closed)
-       */
-      memset(&new_act, 0, sizeof(struct  sigaction));
-      new_act.sa_handler = SIG_IGN;
-      (void) retry_sigaction (FIL__, __LINE__, SIGPIPE, &new_act, &old_act);
-
       /* Result cannot be larger than 8192, thus cast is ok
        */
       status = (int) sh_string_read(s, logfile->fp, 8192);
-
-      /* fprintf(stderr, "FIXME: %s\n", sh_string_str(s)); */
-
-      /* restore old signal handler
-       */
-      (void) retry_sigaction (FIL__, __LINE__, SIGPIPE, &old_act, NULL);
 
       if (status <= 0)
 	{
@@ -929,7 +851,7 @@ sh_string * sh_command_reader (sh_string * s, struct sh_logfile * logfile)
 
   entry = SH_ALLOC(sizeof(struct task_entry));
 
-  status = sh_ext_popen_init (&(entry->task), logfile->filename);
+  status = sh_ext_popen_init (&(entry->task), logfile->filename, logfile->filename, NULL);
   if (0 == status)
     {
       task_add(entry);
@@ -1028,7 +950,8 @@ sh_string * sh_cont_reader (sh_string * s, struct sh_logfile * logfile, char*con
 /******************************************************
  *  Reader for binary files 
  */
-sh_string * sh_binary_reader (void * s, size_t size, struct sh_logfile * logfile)
+sh_string * sh_binary_reader (void * s, size_t size, 
+			      struct sh_logfile * logfile)
 {
   size_t         status;
 
@@ -1041,6 +964,7 @@ sh_string * sh_binary_reader (void * s, size_t size, struct sh_logfile * logfile
 
       if (status != 1)
 	{
+	  memset(s, '\0', size);
 	  if (ferror(logfile->fp) && (logfile->flags & SH_LOGFILE_PIPE) == 0)
 	    {
 	      char * tmp;
@@ -1054,7 +978,6 @@ sh_string * sh_binary_reader (void * s, size_t size, struct sh_logfile * logfile
 	  fgetpos(logfile->fp, &(logfile->offset));
 	  sl_fclose(FIL__, __LINE__, logfile->fp);
 	  logfile->fp = NULL;
-	  memset(s, '\0', size);
 	  return NULL;
 	}
       return s;
@@ -1105,7 +1028,6 @@ time_t conv_timestamp (struct tm * btime,
   time_t timestamp;
   long   offtime;
 
-
   /* timestamp - mktime is slooow, thus cache result
    */
   if (btime->tm_isdst == old_tm->tm_isdst &&
@@ -1130,7 +1052,6 @@ time_t conv_timestamp (struct tm * btime,
 	btime->tm_year = year_guess(btime);
       timestamp = mktime(btime);
       btime->tm_year = year_btime;
-
       *old_time  = timestamp;
       memcpy(old_tm, btime, sizeof(struct tm));
     }
@@ -1166,6 +1087,11 @@ int sh_log_check_init (struct mod_type * arg)
 	return SH_MOD_THREAD;
       else
 	return SH_MOD_FAILED;
+    }
+  else if (arg != NULL && arg->initval == SH_MOD_THREAD &&
+	   (sh.flag.isdaemon == S_TRUE || sh.flag.loop == S_TRUE))
+    {
+      return SH_MOD_THREAD;
     }
 #endif
   if (sh_watched_logs != NULL)
@@ -1300,7 +1226,7 @@ sh_rconf sh_log_check_table[] = {
     },
     {
         N_("logmonmarkseverity"),
-        sh_logmon_set_save_dir,
+        sh_log_set_mark_severity,
     },
     {
         N_("logmonburstthreshold"),
@@ -1313,6 +1239,10 @@ sh_rconf sh_log_check_table[] = {
     {
         N_("logmonburstcron"),
         sh_repeat_set_cron,
+    },
+    {
+        N_("logmondeadtime"),
+        sh_keep_deadtime,
     },
     {
         NULL,
@@ -1381,9 +1311,11 @@ static int sh_logmon_set_interval (const char * c)
       SH_MUTEX_UNLOCK(mutex_thread_nolog);
       retval = -1;
     }
-
-  sh_logmon_interval = (time_t) val;
-  SL_RETURN(0, _("sh_logmon_set_interval"));
+  else
+    {
+      sh_logmon_interval = (time_t) val;
+    }
+  SL_RETURN(retval, _("sh_logmon_set_interval"));
 }
 
 /* Add a watch on a logfile.

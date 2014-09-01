@@ -538,6 +538,8 @@ int sh_database_query (char  * query, /*@out@*/ long * id)
   int          result    = 0;
   char         row_query[128];
   int          retry     = 0;
+  static SH_TIMEOUT sh_timer = { 0, 3600, S_TRUE };
+
 
   SL_ENTER(_("sh_database_query"));
 
@@ -635,29 +637,41 @@ int sh_database_query (char  * query, /*@out@*/ long * id)
 	       (OraText*) db_user,     sl_strlen(db_user), 
 	       (OraText*) db_password, sl_strlen(db_password), 
 	       (OraText*) db_name,     sl_strlen(db_name))) 
-      {   
-	OCIErrorGet(o_error, 1, NULL, &o_errorcode, 
-		    o_errormsg, sizeof(o_errormsg), OCI_HTYPE_ERROR);
-	sh_stripnl (o_errormsg);
-	sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN,
-			o_errormsg, 
-			_("sh_database_query"));
-	sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN,
-			_("check database is listed in tnsnames.ora"), 
-			_("sh_database_query"));
-	sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN,
-			_("check tnsnames.ora readable"), 
-			_("sh_database_query"));
-	sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN,
-			_("check database accessible with sqlplus"), 
-			_("sh_database_query"));
-	sl_snprintf(row_query, 127, 
-		    _("OCILogon: Connection to database '%s' failed"), 
-		    db_name); 
-	sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN, 
-			row_query, _("sh_database_query")); 
-	bad_init = 1;
-	SL_RETURN(-1, _("sh_database_query")); 
+      {
+   
+	connected = 0;
+
+	sh_timer.flag_ok = S_FALSE;
+
+	if (S_TRUE == sh_util_timeout_check(&sh_timer))
+	  {
+	    OCIErrorGet(o_error, 1, NULL, &o_errorcode, 
+			o_errormsg, sizeof(o_errormsg), OCI_HTYPE_ERROR);
+	    sh_stripnl (o_errormsg);
+	    sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN,
+			    o_errormsg, 
+			    _("sh_database_query"));
+	    sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN,
+			    _("check database is listed in tnsnames.ora"), 
+			    _("sh_database_query"));
+	    sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN,
+			    _("check tnsnames.ora readable"), 
+			    _("sh_database_query"));
+	    sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN,
+			    _("check database accessible with sqlplus"), 
+			    _("sh_database_query"));
+	    sl_snprintf(row_query, 127, 
+			_("OCILogon: Connection to database '%s' failed"), 
+			db_name); 
+	    sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN, 
+			    row_query, _("sh_database_query")); 
+
+	    goto err_out;
+	  }
+	else
+	  {
+	    SL_RETURN(0, _("sh_database_query"));
+	  }
       }
  
   if (OCIHandleAlloc(o_environment, (dvoid **)&o_statement, 
@@ -847,15 +861,8 @@ int sh_database_query (char  * query, /*@out@*/ long * id)
   /* 
    * Error
    */
-  if (sh_persistent_dbconn == S_FALSE)
-    {
-      OCILogoff(o_servicecontext, o_error);
-      OCIHandleFree((dvoid *) o_statement,      OCI_HTYPE_STMT);
-      OCIHandleFree((dvoid *) o_servicecontext, OCI_HTYPE_SVCCTX);
-      OCIHandleFree((dvoid *) o_error,          OCI_HTYPE_ERROR);
-      o_error = NULL;
-      connected = 0;
-    }
+  sh_database_reset();
+
   SL_RETURN(-1, _("sh_database_query"));
 }
 
@@ -1243,7 +1250,6 @@ long sh_database_entry (dbins * db_entry, long id)
   static char   columns[1024];
   char * values;
 
-  int    status;
   long   the_id;
   int    size;
   char * end;
@@ -1444,7 +1450,7 @@ long sh_database_entry (dbins * db_entry, long id)
 		      _("INSERT INTO %s %s VALUES %s"),
 		      db_table, columns, values);
 
-  status = sh_database_query (query, &the_id);
+  sh_database_query (query, &the_id);
 
   /*@-usedef@*//* no, 'values' is allocated here */
   SH_FREE(values);
@@ -1764,6 +1770,7 @@ int set_enter_wrapper (const char * str)
 }
 
 /* recursively enter linked list of messages into database, last first
+ * - last is client (if this is a client message received by client)
  */
 long sh_database_insert_rec (dbins * curr, int depth, char * host)
 {

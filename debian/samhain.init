@@ -30,23 +30,44 @@ set -e
 # Check if a daemon is running
 running()
 {
-    # No pidfile, probably no daemon present
-    #
-    [ ! -f "$PIDFILE" ] && return 1
-    pid=`cat $PIDFILE`
-    # No pid, probably no daemon present
-    [ -z "$pid" ] && return 1
-
-    pidofproc -p $PIDFILE
+# Check with pidfile first, if available
+    if [ -r "$PIDFILE" ] ; then
+	    pid=`cat $PIDFILE`
+# No pid, probably no daemon present
+	    if [ -n "$pid" ] ; then
+		    pidofproc -p $PIDFILE $DAEMON
+		    return $?
+	    fi
+    fi
+# Try to find the daemon by name
+    pidof $DAEMON >/dev/null 
     return $?
 }
+
+# Initialize 
+init_db()
+{
+# Initialize the database only if does not exist yet, abort if
+# it cannot be created
+     [  -f /var/state/samhain/samhain_file ] && return
+     log_progress_msg "Creating integrity database (this can take some minutes)."
+     samhain -t init >/var/log/samhain/samhain-init.log 2>&1
+     if [  ! -f /var/state/samhain/samhain_file ] ; then
+        log_failure_msg "Database could not be created. Review /var/log/samhain/samhain-init.log"
+        log_end_msg 1
+        exit 1
+    fi
+    log_progress_msg "Database created."
+}
+
 
 
 case "$1" in
   start)
         [ ! -e /var/run/${NAME} ] && mkdir -p /var/run/${NAME}
         log_begin_msg "Starting $DESC: $NAME"
-        start-stop-daemon --start --quiet --exec $DAEMON
+        init_db
+        start-stop-daemon --start --quiet --oknodo --pidfile $PIDFILE --exec $DAEMON
         log_end_msg $?
         ;;
   stop)
@@ -55,27 +76,39 @@ case "$1" in
         log_end_msg $?
         ;;
   reload)
-        log_begin_msg "Reloading $DESC configuration files: $NAME"
-        start-stop-daemon --stop --signal 1 --quiet --exec $DAEMON
-        log_end_msg $?
+  	log_begin_msg "Reloading $DESC configuration files: $NAME"
+	if running ; then
+		start-stop-daemon --stop --signal 1 --quiet --exec $DAEMON
+		log_end_msg $?
+	else
+            	log_daemon_msg " ERROR: $DAEMON is not running."
+		log_end_msg 1
+	fi
+
   	;;
   restart|force-reload)
         log_begin_msg "Restarting $DESC: $NAME"
-        start-stop-daemon --stop --quiet --retry 5 --oknodo --pidfile $PIDFILE  --name  $NAME 
-        for i in 1 2 3 ; do
-            if ! running; then break ; fi
-            sleep 1
-        done
+	if running; then
+	        start-stop-daemon --stop --quiet --retry 5 --oknodo --pidfile $PIDFILE  --name  $NAME 
+	        for i in 1 2 3 ; do
+	            if ! running; then break ; fi
+	            sleep 1
+	        done
+	fi
         if  ! running  ; then
-            start-stop-daemon --start --quiet --exec $DAEMON
+            start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON
             log_end_msg $?
         else
-            log_daemon_msg " ERROR: $DAEMON did not die in the expected time, will not reload"
+            log_daemon_msg " ERROR: $DAEMON did not die in the expected time, will not restart/force-reload"
             log_end_msg 1
         fi
         ;;
    status)
-        status_of_proc -p $PIDFILE $DAEMON $NAME && exit 0 || exit $?
+	if [ -e $PIDFILE ] ; then
+	   	status_of_proc -p $PIDFILE $DAEMON $NAME && exit 0 || exit $?
+	else
+	   	status_of_proc $DAEMON $NAME && exit 0 || exit $?
+	fi
         ;;
   *)
         N=/etc/init.d/${0##*/}

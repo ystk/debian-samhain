@@ -7,6 +7,7 @@
 
 struct ztest {
   char name[32];
+  int  iname;
 };
 
 static zAVLTree * ztest_tree   = NULL;
@@ -17,10 +18,17 @@ static zAVLKey ztest_key (void const * arg)
   return (zAVLKey) sa->name;
 }
 
+static zAVLKey ztest_intkey(void const *item)
+{
+  return (&((struct ztest *)item)->iname);
+}
+
+
 static void free_node (void * inptr)
 {
   struct ztest * ptr = (struct ztest *) inptr;
   ptr->name[0] = '\0';
+  ptr->iname   = 0;
 }
 
 void Test_zAVLTree(CuTest *tc) {
@@ -29,21 +37,30 @@ void Test_zAVLTree(CuTest *tc) {
   int result;
   int counter = 0;
 
-  struct ztest z1 = { "abc" };
-  struct ztest z2 = { "aac" };
-  struct ztest z3 = { "aaa1" };
-  struct ztest z4 = { "aaa3" };
-  struct ztest z5 = { "aaa2" };
-  struct ztest z6 = { "aaa6" };
-  struct ztest z7 = { "aaa5" };
-  struct ztest z8 = { "aaa4" };
+  struct ztest z1 = { "abc"  , 1 };
+  struct ztest z2 = { "aac"  , 2 };
+  struct ztest z3 = { "aaa1" , 3 };
+  struct ztest z4 = { "aaa3" , 4 };
+  struct ztest z5 = { "aaa2" , 5 };
+  struct ztest z6 = { "aaa6" , 6 };
+  struct ztest z7 = { "aaa5" , 7 };
+  struct ztest z8 = { "aaa4" , 8 };
+
+  struct ztest iz1 = { "aaa1" , 8 };
+  struct ztest iz2 = { "aaa2" , 7 };
+  struct ztest iz3 = { "aaa3" , 1 };
+  struct ztest iz4 = { "aaa4" , 3 };
+  struct ztest iz5 = { "aaa5" , 2 };
+  struct ztest iz6 = { "aaa5" , 6 };
+  struct ztest iz7 = { "aaa7" , 5 };
+  struct ztest iz8 = { "aaa8" , 4 };
 
   struct ztest * ptr;
 
   ptr = zAVLFirst(&cursor, ztest_tree);
   CuAssertTrue(tc, NULL == ptr);
 
-  ztest_tree = zAVLAllocTree (ztest_key);
+  ztest_tree = zAVLAllocTree (ztest_key, zAVL_KEY_STRING);
   CuAssertPtrNotNull(tc, ztest_tree);
 
   do {
@@ -244,4 +261,226 @@ void Test_zAVLTree(CuTest *tc) {
   CuAssertTrue (tc, z6.name[0] == '\0');
   CuAssertTrue (tc, z7.name[0] == '\0');
   CuAssertTrue (tc, z8.name[0] == '\0');
+
+
+  /* Numeric key here */
+
+  counter    = 0;
+  ztest_tree = NULL;
+
+  ptr = zAVLFirst(&cursor, ztest_tree);
+  CuAssertTrue(tc, NULL == ptr);
+
+  ztest_tree = zAVLAllocTree (ztest_intkey, zAVL_KEY_INT);
+  CuAssertPtrNotNull(tc, ztest_tree);
+
+  do {
+
+  ++counter;
+
+  result = zAVLInsert(ztest_tree, &iz1);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz2);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz3);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz4);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz5);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz6);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz7);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz8);
+  CuAssertTrue(tc, 0 == result);
+
+  ptr = zAVLFirst(&cursor, ztest_tree);
+  CuAssertStrEquals(tc, ptr->name, iz3.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz5.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz4.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz8.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz7.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz6.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz2.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz1.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertTrue(tc, NULL == ptr);
+
+  result = zAVLInsert(ztest_tree, &iz8);
+  CuAssertTrue(tc, 0 != result);
+  result = zAVLInsert(ztest_tree, &iz7);
+  CuAssertTrue(tc, 0 != result);
+  result = zAVLInsert(ztest_tree, &iz6);
+  CuAssertTrue(tc, 0 != result);
+  result = zAVLInsert(ztest_tree, &iz5);
+  CuAssertTrue(tc, 0 != result);
+
+  ptr = zAVLSearch(ztest_tree, &(iz1.iname));
+  CuAssertIntEquals(tc, ptr->iname, iz1.iname);
+  ptr = zAVLSearch(ztest_tree, &(iz2.iname));
+  CuAssertIntEquals(tc, ptr->iname, iz2.iname);
+  ptr = zAVLSearch(ztest_tree, &(iz3.iname));
+  CuAssertIntEquals(tc, ptr->iname, iz3.iname);
+  ptr = zAVLSearch(ztest_tree, &(iz6.iname));
+  CuAssertIntEquals(tc, ptr->iname, iz6.iname);
+  ptr = zAVLSearch(ztest_tree, &(iz4.iname));
+  CuAssertIntEquals(tc, ptr->iname, iz4.iname);
+
+  ptr = zAVLSearch(ztest_tree, &(iz2.iname));
+  CuAssertIntEquals(tc, ptr->iname, iz2.iname);
+  ptr = zAVLSearch(ztest_tree, &(iz3.iname));
+  CuAssertIntEquals(tc, ptr->iname, iz3.iname);
+  ptr = zAVLSearch(ztest_tree, &(iz7.iname));
+  CuAssertIntEquals(tc, ptr->iname, iz7.iname);
+
+  ptr = zAVLFirst(&cursor, ztest_tree);
+  CuAssertStrEquals(tc, ptr->name, iz3.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz5.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz4.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz8.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz7.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz6.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz2.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz1.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertTrue(tc, NULL == ptr);
+
+
+  ptr = zAVLSearch(ztest_tree, &(iz5.iname));
+  CuAssertStrEquals(tc, ptr->name, iz5.name);
+  ptr = zAVLSearch(ztest_tree, &(iz6.iname));
+  CuAssertStrEquals(tc, ptr->name, iz6.name);
+  ptr = zAVLSearch(ztest_tree, &(iz7.iname));
+  CuAssertStrEquals(tc, ptr->name, iz7.name);
+  ptr = zAVLSearch(ztest_tree, &(iz8.iname));
+  CuAssertStrEquals(tc, ptr->name, iz8.name);
+  ptr = zAVLSearch(ztest_tree, &(z1.iname)); /* been set to 0 */
+  CuAssertTrue(tc, NULL == ptr);
+
+  result = zAVLDelete(ztest_tree, &(iz8.iname));
+  CuAssertTrue(tc, 0 == result);
+  ptr = zAVLSearch(ztest_tree, &(iz8.iname));
+  CuAssertTrue(tc, NULL == ptr);
+
+  result = zAVLDelete(ztest_tree, &(iz3.iname));
+  CuAssertTrue(tc, 0 == result);
+  ptr = zAVLSearch(ztest_tree, &(iz3.iname));
+  CuAssertTrue(tc, NULL == ptr);
+
+  result = zAVLDelete(ztest_tree, &(iz1.iname));
+  CuAssertTrue(tc, 0 == result);
+  ptr = zAVLSearch(ztest_tree, &(iz1.iname));
+  CuAssertTrue(tc, NULL == ptr);
+
+  result = zAVLInsert(ztest_tree, &iz1);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz8);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz3);
+  CuAssertTrue(tc, 0 == result);
+
+  ptr = zAVLFirst(&cursor, ztest_tree);
+  CuAssertIntEquals(tc, ptr->iname, iz3.iname);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz5.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz4.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertIntEquals(tc, ptr->iname, iz8.iname);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz7.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz6.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertIntEquals(tc, ptr->iname, iz2.iname);
+  ptr = zAVLNext(&cursor);
+  CuAssertStrEquals(tc, ptr->name, iz1.name);
+  ptr = zAVLNext(&cursor);
+  CuAssertTrue(tc, NULL == ptr);
+
+  result = zAVLDelete(ztest_tree, &(iz1.iname));
+  CuAssertTrue(tc, 0 == result);
+  ptr = zAVLSearch(ztest_tree, &(iz1.iname));
+  CuAssertTrue(tc, NULL == ptr);
+
+  result = zAVLDelete(ztest_tree, &(iz2.iname));
+  CuAssertTrue(tc, 0 == result);
+  ptr = zAVLSearch(ztest_tree, &(iz2.iname));
+  CuAssertTrue(tc, NULL == ptr);
+
+  result = zAVLDelete(ztest_tree, &(iz3.iname));
+  CuAssertTrue(tc, 0 == result);
+  ptr = zAVLSearch(ztest_tree, &(iz3.iname));
+  CuAssertTrue(tc, NULL == ptr);
+
+  result = zAVLDelete(ztest_tree, &(iz4.iname));
+  CuAssertTrue(tc, 0 == result);
+  ptr = zAVLSearch(ztest_tree, &(iz4.iname));
+  CuAssertTrue(tc, NULL == ptr);
+
+  result = zAVLDelete(ztest_tree, &(iz5.iname));
+  CuAssertTrue(tc, 0 == result);
+  ptr = zAVLSearch(ztest_tree, &(iz5.iname));
+  CuAssertTrue(tc, NULL == ptr);
+
+  result = zAVLDelete(ztest_tree, &(iz6.iname));
+  CuAssertTrue(tc, 0 == result);
+  ptr = zAVLSearch(ztest_tree, &(iz6.iname));
+  CuAssertTrue(tc, NULL == ptr);
+
+  result = zAVLDelete(ztest_tree, &(iz7.iname));
+  CuAssertTrue(tc, 0 == result);
+  ptr = zAVLSearch(ztest_tree, &(iz7.iname));
+  CuAssertTrue(tc, NULL == ptr);
+
+  result = zAVLDelete(ztest_tree, &(iz8.iname));
+  CuAssertTrue(tc, 0 == result);
+  ptr = zAVLSearch(ztest_tree, &(iz8.iname));
+  CuAssertTrue(tc, NULL == ptr);
+
+} while (counter < 100);
+
+  result = zAVLInsert(ztest_tree, &iz1);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz2);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz3);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz4);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz5);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz6);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz7);
+  CuAssertTrue(tc, 0 == result);
+  result = zAVLInsert(ztest_tree, &iz8);
+  CuAssertTrue(tc, 0 == result);
+
+  zAVLFreeTree (ztest_tree, free_node);
+  CuAssertTrue (tc, iz1.iname == 0);
+  CuAssertTrue (tc, iz2.iname == 0);
+  CuAssertTrue (tc, iz3.iname == 0);
+  CuAssertTrue (tc, iz4.iname == 0);
+  CuAssertTrue (tc, iz5.iname == 0);
+  CuAssertTrue (tc, iz6.iname == 0);
+  CuAssertTrue (tc, iz7.iname == 0);
+  CuAssertTrue (tc, iz8.iname == 0);
+
+
 }

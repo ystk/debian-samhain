@@ -322,7 +322,7 @@ static int close_kmem(struct inode *inode, struct file *file)
  */
 static rwlock_t * sh_vmlist_lock_ptr = (rwlock_t *) SH_VMLIST_LOCK;
 
-static struct vm_struct * sh_vmlist   = (struct vm_struct *) SH_VMLIST_LOCK;
+static struct vm_struct * sh_vmlist   = (struct vm_struct *) SH_VMLIST;
 /*
  *
  *********************************************************************/

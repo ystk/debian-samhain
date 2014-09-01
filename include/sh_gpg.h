@@ -21,6 +21,11 @@
 
 #ifndef SH_GPG_H
 #define SH_GPG_H
+
+/* Top level function to verify file.
+ */
+SL_TICKET sh_gpg_extract_signed(SL_TICKET fd);
+
 /* this function exits if configuration file
  * and/or database cannot be verified; otherwise returns 0
  */

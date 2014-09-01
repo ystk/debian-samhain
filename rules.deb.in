@@ -26,6 +26,13 @@ build-stamp:
 	$(MAKE) 
 	echo '#!/bin/sh' > ./sstrip
 	echo 'echo "*** SSTRIP DISABLED ***"' >> ./sstrip
+	if ! test x$(PASSWORD) = x; then \
+		if test -f samhain_setpwd; then \
+			./samhain_setpwd samhain new $(PASSWORD); \
+			rm samhain; \
+			mv samhain.new samhain; \
+		fi; \
+	fi
 	touch build-stamp
 
 clean:

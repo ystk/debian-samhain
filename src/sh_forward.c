@@ -454,7 +454,7 @@ int sh_forward_send_intern (int mysocket, char protocol, char * micro,
 			    errorExplain(err_num, expbuf, sizeof(expbuf)), 
 			    _("sh_forward_send_intern: blockEncrypt"));
 	  memcpy(q, outBlock, B_SIZ);
-	  q += B_SIZ;
+	  /* q += B_SIZ; *//* never read */
 	}
 
       outbuf = msg2buf;
@@ -583,6 +583,12 @@ long sh_forward_receive_intern (int mysocket, char protocol, char * micro,
       SL_RETURN(flag_err, _("sh_forward_receive_intern"));
     }
   /*@-usedef +ignoresigns@*/
+  else if (msgbuf == NULL)
+    {
+      sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN,
+		      _("msgbuf is NULL"), _("sh_forward_receive_intern"));
+      SL_RETURN((-1), _("sh_forward_receive_intern"));
+    }
   else if (head[0] != protocol &&  
 	   (head[0] & SH_PROTO_SRP) == (char)0 /* not set */)
     {
@@ -1665,14 +1671,14 @@ static  long sh_forward_try_impl (char * errmsg, char what)
           if ( (sfd = open_tmp ()) < 0)
 	    {
 	      flag_err = (-1);
-	      sh_error_handle((-1), FIL__, __LINE__, 0, MSG_TCP_EFIL);
+	      sh_error_handle((-1), FIL__, __LINE__, flag_err, MSG_TCP_EFIL);
 	    }
 	  else
 	    {
 	      /* --- Read from socket into tmp file. ---
 	       */
 	      transfercount = 0;
-	      flag_err      = 0;
+	      /* flag_err      = 0; *//* never read */
 
 	      do {
 		flag_err = (int)
@@ -1733,7 +1739,7 @@ static  long sh_forward_try_impl (char * errmsg, char what)
 		    
 	      if (0 == check_request_nerr(head_u, _("EEOT")) &&
 		  0 <  flag_err                             &&
-		  0 == hash_check (foo_M1, answer, (int)strlen(answer)))
+		  0 == hash_check (foo_M1, answer, (int)sl_strlen(answer)))
 		{
 		  flag_err = 
 		    sh_forward_send_crypt (sockfd, (char) theProto, 
@@ -1744,7 +1750,7 @@ static  long sh_forward_try_impl (char * errmsg, char what)
 		  (void) rewind_tmp (sfd);
 		  (void) sl_sync(sfd);
 		  if (flag_err_info == SL_TRUE)
-		    sh_error_handle((-1), FIL__, __LINE__, 0, MSG_TCP_FOK);
+		    sh_error_handle((-1), FIL__, __LINE__, flag_err, MSG_TCP_FOK);
 		}
 	      else
 		{
@@ -2087,7 +2093,7 @@ int sh_forward_register_client (const char * str)
 
   if (all_clients == NULL)
     {
-      all_clients = zAVLAllocTree (sh_avl_key);
+      all_clients = zAVLAllocTree (sh_avl_key, zAVL_KEY_STRING);
       if (all_clients == NULL) 
 	{
 	  (void) safe_logger (0, 0, NULL);
@@ -2388,6 +2394,12 @@ void sh_forward_prep_send_int (sh_conn_t * conn,
       conn->buf = sh_tools_makePack (conn->head, msg, length2,
 				     &(conn->client_entry->keyInstE));
     }
+  else if (msg == NULL)
+    {
+      sh_error_handle((-1), FIL__, __LINE__, -1, MSG_E_SUBGEN,
+		      _("msg is NULL"), 
+		      _("sh_forward_prep_send_int: cipherInit"));
+    }
   else if ((S_TRUE == docrypt) && ((protocol & SH_PROTO_ENC) != 0) &&
 	   ((length2 + 1) > length2))
     {
@@ -2430,7 +2442,7 @@ void sh_forward_prep_send_int (sh_conn_t * conn,
 			    errorExplain(err_num, expbuf, sizeof(expbuf)), 
 			    _("sh_forward_prep_send_int: blockEncrypt"));
 	  memcpy(q, outBlock, B_SIZ);
-	  q += B_SIZ;
+	  /* q += B_SIZ; *//* never read */
 	}
 
       TPT((0, FIL__, __LINE__, _("msg=<encryption done>\n") ));
@@ -2532,8 +2544,6 @@ int sh_forward_set_time_limit (const char * c)
   val = strtol (c, (char **)NULL, 10);
   if (val <= 0)
     SL_RETURN( (-1), _("sh_forward_set_time_limit"));
-
-  val = (val < 0 ? 0 : val);
 
   time_client_limit = (time_t) val;
   SL_RETURN( (0), _("sh_forward_set_time_limit"));
@@ -3614,7 +3624,7 @@ void check_protocol(sh_conn_t * conn, int state)
 #if defined(SH_WITH_SERVER) && defined(HAVE_LIBPRELUDE)
 		  {
 		    char peer_ip[SH_IP_BUF];
-		    sh_ipvx_ntoa(peer_ip, sizeof(peer_ip), conn->addr_peer); 
+		    sh_ipvx_ntoa(peer_ip, sizeof(peer_ip), &(conn->addr_peer)); 
 		    sh_error_set_peer_ip( peer_ip );
 		  }                        
 #endif
@@ -5054,9 +5064,6 @@ void sh_receive()
 
   unsigned long tchkold;
 
-  struct  sigaction  new_act;
-  struct  sigaction  old_act;
-
   int setsize_fd;
 
   int sock_tcp[2];
@@ -5066,14 +5073,6 @@ void sh_receive()
 #endif
   
   SL_ENTER(_("sh_receive"));
-
-  /* ignore SIGPIPE (instead get EPIPE if connection is closed)
-   *      --- we have called sh_unix_init() already ---
-   */
-  new_act.sa_handler = SIG_IGN;
-  sigemptyset( &new_act.sa_mask );         /* set an empty mask       */
-  new_act.sa_flags = 0;                    /* init sa_flags           */
-  retry_sigaction (FIL__, __LINE__, SIGPIPE, &new_act, &old_act);
 
   if ( sh_forward_printerr_final(0) < 0)
     {
@@ -5152,14 +5151,14 @@ void sh_receive()
     {
       conns[sock].fd    = sh_tcp_sock[sock];
       conns[sock].state = CONN_READING;
-      high_fd = (sh_tcp_sock[sock] > high_fd) ? sh_tcp_sock[sock] : high_fd;
+      /* high_fd = (sh_tcp_sock[sock] > high_fd) ? sh_tcp_sock[sock] : high_fd; */
       ++sock;
     }
   sock_tcp[1] = sock;
   
   conns[sock].fd    = pf_unix_fd;
   conns[sock].state = CONN_READING;
-  high_fd = (pf_unix_fd > high_fd) ? pf_unix_fd : high_fd;
+  /* high_fd = (pf_unix_fd > high_fd) ? pf_unix_fd : high_fd; */
 
   sock_unix = sock;
 
@@ -5185,7 +5184,7 @@ void sh_receive()
 	{
 	  conns[sock].fd    = syslog_sock[s2];
 	  conns[sock].state = CONN_READING;
-	  high_fd = (high_fd > conns[sock].fd) ? high_fd : conns[sock].fd;
+	  /* high_fd = (high_fd > conns[sock].fd) ? high_fd : conns[sock].fd; */
 	  ++sock;
 	}
       sock_log[1] = sock;
@@ -5773,7 +5772,7 @@ static int recv_syslog_socket (int fd)
    * but *int everywhere else. Because socklen_t is unsigned int, there
    * should be no problem as long as  sizeof(struct sockaddr_in) < INT_MAX ...
    */
-  int                fromlen = sizeof(from);
+  unsigned int fromlen = sizeof(from);
 
   if (enable_syslog_socket == S_FALSE)
     return 0;
@@ -5790,7 +5789,7 @@ static int recv_syslog_socket (int fd)
 
   res = recvfrom(fd,  buf,  1047, 0, (struct sockaddr *) &from, &fromlen);
 
-  sh_ipvx_save(&ss, sa->sa_family, &from);
+  sh_ipvx_save(&ss, sa->sa_family, (struct sockaddr *) &from);
   sh_ipvx_ntoa(namebuf, sizeof(namebuf), &ss);
 
   if (res > 0)
@@ -5854,10 +5853,10 @@ static int recv_syslog_socket (int fd)
 	 xml special chars (flag == 1) */
       tmp = sh_tools_safe_name (ptr, 1);
       sh_error_handle((-1), FIL__, __LINE__, 0, MSG_INET_SYSLOG,
-		      my_inet_ntoa(from.sin_addr), 
+		      namebuf, 
 		      (cfac == NULL) ? _("none") : cfac, 
 		      (cpri == NULL) ? _("none") : cpri, 
-		      (ptr  == NULL) ? _("none") : ptr);
+		      (tmp  == NULL) ? _("none") : tmp);
       if (cfac != NULL)
 	SH_FREE(cfac);
       if (cpri != NULL)
@@ -5958,13 +5957,16 @@ int create_syslog_socket (int callerFlag)
 
   if (callerFlag == S_FALSE)
     {
-      if (enable_syslog_socket == S_FALSE && syslog_sock >= 0)
+      if (enable_syslog_socket == S_FALSE && syslog_sock_n > 0)
 	{
 	  /* user does not wish to use this facility
 	   */
 	  TPT(( 0, FIL__, __LINE__, _("msg=<close syslog socket>\n")));
-	  sl_close_fd(FIL__, __LINE__, syslog_sock);
-	  syslog_sock[0] = -1;
+	  for (sock = 0; sock < syslog_sock_n; ++sock)
+	    {
+	      sl_close_fd(FIL__, __LINE__, syslog_sock[sock]);
+	      syslog_sock[0] = -1;
+	    }
 	}
       SL_RETURN((-1), _("create_syslog_socket"));
     }
@@ -5977,7 +5979,8 @@ int create_syslog_socket (int callerFlag)
   addr.sin_family      = AF_INET;
   addr.sin_port        = htons(514);
   
-  do_syslog_socket(AF_INET, SOCK_DGRAM, 0, (struct sockaddr *) &addr, addrlen);
+  sock = do_syslog_socket(AF_INET, SOCK_DGRAM, 0, 
+			  (struct sockaddr *) &addr, addrlen);
 
   if (sock >= 0) {
     syslog_sock[0] = sock;
@@ -5990,9 +5993,8 @@ int create_syslog_socket (int callerFlag)
   hints.ai_socktype = SOCK_DGRAM;
   if (getaddrinfo (NULL, "syslog", &hints, &ai) != 0)
     {
-      errnum = errno;
+      int errnum = errno;
       sh_forward_printerr (_("getaddrinfo"), errnum, 514, __LINE__);
-      sl_close_fd (FIL__, __LINE__, sock);
       SL_RETURN((-1), _("create_syslog_socket"));
     }
   
@@ -6018,9 +6020,9 @@ int create_syslog_socket (int callerFlag)
       p = p->ai_next;
     }
   freeaddrinfo (ai);
-#endif
 
  end:
+#endif
   if (syslog_sock_n > 1)
     SH_MINSOCK += (syslog_sock_n - 1);
 

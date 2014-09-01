@@ -1050,7 +1050,12 @@ run_init ()
 
 run_check ()
 {
-    ${VALGRIND} ./samhain -t check -p none -l debug 2>>test_log_valgrind
+    if [ "x$1" = "x"  ]; then
+	logsev=debug
+    else
+	logsev=$1
+    fi
+    ${VALGRIND} ./samhain -t check -p none -l $logsev 2>>test_log_valgrind
  
     if test x$? = x0; then
 

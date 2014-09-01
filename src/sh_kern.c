@@ -91,6 +91,10 @@ sh_rconf sh_kern_table[] = {
     sh_kern_set_pci
   },
   {
+    N_("kernelcheckproc"),
+    sh_kern_set_proc
+  },
+  {
     N_("kernelsystemcall"),
     sh_kern_set_sc_addr
   },
@@ -124,6 +128,7 @@ static int     ShKernSeverity = SH_ERR_SEVERE;
 static int     ShKernDelay    = 100; /* milliseconds */
 static int     ShKernIDT      = S_TRUE;
 static int     ShKernPCI      = S_TRUE;
+static int     ShKernPROC     = S_TRUE;
 
 /* The address of system_call
  */
@@ -847,9 +852,9 @@ static void check_idt_table(int is_init)
   int            i, j;
 
   unsigned short idt_offset_lo, idt_offset_hi, idt_selector;
-  unsigned char  idt_reserved, idt_flag;
+  unsigned char  /* idt_reserved, */ idt_flag;
   unsigned short sh_idt_offset_lo, sh_idt_offset_hi, sh_idt_selector;
-  unsigned char  sh_idt_reserved, sh_idt_flag;
+  unsigned char  /* sh_idt_reserved, */ sh_idt_flag;
   int            dpl;
   unsigned long  idt_iaddr;
   int            sh_dpl;
@@ -888,7 +893,7 @@ static void check_idt_table(int is_init)
 	  
 	      sh_idt_offset_lo = *((unsigned short *) &sh_idt_table[i]);
 	      sh_idt_selector  = *((unsigned short *) &sh_idt_table[i+2]);
-	      sh_idt_reserved  = (unsigned char) sh_idt_table[i+4];
+	      /* sh_idt_reserved  = (unsigned char) sh_idt_table[i+4]; */
 	      sh_idt_flag      = (unsigned char) sh_idt_table[i+5];
 	      sh_idt_offset_hi = *((unsigned short *) &sh_idt_table[i+6]);
 	      sh_idt_iaddr = (unsigned long)(sh_idt_offset_hi << 16) 
@@ -918,7 +923,7 @@ static void check_idt_table(int is_init)
 		  
 		  idt_offset_lo = *((unsigned short *) &idt_table[i]);
 		  idt_selector  = *((unsigned short *) &idt_table[i+2]);
-		  idt_reserved  = (unsigned char) idt_table[i+4];
+		  /* idt_reserved  = (unsigned char) idt_table[i+4]; */
 		  idt_flag      = (unsigned char) idt_table[i+5];
 		  idt_offset_hi = *((unsigned short *) &idt_table[i+6]);
 		  idt_iaddr = (unsigned long)(idt_offset_hi << 16) 
@@ -1098,12 +1103,18 @@ static void check_pci()
 static void check_proc_root (struct sh_kernel_info * kinfo)
 {
   struct proc_dir_entry     proc_root_dir;
-  struct inode_operations * proc_root_inode_op = NULL;
+  int                       proc_root_inode_op_flag = 0;
 
 /* 2.6.21 (((2) << 16) + ((6) << 8) + (21)) */
 #if SH_KERNEL_NUMBER < KERNEL_VERSION(2,6,21)
   struct inode_operations proc_root_inode;
+#endif
 
+  if (ShKernPROC != S_TRUE)
+    return;
+
+/* 2.6.21 (((2) << 16) + ((6) << 8) + (21)) */
+#if SH_KERNEL_NUMBER < KERNEL_VERSION(2,6,21)
   memcpy (&proc_root_inode, &(kinfo->proc_root_inode), sizeof(struct inode_operations));
 
   /* Seems that the info does not relate anymore to proc_root_lookup(?)
@@ -1119,18 +1130,18 @@ static void check_proc_root (struct sh_kernel_info * kinfo)
 
   if (((unsigned long) * &proc_root_dir.proc_iops) == proc_root_iops)
     {
-      proc_root_inode_op = (struct inode_operations *) &(proc_root_dir.proc_iops);
+      proc_root_inode_op_flag = 1;
     }
   else if (proc_root_dir.size == proc_root_iops)
     {
-      proc_root_inode_op = (struct inode_operations *) &(proc_root_dir.size);
+      proc_root_inode_op_flag = 1;
     }
   else if ((unsigned long) * &proc_root_dir.proc_fops == proc_root_iops)
     {
-      proc_root_inode_op = (struct inode_operations *) &(proc_root_dir.proc_fops);
+      proc_root_inode_op_flag = 1;
     }
 
-  if (!proc_root_inode_op)
+  if (0 == proc_root_inode_op_flag)
     {
       sh_error_handle ((-1), FIL__, __LINE__, 0, MSG_KERN_PROC,
 		       _("proc_root.proc_iops != proc_root_inode_operations"));
@@ -2014,6 +2025,14 @@ int sh_kern_set_pci (const char * c)
   SL_ENTER(_("sh_kern_set_pci"));
   i = sh_util_flagval(c, &ShKernPCI);
   SL_RETURN(i, _("sh_kern_set_pci"));
+}
+
+int sh_kern_set_proc (const char * c)
+{
+  int i;
+  SL_ENTER(_("sh_kern_set_proc"));
+  i = sh_util_flagval(c, &ShKernPROC);
+  SL_RETURN(i, _("sh_kern_set_proc"));
 }
 
 int sh_kern_set_sc_addr (const char * c)

@@ -76,7 +76,7 @@ int sh_log_mark_add (const char * label, time_t interval, const char * qlabel)
 
   if (!(marklist))
     {
-      marklist = zAVLAllocTree(sh_log_mark_getkey);
+      marklist = zAVLAllocTree(sh_log_mark_getkey, zAVL_KEY_STRING);
     }
 
   event = (struct sh_mark_event *) zAVLSearch(marklist, label);

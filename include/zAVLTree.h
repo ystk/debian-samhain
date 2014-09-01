@@ -32,10 +32,13 @@
 #define _ZAVLTREE_H_
 
 /* typedef the keytype */
-typedef const char * zAVLKey;
+typedef const void * zAVLKey;
 
 /* Comparison function for strings is strcmp(). */
-#define zAVLKey_cmp(tree, a, b) (strcmp((a), (b)))
+/* #define zAVLKey_cmp(tree, a, b) (strcmp((a), (b))) */
+
+#define zAVL_KEY_STRING 0
+#define zAVL_KEY_INT    1
 
 
 typedef struct _zAVLNode {
@@ -52,6 +55,7 @@ typedef struct {
   zAVLNode *top;
   long count;
   zAVLKey (*getkey)(const void *item);
+  int keytype;
 } zAVLTree;
 
 
@@ -61,7 +65,7 @@ typedef struct {
 } zAVLCursor;
 
 
-extern zAVLTree *zAVLAllocTree (zAVLKey (*getkey)(void const *item));
+extern zAVLTree *zAVLAllocTree (zAVLKey (*getkey)(void const *item), int keytype);
 extern void zAVLFreeTree (zAVLTree *avltree, void (freeitem)(void *item));
 extern int zAVLInsert (zAVLTree *avltree, void *item);
 extern void *zAVLSearch (zAVLTree const *avltree, zAVLKey key);

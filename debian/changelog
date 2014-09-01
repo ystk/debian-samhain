@@ -1,3 +1,95 @@
+samhain (3.1.0-6) unstable; urgency=medium
+
+  * debian/rules: Add an option to disable the ASM code when building
+    on amd64 targets. Work around to fix the FTBFS on amd64 and kfreebsd
+    (Closes: #735530) 
+    Patch provided by Adam Conrad.
+  * debian/control: Change build-deps to add autotools-dev. Build on new
+    architectures will get config.{sub,guess} automatically without you needing
+    to do a fresh upload to update the diff.
+    Patch provided by Adam Conrad.
+  * debian/samhain.init,debian/postinst: Initialise the integrity database if
+    it does not exist the first time the init.d script is run, do not do it in
+    postinst. This prevents package installation from sending a mail to root
+    which causes problems in automated testing tools (such as piuparts)
+    (Closes: #749602)
+  * debian/samhain.init: Fix call to pidofproc, provide it with the required
+    arguments (Closes: #751747) (LP: #1330424)
+
+
+ -- Javier Fernández-Sanguino Peña <jfs@debian.org>  Wed, 18 Jun 2014 21:39:56 +0200
+
+samhain (3.1.0-5) unstable; urgency=medium
+
+  * debian/samhainrc: Use 'root@localhost' for SetMailAddress instead of just
+    'root' since the basic mailer configuration requires that a domain is
+    provided in the RCPT TO.
+  * debian/samhain.init: Improve the init script:    
+    - Do not fail in 'start' if the daemon is already started, use --oknodo
+      (Closes: #736375)        
+    - Do not try to stop the daemon (and wait for it to stop) if it is not running
+    - If the pidfile has been lost, try to determine the status using the
+      process name instead
+  * debian/control: Do not require libauparse-dev in kfreebsd (Closes: #736169)
+  * debian/rules: update config.{sub,guess} on build if available and restore
+    on clean
+
+ -- Javier Fernández-Sanguino Peña <jfs@debian.org>  Thu, 23 Jan 2014 04:00:30 +0100
+
+samhain (3.1.0-3) unstable; urgency=medium
+
+  * debian/rules:
+    - Disable dnmalloc for all architectures expect those known to work. It
+      seems to be the source of problems and segfaults in many different
+      architectures (Closes: #533860, #657307)
+
+      Even though dnmalloc improves samhain's security this is done to avoid
+      potential problematic situations while we wait more information from
+      upstream indicating in which architectures dnmalloc() can
+      be safely enabled.
+
+ -- Javier Fernández-Sanguino Peña <jfs@debian.org>  Thu, 16 Jan 2014 03:30:24 +0100
+
+samhain (3.1.0-2) unstable; urgency=medium
+
+  * debian/rules:
+    - Disable dnmalloc for s390x, as it is done for s390 already 
+      (Closes: #733875)
+    - Preliminary code to build server (yule) and client although. This a
+      first step to fix #343346
+  * debian/control
+    - Add libauparse-dev to the Build-dependencies to ensure that audit
+      support is enabled (Closes: #700156)
+
+ -- Javier Fernández-Sanguino Peña <jfs@debian.org>  Thu, 16 Jan 2014 01:57:57 +0100
+
+samhain (3.1.0-1) unstable; urgency=medium
+
+  * New upstream release. (Closes: #733468, #700109)
+  * This new upstream release builds with gcc 4.8 (Closes: #701353)
+  * Fix use of /var/run/samhain, which is created by the init.d script since
+    version 2.6.2-1:
+        - Remove the /var/run/samhain directory when the package is purged
+        - Do not ship /var/run/samhain in the package file
+    Thanks go to Thomas Goirand for spotting this issue and providing a patch,
+    which I used as a basis for the above changes
+    (Closes: #689902)
+  * Default samhainrc now uses SetMailAddress=root, SetMailRelay=localhost
+    since there have been reports of the previous confguration
+    (SetMailAddress=root@localhost, SetMailRelay=NULL) not working since
+    samhain tries to retrieve an MX record for 'localhost' from the DNS
+    (Closes: 709753)
+
+ -- Javier Fernández-Sanguino Peña <jfs@debian.org>  Fri, 10 Jan 2014 16:51:45 +0100
+
+samhain (3.0.3-1) experimental; urgency=low
+
+  * Updated to latest upstream version
+  * Updated config.sub and config.guess with latest autools-dev versions
+  * Update maintainer's name in debian/control
+
+ -- Javier Fernández-Sanguino Peña <jfs@debian.org>  Mon, 09 Apr 2012 23:28:06 +0200
+
 samhain (2.8.3a-1) unstable; urgency=low
 
   * New upstream release (Closes: #602678)
@@ -48,7 +140,7 @@ samhain (2.6.2-1) unstable; urgency=low
     samhain-install.sh.in (Closes: #565820)
   * Lintian fixes:
     - Do not create /var/run/samhain in debian/dirs but, instead, do it in the
-      init script when the daemon is started.
+      init script when the daemon is started. (LP: #391111, #878242)
     - Fix debian/samhain.doc-base: section and PDf location
     - debian/postinst: change absolute reference to samhain binary
     - debian/control: Move Homepage to package header

@@ -38,10 +38,15 @@ testhash ()
 	    if [ $? -eq 0 ]; then
 		C_LOGFILE=" --enable-logfile-monitor "
 	    else
-		ls /usr/local/lib/libpcre* >/dev/null 2>&1
-		if [ $? -eq 0 ]; then
-		    C_LOGFILE=" --enable-logfile-monitor "
-		fi
+                ls /usr/lib/*/libpcre* >/dev/null 2>&1
+                if [ $? -eq 0 ]; then
+                    C_LOGFILE=" --enable-logfile-monitor "
+                else
+                    ls /usr/local/lib/libpcre* >/dev/null 2>&1
+                    if [ $? -eq 0 ]; then
+                        C_LOGFILE=" --enable-logfile-monitor "
+                    fi
+                fi
 	    fi
 	fi
 	if [ x"${C_LOGFILE}" = x ]; then
@@ -57,7 +62,7 @@ testhash ()
 		$MAKE distclean
 	fi
 	#
-	${TOP_SRCDIR}/configure --quiet $TRUST --prefix=$PW_DIR --localstatedir=$PW_DIR --with-config-file=$RCFILE --with-log-file=$LOGFILE --with-pid-file=$PW_DIR/.samhain_lock --with-data-file=$PW_DIR/.samhain_file --enable-debug '--enable-login-watch' '--enable-mounts-check' ${C_LOGFILE} '--enable-process-check' '--enable-port-check' '--enable-suidcheck' '--with-rnd=unix'
+	${TOP_SRCDIR}/configure --enable-debug=gdb --quiet $TRUST --prefix=$PW_DIR --localstatedir=$PW_DIR --with-config-file=$RCFILE --with-log-file=$LOGFILE --with-pid-file=$PW_DIR/.samhain_lock --with-data-file=$PW_DIR/.samhain_file --enable-db-reload '--enable-login-watch' '--enable-mounts-check' ${C_LOGFILE} '--enable-port-check' '--enable-suidcheck' '--with-rnd=unix'
 	#
 	fail=0
 	#

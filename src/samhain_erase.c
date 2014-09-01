@@ -70,10 +70,19 @@
 
 /* The configure options (#defines) for the Kernel
  */
-#include <linux/config.h>
+#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
 
+#if SH_KERNEL_NUMERIC >= KERNEL_VERSION(2,6,33)
+#include <generated/autoconf.h>
+#else
+#if SH_KERNEL_NUMERIC >= KERNEL_VERSION(2,6,19)
+#include <linux/autoconf.h>
+#else
+#include <linux/config.h>
 #ifdef CONFIG_MODVERSIONS
 #include <linux/modversions.h>
+#endif
+#endif
 #endif
 
 #include <linux/kernel.h>

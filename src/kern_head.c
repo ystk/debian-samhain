@@ -142,6 +142,9 @@ int read_kcode (unsigned long addr, unsigned char * buf, int len)
 
   if (fd < 0)
     {
+      if (verbose)
+	fprintf(stderr, "read_kcode: /dev/kmem failed, now trying /proc/kmem\n");
+
       if (0 != access("/proc/kmem", R_OK)) 
 	{
 	  perror("read_kcode: access /proc/kmem");
@@ -437,10 +440,13 @@ int main(int argc, char * argv[])
       exit (EXIT_FAILURE);
     }
 
-  if (minor != 4 && minor != 6)
+  if (major == 2)
     {
-      fprintf(stderr, "kern_head: kernel %s not supported\n", p);
-      exit (EXIT_FAILURE);
+      if (minor != 4 && minor != 6)
+	{
+	  fprintf(stderr, "kern_head: kernel %s not supported\n", p);
+	  exit (EXIT_FAILURE);
+	}
     }
 
   
@@ -488,7 +494,7 @@ int main(int argc, char * argv[])
 	  strcpy(sh_smap[i].name, syscalls_32[i]);
 	  sh_smap[i].addr    = 0UL;
 	}
-      if (minor == 6) /* fix syscall map for 2.6 */
+      if (major > 2 || minor == 6) /* fix syscall map for 2.6 */
 	{
 	  strcpy(sh_smap[0].name,   "sys_restart_syscall");
 	  strcpy(sh_smap[180].name, "sys_pread64");

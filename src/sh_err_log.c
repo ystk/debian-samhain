@@ -23,6 +23,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "samhain.h"
 #include "sh_error.h"
@@ -1052,3 +1053,279 @@ int  sh_log_file (/*@null@*/char *errmsg, /*@null@*/char * inet_peer)
   SL_RETURN (0, _("sh_log_file"));
 }
 
+/* >>>>>>>>>>>>>>>>>>>>>>>>>>>> efile <<<<<<<<<<<<<<<<<< */
+
+static char * gEfile = NULL;
+static int    gFail  = 0;
+static long   gGid   = 0;
+
+int sh_efile_group(const char * str)
+{
+  int  fail;
+  long gid = sh_group_to_gid(str, &fail);
+
+  if (fail < 0)
+    {
+      return -1;
+    }
+  gGid = gid;
+  return 0;
+}
+
+
+int sh_efile_path(const char * str) 
+{
+  if (!str || !strcmp(str, _("none")))
+    {
+      if (gEfile)
+	SH_FREE(gEfile);
+      gEfile = NULL;
+    }
+  else if (str[0] != '/')
+    {
+      return -1;
+    }
+  else
+    {
+      if (gEfile)
+	SH_FREE(gEfile);
+      gEfile = sh_util_strdup(str);
+    }
+  gFail = 0;
+  return 0;
+}
+
+/* write lock for filename
+ */
+static int sh_efile_lock (char * filename, int flag)
+{
+  extern int get_the_fd (SL_TICKET ticket);
+  size_t len;
+  int    res = -1;
+  char myPid[64];
+  SL_TICKET  fd;
+  char * lockfile;
+  int    status;
+
+  sprintf (myPid, "%ld\n", (long) sh.pid);             /* known to fit  */
+
+  if (filename == NULL)
+    return res;
+
+  len = sl_strlen(filename);
+  if (sl_ok_adds(len, 6))
+    len += 6;
+  lockfile = SH_ALLOC(len);
+  sl_strlcpy(lockfile, filename,   len);
+  sl_strlcat(lockfile, _(".lock"), len);
+
+  if (  0 !=  (status = tf_trust_check (lockfile, SL_YESPRIV))
+	&& gFail == 0)
+    {
+      char * tmp  = sh_util_safe_name (lockfile);
+      sh_error_handle ((-1), FIL__, __LINE__, status, MSG_E_TRUST,
+			   (long) sh.effective.uid, tmp);
+      ++gFail;
+      SH_FREE(tmp);
+    }
+
+  if (status == 0)
+    {
+      if (flag == 0)
+	{
+	  /* --- Delete the lock file. --- 
+	   */
+	  res = retry_aud_unlink (FIL__, __LINE__, lockfile);
+	}
+      else
+	{
+	  unsigned int count = 0;
+
+	  /* fails if file exists 
+	   */
+	  do {
+	    fd = sl_open_safe_rdwr (FIL__, __LINE__, 
+				    lockfile, SL_YESPRIV);
+	    if (SL_ISERROR(fd))
+	      {
+		retry_msleep(0, 100);
+		++count;
+	      }
+
+	  } while (SL_ISERROR(fd) && count < 3);
+      
+	  if (!SL_ISERROR(fd))
+	    {
+	      int filed;
+
+	      res = sl_write (fd, myPid, sl_strlen(myPid));
+	      filed = get_the_fd(fd);
+	      fchmod (filed, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
+	      sl_close (fd);
+	    }
+	  else
+	    {
+	      static int nFail = 0;
+
+	      if (nFail == 0)
+		{
+		  char errmsg[1024];
+		  char * tmp  = sh_util_safe_name (lockfile);
+		  
+		  sl_snprintf(errmsg, sizeof(errmsg), 
+			      _("Error creating lockfile %s"),
+			      tmp);
+		  
+		  sh_error_handle (SH_ERR_ERR, FIL__, __LINE__, 
+				   0, MSG_E_SUBGEN,
+				   errmsg, _("sh_efile_lock"));
+		  ++nFail;
+		  SH_FREE(tmp);
+		}
+	    }
+	}
+    }
+
+  SH_FREE(lockfile);
+  return res;
+}
+
+static size_t gSave[6] = { 0 };
+
+static void sh_efile_clear()
+{
+  int i;
+
+  for (i = 0; i < 6; ++i)
+    gSave[i] = 0;
+  return;
+}
+
+static void sh_efile_load(size_t * tmp)
+{
+  int i;
+
+  if (SL_TRUE == sl_ok_adds (gSave[0], sh.statistics.bytes_hashed))
+    gSave[0] += sh.statistics.bytes_hashed;
+  if (SL_TRUE == sl_ok_adds (gSave[1], sh.statistics.dirs_checked))
+    gSave[1] += sh.statistics.dirs_checked;
+  if (SL_TRUE == sl_ok_adds (gSave[2], sh.statistics.files_checked))
+    gSave[2] += sh.statistics.files_checked;
+  if (SL_TRUE == sl_ok_adds (gSave[3], sh.statistics.files_report))
+    gSave[3] += sh.statistics.files_report;
+  if (SL_TRUE == sl_ok_adds (gSave[4], sh.statistics.files_error))
+    gSave[4] += sh.statistics.files_error;
+  if (SL_TRUE == sl_ok_adds (gSave[5], sh.statistics.files_nodir))
+    gSave[5] += sh.statistics.files_nodir;
+
+  for (i = 0; i < 6; ++i)
+    tmp[i] = gSave[i];
+  return;
+}
+
+void sh_efile_report()
+{
+  extern int get_the_fd (SL_TICKET ticket);
+  SL_TICKET     fd;
+  char         *efile;
+  int           status = -1;
+
+  if (gEfile)
+    {
+      size_t tmp[6];
+
+      sh_efile_load(tmp);
+
+      efile = sh_util_strdup(gEfile);
+      
+      if (sh_efile_lock (efile, 1) < 0)
+	goto end;
+
+      if (  0 !=  (status = tf_trust_check (efile, SL_YESPRIV))
+	    && gFail == 0)
+	{
+	  char * tmp  = sh_util_safe_name (efile);
+	  sh_error_handle ((-1), FIL__, __LINE__, status, MSG_E_TRUST,
+			   (long) sh.effective.uid, tmp);
+	  ++gFail;
+	  SH_FREE(tmp);
+	}
+      
+      if (status == 0)
+	{
+	  fd = sl_open_write (FIL__, __LINE__, efile, SL_YESPRIV);
+
+	  if (!SL_ISERROR(fd))
+	    {
+	      char report[511];
+	      char tstamp[TIM_MAX];
+
+	      time_t now = time(NULL);
+	      int  filed = get_the_fd(fd);
+
+	      (void) sh_unix_time (now, tstamp, sizeof(tstamp));
+#ifdef HAVE_LONG_LONG
+	      sl_snprintf(report, sizeof(report), 
+			  _("%s %lld %ld %ld %ld %ld %ld %ld\n"),
+			  tstamp,
+			  (long long) now,
+			  (long) tmp[0], (long) tmp[1], (long) tmp[2], 
+			  (long) tmp[3], (long) tmp[4], (long) tmp[5]);
+#else
+	      sl_snprintf(report, sizeof(report), 
+			  _("%s %ld %ld %ld %ld %ld %ld %ld\n"),
+			  tstamp,
+			  (long) now,
+			  (long) tmp[0], (long) tmp[1], (long) tmp[2], 
+			  (long) tmp[3], (long) tmp[4], (long) tmp[5]);
+#endif
+			  
+	      status = sl_forward(fd);
+	      if (!SL_ISERROR(status))
+		status = sl_write (fd, report,  strlen(report));
+	      (void) sl_sync(fd);
+
+	      /* make group writeable, such that nagios can truncate */
+	      fchmod (filed, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
+	      status = fchown (filed, -1, gGid);
+	      if (status < 0)
+		{
+		  int  errnum = errno;
+		  static int nFail = 0;
+		  if (nFail == 0)
+		    {
+		      char errmsg[1024];
+		      char buf[256];
+		      char * tmp  = sh_util_safe_name (efile);
+
+		      sl_snprintf(errmsg, sizeof(errmsg), 
+				  _("Error changing group of %s to %ld: %s"),
+				  tmp, gGid, 
+				  sh_error_message (errnum, buf, sizeof(buf)));
+		      sh_error_handle (SH_ERR_ERR, FIL__, __LINE__, 
+				       errnum, MSG_E_SUBGEN,
+				       errmsg, _("sh_efile_report"));
+		      ++nFail;
+		      SH_FREE(tmp);
+		    }
+		}
+
+	      (void) sl_close(fd);
+	    }
+	  else
+	    {
+	      status = -1;
+	    }
+	}
+  
+      (void) sh_efile_lock (efile, 0);
+    end:
+      SH_FREE(efile);
+
+      if (!SL_ISERROR(status))
+	{
+	  sh_efile_clear();
+	}
+    }
+  return;
+}

@@ -75,7 +75,8 @@ extern  int sl_strlcat(char * dst, /*@null@*/const char * src, size_t siz);
 /* Sizes for staticly allocated buffers. */
 
 #define PWD_BUFFER_SIZE 256
-#define GRP_BUFFER_SIZE 256
+#define GRP_BUFFER_SIZE 3584
+#define GRP_BUFFER_SIZE_MALLOC 32768
 
 /**********************************************************************/
 /* Prototypes for internal functions. */
@@ -466,7 +467,8 @@ int  sh_initgroups(const char *user, gid_t gid)
 	int num_groups, rv;
 	char **m;
 	struct group group;
-	char buff[PWD_BUFFER_SIZE];
+
+	char * buff = malloc(GRP_BUFFER_SIZE_MALLOC);
 
 	rv = -1;
 
@@ -480,7 +482,7 @@ int  sh_initgroups(const char *user, gid_t gid)
 		*group_list = gid;
 		num_groups = 1;
 
-		while (!__pgsreader(__parsegrent, &group, buff, sizeof(buff), grf)) {
+		while (!__pgsreader(__parsegrent, &group, buff, GRP_BUFFER_SIZE_MALLOC, grf)) {
 			assert(group.gr_mem); /* Must have at least a NULL terminator. */
 			if (group.gr_gid != gid) {
 				for (m=group.gr_mem ; *m ; m++) {
@@ -510,6 +512,7 @@ int  sh_initgroups(const char *user, gid_t gid)
 	/* group_list will be NULL if initial malloc failed, which may trigger
 	 * warnings from various malloc debuggers. */
 	free(group_list);
+	free(buff);
 	return rv;
 }
 
@@ -698,8 +701,12 @@ static int __pgsreader(int (*__parserfunc)(void *d, char *line), void *data,
 			if (line_buff[line_len] == '\n') {
 				line_buff[line_len] = 0;
 			} else if (line_len + 2 == buflen) { /* line too long */
+			        rv = ERANGE;
+				break;
+				/*
 				++skip;
 				continue;
+				*/
 			}
 
 			if (skip) {

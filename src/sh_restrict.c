@@ -106,14 +106,17 @@ static int matches_prefix (const char * path, const char * prefix)
 
   SL_ENTER(_("matches_prefix"));
 
-  path_len = sl_strlen(path);
-  pref_len = sl_strlen(prefix);
-  
-  if (path_len >= pref_len)
+  if (path && prefix)
     {
-      if (0 == strncmp(path, prefix, pref_len))
+      path_len = sl_strlen(path);
+      pref_len = sl_strlen(prefix);
+      
+      if (path_len >= pref_len)
 	{
-	  SL_RETURN(1, _("matches_prefix"));
+	  if (0 == strncmp(path, prefix, pref_len))
+	    {
+	      SL_RETURN(1, _("matches_prefix"));
+	    }
 	}
     }
   SL_RETURN(0, _("matches_prefix"));
@@ -590,8 +593,10 @@ void Test_restrict (CuTest *tc) {
   CuAssertIntEquals(tc,0,res);
   CuAssertPtrNotNull(tc, sh_restrict_list);
 
+#if !defined(HOST_IS_CYGWIN)
   res = sh_restrict_this("/bin/sh", 1000, 0755, fd);
   CuAssertIntEquals(tc,1,res);
+#endif
 
   sl_close(fd);
 

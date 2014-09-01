@@ -253,7 +253,7 @@ EOF
 # :wq is write-and-quit.
 	[ -z "$verbose" ] || { 
 	    echo; 
-	    echo "${S}Start Server${E}: ./yule -p none &"; 
+	    echo "${S}Start Server${E}: ./yule -p none -e none &"; 
 	    echo; 
 	}
 
@@ -266,7 +266,7 @@ EOF
 
 	[ -z "$verbose" ] || { 
 	    echo; 
-	    echo "${S}Start Client${E}: ./samhain.new -l none -p none -t check"; 
+	    echo "${S}Start Client${E}: ./samhain.new -t check -p none -l none --forever --bind-address=127.0.0.1 &"; 
 	    echo; 
 	}
 
@@ -289,7 +289,6 @@ EOF
 	    # enable monitor mode again if interactive
 	    set -m
 	fi
-
 
 	kill $PROC_Y
 	five_sec_sleep
@@ -537,6 +536,8 @@ EOF
 	    return 1
 	fi
 
+	cp $HTML  ${HTML}.tmp
+
 	kill $PROC_Y
 	five_sec_sleep
 
@@ -568,34 +569,34 @@ EOF
 	    return 1
 	fi
 
-	egrep '<!-- head -->' $HTML >/dev/null 2>&1
+	egrep '<!-- head -->' ${HTML}.tmp >/dev/null 2>&1
 	if [ $? -ne 0 ]; then
 	    [ -z "$verbose" ] || log_msg_fail "head.html";
 	    return 1
 	fi
-	egrep '<!-- ehead -->' $HTML >/dev/null 2>&1
+	egrep '<!-- ehead -->' ${HTML}.tmp >/dev/null 2>&1
 	if [ $? -ne 0 ]; then
 	    [ -z "$verbose" ] || log_msg_fail "end head.html";
 	    return 1
 	fi
 
-	egrep '<!-- entry -->' $HTML >/dev/null 2>&1
+	egrep '<!-- entry -->' ${HTML}.tmp >/dev/null 2>&1
 	if [ $? -ne 0 ]; then
 	    [ -z "$verbose" ] || log_msg_fail "entry.html";
 	    return 1
 	fi
-	egrep '<!-- eentry -->' $HTML >/dev/null 2>&1
+	egrep '<!-- eentry -->' ${HTML}.tmp >/dev/null 2>&1
 	if [ $? -ne 0 ]; then
 	    [ -z "$verbose" ] || log_msg_fail "end entry.html";
 	    return 1
 	fi
 
-	egrep '<!-- foot -->' $HTML >/dev/null 2>&1
+	egrep '<!-- foot -->' ${HTML}.tmp >/dev/null 2>&1
 	if [ $? -ne 0 ]; then
 	    [ -z "$verbose" ] || log_msg_fail "foot.html";
 	    return 1
 	fi
-	egrep '<!-- efoot -->' $HTML >/dev/null 2>&1
+	egrep '<!-- efoot -->' ${HTML}.tmp >/dev/null 2>&1
 	if [ $? -ne 0 ]; then
 	    [ -z "$verbose" ] || log_msg_fail "end foot.html";
 	    return 1
@@ -609,6 +610,8 @@ EOF
 		return 1;
 	    fi;
 	}
+
+	rm ${HTML}.tmp
 
 	return 0
 }

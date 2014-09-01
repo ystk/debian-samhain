@@ -7,6 +7,7 @@
 #include "CuTest.h"
 
 #include "sh_tiger.h"
+#include "sh_checksum.h"
 
 #if defined(HAVE_PTHREAD) && defined(SH_STEALTH)
 extern void sh_g_init(void);
@@ -134,6 +135,7 @@ void Test_tiger_file(CuTest *tc) {
   char * actual;
   char * expected;
   char hashbuf[KEYBUF_SIZE];
+  char hexdigest[SHA256_DIGEST_STRING_LENGTH];
   UINT64  length;
 
   init();
@@ -196,6 +198,25 @@ void Test_tiger_file(CuTest *tc) {
   length = TIGER_NOLIM;
   actual = sh_tiger_generic_hash("cutest_foo", rval_open, &length, 0, hashbuf, sizeof(hashbuf));
   expected = "2FE65D1D995B8F8BC8B13F798C07E7E935A787ED00000000";
+  CuAssertStrEquals(tc, expected, actual);
+
+  result = sl_close(rval_open);
+  CuAssertTrue(tc, result == 0);
+
+  result = sh_tiger_hashtype("SHA256");
+  CuAssertTrue(tc, result == 0);
+
+  rval_open = sl_open_fastread (__FILE__, __LINE__, "cutest_foo", SL_YESPRIV);
+  CuAssertTrue(tc, rval_open >= 0);
+
+  /* same result as gpg --print-md SHA256
+   */
+  length = TIGER_NOLIM;
+  {
+    char * tmp = sh_tiger_generic_hash("cutest_foo", rval_open, &length, 0, hashbuf, sizeof(hashbuf));
+    actual = SHA256_Base2Hex(tmp, hexdigest);
+  }
+  expected = "235790848f95e96b2c627f1bf58a2b8c05c535ada8c0a3326aac34ce1391ad40";
   CuAssertStrEquals(tc, expected, actual);
 
   result = sl_close(rval_open);

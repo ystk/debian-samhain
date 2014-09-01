@@ -98,6 +98,8 @@ typedef enum {
 #define MODI_AUDIT (1 << 15)
 #define MODI_AUDIT_ENABLED(a) (((a)&(1 << 15))!=0)
 
+#define MODI_INIT 0xDA000000UL
+#define MODI_INITIALIZED(a) (((a) & 0xFF000000UL) == MODI_INIT)
 
 #define SH_TXT_MAX 9200
 
@@ -119,7 +121,7 @@ extern  unsigned long mask_USER1;
 extern  unsigned long mask_USER2;
 extern  unsigned long mask_USER3;
 extern  unsigned long mask_USER4;
-/* like READONLY, but without MTM,CTM,SIZ,INO, abd with PREL)
+/* like READONLY, but without MTM,CTM,SIZ,INO, and with PREL)
  */
 #define MASK_PRELINK_   (MASK_ATTRIBUTES_|MODI_HLN|MODI_LNK|MODI_CHK|MODI_PREL)
 extern  unsigned long mask_PRELINK;
@@ -167,6 +169,10 @@ void sh_userid_destroy ();
 /* --- run a command, securely --- 
  */
 int sh_unix_run_command (const char * str);
+
+/* Ignore SIGPIPE
+ */
+void sh_unix_ign_sigpipe();
 
 /* mlock utilities
  */
@@ -304,9 +310,14 @@ int sh_unix_test_proc(void);
  */
 /* int sh_unix_is_secure_dir (ShErrLevel level, char * tmp); */
 
+/* check whether there's a rotated log with the correct inode and checksum 
+ */
+int sh_check_rotated_log (const char * path,  
+			  UINT64 old_size, UINT64 old_inode, const char * old_hash);
+
 /* obtain file info
  */
-int sh_unix_getinfo (int level, char * filename, file_type * theFile, 
+int sh_unix_getinfo (int level, const char * filename, file_type * theFile, 
 		     char * fileHash, int flagrel);
 
 /* read file, return length read
@@ -333,6 +344,9 @@ int  sh_unix_getUser (void);
  */
 char *  sh_unix_getUIDdir (int level, uid_t uid, char * out, size_t len);
 
+/* get a group GID 
+ */
+long sh_group_to_gid (const char * g, int * fail);
 
 #ifdef HAVE_GETTIMEOFDAY
 unsigned long sh_unix_notime (void);
@@ -354,7 +368,6 @@ void sh_unix_xor_code (char * str, int len);
 #include <errno.h>
 
 void   sh_sigtrap_handler (int signum);
-extern volatile int sh_not_traced;
 
 #ifdef HAVE_GETTIMEOFDAY
 #if TIME_WITH_SYS_TIME
@@ -367,8 +380,18 @@ extern volatile int sh_not_traced;
 #include <time.h>
 #endif
 #endif
-extern struct timeval  save_tv;
 #endif
+
+struct sh_sigtrap_variables {
+  int not_traced;
+#ifdef HAVE_GETTIMEOFDAY
+  struct timeval save_tv;
+#endif
+};
+
+struct sh_sigtrap_variables * sh_sigtrap_variables_get();
+
+int sh_sigtrap_max_duration_set (const char * str);
 
 static inline
 int  sh_sigtrap_prepare()
@@ -387,21 +410,28 @@ int  sh_sigtrap_prepare()
 /*@unused@*/ static inline 
 int sh_derr(void)
 {
-  sh_not_traced = 0;
+  struct sh_sigtrap_variables * sigtrap_variables;
+  sigtrap_variables = sh_sigtrap_variables_get();
+  if (sigtrap_variables == NULL) {
+    /* Perhaps, its better to not die, and to continue using Samhain,
+       even if this part does not work. */
+    return (0);
+  }
+
+  sigtrap_variables->not_traced = 0;
 
 #ifdef HAVE_GETTIMEOFDAY
-  gettimeofday(&save_tv, NULL);
+  gettimeofday(&sigtrap_variables->save_tv, NULL);
 #endif
 
-#if defined(__linux__) && defined(__GNUC__) && defined(__i386__)
-  __asm__ __volatile__ (".byte 0xf1");
-#else
+  /* raise() sends to same thread, like pthread_kill(pthread_self(), sig); 
+   */
   raise(SIGTRAP);
-#endif
   
-  if (sh_not_traced == 0)
+  if (sigtrap_variables->not_traced == 0)
     _exit(5);
-  sh_not_traced = 0;
+
+  sigtrap_variables->not_traced = 0;
   return (0);
 }
 

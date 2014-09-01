@@ -154,7 +154,7 @@ testrun_internal_1d ()
 	  for iseq in 0 1 2 3 4 5 6 7 8 9; do
 	      rm -f "$LOGFILE"
 	      if [ $errval -eq 0 ]; then
-		  run_check
+		  run_check info
 		  check_err $? ${tcount}; errval=$?
 	      fi
 	      if [ $errval -eq 0 ]; then

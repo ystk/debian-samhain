@@ -930,7 +930,7 @@ int sl_strlcpy(char * dst, /*@null@*/const char * src, size_t siz)
     }
   else if (src == NULL)
     {
-      if (siz > 0) 
+      if (dst && siz > 0) 
 	dst[0] = '\0';
       return SL_ENONE;
     }
@@ -1534,6 +1534,7 @@ int sl_policy_get_user(const char * user)
   SL_REQUIRE(uids_are_stored == SL_FALSE, _("uids_are_stored == SL_FALSE"));
   SL_REQUIRE (sl_save_uids() == SL_ENONE, _("sl_save_uids() == SL_ENONE"));
 
+#ifndef SH_ALLOW_SUID
   if (euid != ruid || egid != rgid)
     {
 #if defined(HAVE_PTHREAD) && defined (_POSIX_THREAD_SAFE_FUNCTIONS) && defined(HAVE_GETPWNAM_R)
@@ -1555,6 +1556,7 @@ int sl_policy_get_user(const char * user)
       free(buffer);
 #endif
     }
+#endif
   SL_IRETURN(SL_ENONE, _("sl_policy_get_user"));
 }
 
@@ -1803,7 +1805,7 @@ SL_TICKET sl_make_ticket (const char * ofile, int oline,
 #define SL_OPEN_MAX          119
 
 #if !defined(O_NOATIME)
-#if defined(__linux__) && (defined(__i386__) || defined(__PPC__))
+#if defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__PPC__))
 #define O_NOATIME 01000000
 #else
   /* 
@@ -2610,6 +2612,7 @@ int sl_read_timeout_fd (int fd, void * buf_in, size_t count,
 	    }  
 	  else if (byteread == 0)
 	    {
+	      /* zero indicates end of file */
 	      break;
 	    }
 	  else
@@ -2645,6 +2648,8 @@ int sl_read_timeout_fd (int fd, void * buf_in, size_t count,
 	      retry_fcntl(FIL__, __LINE__, fd, F_SETFL, sflags);
 	  TPT(( 0, FIL__, __LINE__, _("msg=<timeout>")));
 	  errno = 0;
+	  if (bytes > 0)
+	    return ((int) bytes); 
 	  return (SL_TIMEOUT);
 	}
       else
@@ -2675,6 +2680,8 @@ int sl_read_timeout_fd (int fd, void * buf_in, size_t count,
 	      retry_fcntl(FIL__, __LINE__, fd, F_SETFL, sflags);
 	  TPT(( 0, FIL__, __LINE__, _("msg=<timeout>")));
 	  errno = 0;
+	  if (bytes > 0)
+	    return ((int) bytes);
 	  return (SL_TIMEOUT);
 	}
     }
@@ -2829,10 +2836,12 @@ int sl_write (SL_TICKET ticket, const void * msg_in, long nbytes)
   /* write
    */
   bytecount    = 0;
-  bytewritten  = 0;
+
   while (bytecount < nbytes) 
     {    
-      if ((bytewritten = write (fd, msg, nbytes-bytecount)) > 0) 
+      bytewritten = write (fd, msg, nbytes-bytecount);
+
+      if (bytewritten > 0) 
 	{
 	  bytecount += bytewritten;
 	  msg       += bytewritten;    /* move buffer pointer forward */

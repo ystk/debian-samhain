@@ -209,8 +209,8 @@ int sh_tools_iface_is_present(char *str)
   return 0;
 }
 
-/* --- recode all \blah escapes to '=XX' format, and also code all
- *     remaining unprintable chars                                 ---
+/* --- recode all \blah escapes to qp (quoted printable) '=XX' format, and 
+ *     also code all remaining unprintable chars                           ---
  */
 #define SH_PUT_4(p, a, b, c) (p)[0] = (a); (p)[1] = (b); (p)[2] = (c);
   
@@ -338,7 +338,7 @@ char * sh_tools_safe_name (const char * instr, int flag)
 	  if (!(*p))
 	    break;
 
-	  c = *p;
+
 
 	  switch (*p) {
 	  case '\\':
@@ -515,7 +515,7 @@ static int cached_addr = 0;
 void delete_cache()
 {
   sin_cache * check_cache = conn_cache;
-  sin_cache * old_entry   = conn_cache;
+  sin_cache * old_entry;
 
   SL_ENTER(_("delete_cache"));
 
@@ -562,6 +562,8 @@ int connect_port (char * address, int port,
   sin_cache * check_cache = conn_cache;
 
   SL_ENTER(_("connect_port"));
+
+  if (errsiz > 0) errmsg[0] = '\0';
 
   /* paranoia -- should not happen
    */
@@ -1043,19 +1045,10 @@ int sh_write_select(int type, int sockfd,
   int    select_now;
   int    num_sel;
   
-  struct  sigaction  new_act;
-  struct  sigaction  old_act;
   char    errbuf[SH_ERRBUF_SIZE];
 
   SL_ENTER(_("sh_write_select"));
 
-  /* ignore SIGPIPE (instead get EPIPE if connection is closed)
-   */
-  new_act.sa_handler = SIG_IGN;
-  sigemptyset( &new_act.sa_mask );         /* set an empty mask       */
-  new_act.sa_flags = 0;                    /* init sa_flags           */
-  sigaction (SIGPIPE, &new_act, &old_act);
-  
   FD_ZERO(&fds);
   FD_SET(sockfd, &fds);
 
@@ -1083,7 +1076,7 @@ int sh_write_select(int type, int sockfd,
 	    if ( errno == EINTR || errno == EINPROGRESS ) /* try again */
 	      continue;
 	    *w_error = errno;
-	    sigaction (SIGPIPE, &old_act, NULL);
+
 	    sh_error_message(*w_error, errbuf, sizeof(errbuf));
 	    sh_error_handle (SH_ERR_INFO, FIL__, __LINE__, errno, MSG_E_SUBGEN,
 			     errbuf,
@@ -1104,7 +1097,7 @@ int sh_write_select(int type, int sockfd,
 	    if ( errno == EINTR || errno == EINPROGRESS ) /* try again */
 	      continue;
 	    *w_error = errno;
-	    sigaction (SIGPIPE, &old_act, NULL);
+
 	    sh_error_message(*w_error, errbuf, sizeof(errbuf));
 	    sh_error_handle (SH_ERR_INFO, FIL__, __LINE__, errno, MSG_E_SUBGEN,
 			     errbuf,
@@ -1133,7 +1126,7 @@ int sh_write_select(int type, int sockfd,
 #else
 	    *w_error = 0;
 #endif
-	    sigaction (SIGPIPE, &old_act, NULL);
+
 	    TPT(( 0, FIL__, __LINE__, _("msg=<Timeout>\n")));
 	    SL_RETURN( countbytes, _("sh_write_select"));
 	  }
@@ -1159,7 +1152,7 @@ int sh_write_select(int type, int sockfd,
 	else if (count < 0)
 	  {
 	    *w_error = errno;
-	    sigaction (SIGPIPE, &old_act, NULL);
+
 	    sh_error_message(*w_error, errbuf, sizeof(errbuf));
 	    sh_error_handle (SH_ERR_INFO, FIL__, __LINE__, errno, MSG_E_SUBGEN,
 			     errbuf,
@@ -1171,17 +1164,12 @@ int sh_write_select(int type, int sockfd,
 	else /* count == 0 */
 	  {
 	    *w_error = errno;
-	    sigaction (SIGPIPE, &old_act, NULL);
+
 	    TPT(( 0, FIL__, __LINE__, _("msg=<count == 0>\n")));
 	    SL_RETURN( countbytes, _("sh_write_select"));
 	  }
       }
   }
-
-
-  /* restore signal handler
-   */
-  sigaction (SIGPIPE, &old_act, NULL);
 
   *w_error = 0;
 
@@ -2061,3 +2049,73 @@ int rewind_tmp (SL_TICKET fd)
   SL_RETURN((0), _("rewind_tmp"));
 }
 #endif
+
+/********************************************************
+ * Search rotated logfile
+ */
+#include <unistd.h>
+#include <libgen.h>
+#include <dirent.h>
+
+char * sh_rotated_log_search(const char * path, struct stat * buf)
+{
+
+  size_t size;
+  int    i;
+  char * searchpath;
+  struct stat sbuf;
+  DIR  * dp;
+  char * dname;
+  char * bname;
+
+  dname  = sh_util_dirname(path);
+  bname  = sh_util_basename(path);
+
+  size = strlen(dname) + strlen(bname) + 4;
+  searchpath = SH_ALLOC(size);
+
+  for (i = 0; i < 2; ++i)
+    {
+      snprintf(searchpath, size, "%s/%s.%1d", dname, bname, i);
+      if (0 == stat(searchpath, &sbuf) && sbuf.st_ino == buf->st_ino)
+	{
+	  SH_FREE(dname);
+	  SH_FREE(bname);
+	  return searchpath;
+	}
+    }
+
+  SH_FREE(searchpath);
+
+  if (NULL != (dp = opendir(dname)))
+    {
+      struct dirent * de;
+
+      while (NULL != (de = readdir(dp)))
+	{
+	  if (0 == strcmp(de->d_name, ".") || 0 == strcmp(de->d_name, ".."))
+	    continue;
+
+	  size = strlen(dname) + strlen(de->d_name) + 2;
+	  searchpath = SH_ALLOC(size);
+	  snprintf(searchpath, size, "%s/%s", dname, de->d_name);
+
+	  if (0 == stat(searchpath, &sbuf) && sbuf.st_ino == buf->st_ino)
+	    {
+	      SH_FREE(dname);
+	      SH_FREE(bname);
+	      closedir(dp);
+	      return searchpath;
+	    }
+	  
+	  SH_FREE(searchpath);
+	}
+      closedir(dp);
+    }
+
+  SH_FREE(dname);
+  SH_FREE(bname);
+
+  return NULL;
+}
+

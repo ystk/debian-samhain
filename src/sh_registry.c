@@ -57,6 +57,7 @@ static int sh_reg_add_key (const char *s);
 static int sh_reg_add_hierarchy (const char *s);
 static int sh_reg_add_stop (const char *s);
 static int sh_reg_add_ign (const char *s);
+static int sh_reg_ign_time (const char *s);
 
 #define STOP_FALSE  0
 #define STOP_CHECK  1
@@ -74,6 +75,10 @@ sh_rconf sh_reg_check_table[] = {
     {
         N_("registrycheckinterval"),
         sh_reg_set_interval,
+    },
+    {
+        N_("ignoretimestamponly"),
+        sh_reg_ign_time,
     },
     {
         N_("singlekey"),
@@ -104,6 +109,7 @@ sh_rconf sh_reg_check_table[] = {
 static int      ShRegCheckActive      = S_FALSE;
 static time_t   sh_reg_check_interval = SH_REGISTRY_INTERVAL;
 static int      sh_reg_check_severity = SH_ERR_SEVERE;
+static int      ShRegIgnTime          = S_FALSE;
 
 struct regkeylist {
   char        * name;
@@ -127,6 +133,17 @@ static int sh_reg_set_active(const char *s)
   value = sh_util_flagval(s, &ShRegCheckActive);
 
   SL_RETURN((value), _("sh_reg_set_active"));
+}
+
+static int sh_reg_ign_time(const char *s) 
+{
+  int value;
+    
+  SL_ENTER(_("sh_reg_ign_time"));
+
+  value = sh_util_flagval(s, &ShRegIgnTime);
+
+  SL_RETURN((value), _("sh_reg_ign_time"));
 }
 
 static int sh_reg_set_interval (const char * c)
@@ -180,8 +197,15 @@ static int sh_reg_add_key_int (const char *s, int isSingle, int isStop)
 	  int status = regcomp(&(newkey->preg), s, REG_NOSUB|REG_EXTENDED);
 	  if (status != 0)
 	    {
-	      char  errbuf[256];
+	      char  errbuf[512];
+	      char  *p;
 	      regerror(status, &(newkey->preg), errbuf, sizeof(errbuf));
+
+	      sl_strlcat(errbuf, ": ", sizeof(errbuf));
+	      p = sh_util_safe_name_keepspace(s);
+	      sl_strlcat(errbuf, p, sizeof(errbuf));
+	      SH_FREE(p);
+
 	      SH_MUTEX_LOCK(mutex_thread_nolog);
 	      sh_error_handle((-1), FIL__, __LINE__, status, MSG_E_SUBGEN, 
 			      errbuf, _("sh_reg_add_key_int"));
@@ -236,6 +260,11 @@ int sh_reg_check_init(struct mod_type * arg)
 	return SH_MOD_THREAD;
       else
 	return SH_MOD_FAILED;
+    }
+  else if (arg != NULL && arg->initval == SH_MOD_THREAD &&
+	   (sh.flag.isdaemon == S_TRUE || sh.flag.loop == S_TRUE))
+    {
+      return SH_MOD_THREAD;
     }
 #endif
   return 0;
@@ -697,11 +726,11 @@ int QueryKey(HKEY hKey, char * path, size_t pathlen, int isSingle)
 
 	  doUpdate = S_TRUE;
 	}
-      else if (save.val0 != totalSize || 
-	       ((time_t) save.val1) != fTime || 
+      else if (save.val0 != totalSize ||  
 	       save.val2 != cSubKeys ||
 	       save.val3 != cValues ||
-	       0 != strcmp(save.checksum, hashbuf))
+	       0 != strcmp(save.checksum, hashbuf) || 
+	       ( (((time_t) save.val1) != fTime) && (ShRegIgnTime == S_FALSE)) )
 	{
 	  /* Change detected */
 	  char  * infobuf  = SH_ALLOC(1024);
@@ -737,9 +766,10 @@ int QueryKey(HKEY hKey, char * path, size_t pathlen, int isSingle)
 
 	  doUpdate = S_TRUE;
 	}
+
     }
  
-  if ( sh.flag.checkSum == SH_CHECK_INIT || doUpdate == S_TRUE )
+  if ( sh.flag.checkSum == SH_CHECK_INIT || doUpdate == S_TRUE /* change detected */ )
     {
       struct store2db save;
 
@@ -761,10 +791,16 @@ int QueryKey(HKEY hKey, char * path, size_t pathlen, int isSingle)
 	}
     }
 
-  if (tPath)
-    sh_hash_set_visited (tPath);
-  else
-    sh_hash_set_visited (path);
+  /* Without this, freshly updated entries would get deleted
+   * as 'not seen'.
+   */
+  if (sh.flag.checkSum != SH_CHECK_INIT)
+    {
+      if (tPath)
+	sh_hash_set_visited (tPath);
+      else
+	sh_hash_set_visited (path);
+    }
 
   if (tPath)
     {
@@ -800,6 +836,7 @@ int CheckThisSubkey (HKEY key, char * subkey, char * path, int isSingle,
 		     int view)
 {
   HKEY hTestKey;
+  LONG qError;
   char * newpath;
   size_t len;
   int    retval = -1;
@@ -830,12 +867,14 @@ int CheckThisSubkey (HKEY key, char * subkey, char * path, int isSingle,
   newpath = SH_ALLOC(len);
   snprintf(newpath, len, "%s\\%s", path, subkey);
   
-  if( RegOpenKeyEx( key,
-		    subkey,
-		    0,
-		    (KEY_READ | view),
-		    &hTestKey) == ERROR_SUCCESS
-      )
+  qError = RegOpenKeyEx( key,
+			 subkey,
+			 0,
+			 (KEY_READ | view),
+			 &hTestKey);
+
+
+  if (qError == ERROR_SUCCESS)
     {
       QueryKey(hTestKey, newpath, len-1, isSingle);
       RegCloseKey(hTestKey);
@@ -844,22 +883,45 @@ int CheckThisSubkey (HKEY key, char * subkey, char * path, int isSingle,
   else
     {
       /* Error message */
-      char  * tmp    = sh_util_safe_name (newpath);
-      size_t  tlen   = sl_strlen(tmp);
-      
+      LPVOID lpMsgBuf;
+  
+      char  * tmp     = sh_util_safe_name (newpath);
+      size_t  tlen    = sl_strlen(tmp);
+
       if (SL_TRUE == sl_ok_adds(64, tlen))
 	{
-	  char * errbuf = SH_ALLOC(64 + tlen);
-	  sl_snprintf(errbuf, 64+tlen, _("Failed to open key %s"), tmp);
-	  
-	  SH_MUTEX_LOCK(mutex_thread_nolog);
-	  sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN, 
-			  errbuf, _("CheckThisSubkey"));
-	  SH_MUTEX_UNLOCK(mutex_thread_nolog);
-	  
-	  SH_FREE(errbuf);
+	  char * errbuf;
+	  size_t elen;
+
+	  tlen += 64;
+
+	  elen = FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | 
+			       FORMAT_MESSAGE_FROM_SYSTEM |
+			       FORMAT_MESSAGE_IGNORE_INSERTS,
+			       NULL,
+			       qError,
+			       MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+			       (LPTSTR) &lpMsgBuf,
+			       0, NULL );
+
+	  if (elen > 0 && SL_TRUE == sl_ok_adds(elen, tlen))
+	    {
+	      tlen += elen;
+
+	      errbuf = SH_ALLOC(elen + tlen);
+	      sl_snprintf(errbuf, 64+tlen, _("Failed to open key %s: %s"), 
+			  tmp, lpMsgBuf);
+	      LocalFree(lpMsgBuf);
+
+	      SH_MUTEX_LOCK(mutex_thread_nolog);
+	      sh_error_handle((-1), FIL__, __LINE__, 0, MSG_E_SUBGEN, 
+			      errbuf, _("CheckThisSubkey"));
+	      SH_MUTEX_UNLOCK(mutex_thread_nolog);
+	      
+	      SH_FREE(errbuf);
+	    }
 	}
-      sh_reg_add_ign (tmp);
+      sh_reg_add_ign (newpath);
       SH_FREE(tmp);
     }
   
@@ -874,7 +936,6 @@ int check_key (char * key, int isSingle)
   char * subkey;
   char path[20] = "";
   int pos = 0;
-  int retval = -1;
   
   if      (0 == strncmp(key, _("HKEY_CLASSES_ROOT"), 17))
     {

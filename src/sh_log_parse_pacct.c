@@ -224,18 +224,20 @@ static char * dev_name(long tty)
   return "??";
 }
 
-/* This looks strange, but it's real ANSI C. */
-extern struct acct pacct_rd_never_used;
-#define COMM_LEN ((int) sizeof (pacct_rd_never_used.ac_comm))
-
-sh_string * sh_read_pacct (sh_string * record, struct sh_logfile * logfile)
-{
 #if defined(__linux__) && defined(HAVE_ACCT_V3)
 #  define STRUCT_ACCT struct acct_v3
+#elif defined(__FreeBSD__) && defined(HAVE_ACCTV2)
+#  define STRUCT_ACCT struct acctv2
 #else
 #  define STRUCT_ACCT struct acct
 #endif
 
+/* This looks strange, but it's real ANSI C. */
+extern STRUCT_ACCT pacct_rd_never_used;
+#define COMM_LEN ((int) sizeof (pacct_rd_never_used.ac_comm))
+
+sh_string * sh_read_pacct (sh_string * record, struct sh_logfile * logfile)
+{
   STRUCT_ACCT rec;
 
   if (NULL != sh_binary_reader ((void*) &rec, sizeof(STRUCT_ACCT), logfile))
@@ -248,7 +250,11 @@ sh_string * sh_read_pacct (sh_string * record, struct sh_logfile * logfile)
       int    i;
       char   out[64+COMM_LEN+1+5+8+8+32+4+19+7]; /* see printf format below */
       
-      expand_flags(rec.ac_flag, fl);
+#if defined(ac_flagx)
+      expand_flags(rec.ac_flagx, fl);
+#else
+      expand_flags(rec.ac_flag,  fl);
+#endif
       
       /* ac_comm may not be null terminated
        */

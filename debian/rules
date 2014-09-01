@@ -11,44 +11,103 @@
 # This is the debhelper compatability version to use.
 # export DH_COMPAT=5
 
+# Disable dnmalloc for most architectures except for
+# those known to work (i386 and amd64).
+# For more information see:
+# http://www.la-samhna.de/samhain/manual/dnmalloc.html
 ifeq (linux,$(DEB_HOST_ARCH_OS))
-ifeq (ia64,$(DEB_HOST_ARCH))
-DNMALLOC = --disable-dnmalloc
-else ifeq (s390,$(DEB_HOST_ARCH))
-DNMALLOC = --disable-dnmalloc
-else
+ifeq (amd64,$(DEB_HOST_ARCH))
 DNMALLOC = --enable-dnmalloc
+else ifeq (i386,$(DEB_HOST_ARCH))
+DNMALLOC = --enable-dnmalloc
+else
+DNMALLOC = --disable-dnmalloc
 endif
 else
+ifeq (amd64,$(DEB_HOST_ARCH))
+DNMALLOC = --enable-dnmalloc
+else ifeq (i386,$(DEB_HOST_ARCH))
+DNMALLOC = --enable-dnmalloc
+else
 DNMALLOC = --disable-dnmalloc
+endif
+endif
+
+ifeq (x86_64,$(DEB_HOST_GNU_CPU))
+DISABLE_ASM = --disable-asm
 endif
 
 build: build-stamp
 build-stamp:
 	dh_testdir
-
+#	dh_autoreconf
+ifneq "$(wildcard /usr/share/misc/config.sub)" ""
+	cp -f config.sub config.sub.orig
+	cp -f /usr/share/misc/config.sub config.sub
+endif
+ifneq "$(wildcard /usr/share/misc/config.guess)" ""
+	cp -f config.guess config.guess.orig
+	cp -f /usr/share/misc/config.guess config.guess
+endif
 	./configure --prefix=/usr --mandir=\$${prefix}/share/man \
 		--with-config-file=/etc/samhain/samhainrc \
 		--with-state-dir=/var/state/samhain  \
 		--with-prelude \
 		$(DNMALLOC) \
+		$(DISABLE_ASM) \
 		--enable-network=no  \
 		--with-pid-file=/var/run/samhain/samhain.pid \
 		--with-log-file=/var/log/samhain/samhain.log 
 	$(MAKE)
-
 	touch build-stamp
+
+# Builds the server (Yule)
+# See http://www.la-samhna.de/samhain/manual/yule.html
+build-server: build-server-stamp
+build-server-stamp:
+	dh_testdir
+#	dh_autoreconf
+	./configure --prefix=/usr --mandir=\$${prefix}/share/man \
+		--with-config-file=/etc/yule/yulerc \
+		--with-state-dir=/var/state/yule  \
+		--with-prelude \
+		$(DNMALLOC) \
+		--enable-network=server  \
+		--with-pid-file=/var/run/samhain/yule.pid \
+		--with-log-file=/var/log/samhain/yule.log 
+	$(MAKE)
+	touch build-server-stamp
+
+# Build the Samhain client 
+build-client: build-client-stamp
+build-client-stamp:
+	dh_testdir
+#	dh_autoreconf
+	./configure --prefix=/usr --mandir=\$${prefix}/share/man \
+		--with-config-file=/etc/samhain/samhainrc \
+		--with-state-dir=/var/state/samhain  \
+		--with-prelude \
+		$(DNMALLOC) \
+		--enable-network=client \
+		--with-pid-file=/var/run/samhain/samhain.pid \
+		--with-log-file=/var/log/samhain/samhain.log 
+	$(MAKE)
+	touch build-client-stamp
 
 clean:
 	dh_testdir
 	dh_testroot
-	rm -f build-stamp
+	rm -f build-stamp build-server-stamp build-client-stamp
 	-[ -f Makefile ] && $(MAKE) distclean
+	[ ! -f config.sub.orig ] || mv -f config.sub.orig config.sub
+	[ ! -f config.guess.orig ] || mv -f config.guess.orig config.guess
 	dh_clean
 
+# TODO: create install targets for client and server
 install: build
 	dh_testdir
 	dh_testroot
+#	dh_autoreconf_clean
 	dh_clean -k
 	dh_installdirs
 	# Fix the permissions
@@ -100,6 +159,8 @@ binary-arch: build install
 	dh_installchangelogs docs/Changelog
 	dh_link
 	dh_strip
+	# Remove /var/run/samhain from the package, it is created by the init script
+	-rm -rf `pwd`/debian/samhain/var/run/samhain
 	dh_compress
 	dh_fixperms
 	dh_installdeb

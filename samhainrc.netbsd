@@ -770,7 +770,7 @@ SetDatabasePath = /usr/pkg/var/samhain/samhain.db
 
 ## Path to the PID file
 #
-# SetLockPath = (default: compiled-in)
+# SetLockfilePath = (default: compiled-in)
 
 
 ## The digest/checksum/hash algorithm (default: TIGER192; others: MD5, SHA1)

@@ -63,7 +63,7 @@ mod_suiddata_7 () {
 
 chk_suiddata_7 () {
     one_sec_sleep
-    tmp=`ls -l "${BASE}/a/a/y" 2>/dev/null | awk '{ print $1}'`
+    tmp=`ls -l "${BASE}/a/a/y" 2>/dev/null | awk '{ print $1}' | cut -c 1-10`
     if [ "x$tmp" = "x-r-Sr--r--" ]; then
 	egrep "CRIT.*POLICY \[SuidCheck\].*${BASE}/a/a/y" $LOGFILE >/dev/null 2>&1
 	if [ $? -eq 0 ]; then
@@ -79,7 +79,7 @@ chk_suiddata_7 () {
 	[ -z "$verbose" ] || log_msg_fail "${BASE}/a/a/y (suid not kept)";
 	return 1
     fi
-    tmp=`ls -l "${BASE}/a/a/a/y" 2>/dev/null | awk '{ print $1}'`
+    tmp=`ls -l "${BASE}/a/a/a/y" 2>/dev/null | awk '{ print $1}' | cut -c 1-10`
     if [ "x$tmp" = "x-r-Sr--r--" ]; then
 	egrep "CRIT.*POLICY \[SuidCheck\].*${BASE}/a/a/a/y" $LOGFILE >/dev/null 2>&1
 	if [ $? -eq 0 ]; then
@@ -95,7 +95,7 @@ chk_suiddata_7 () {
 	[ -z "$verbose" ] || log_msg_fail "${BASE}/a/a/a/y (suid not kept)";
 	return 1
     fi
-    tmp=`ls -l "${BASE}/a/abc/y" 2>/dev/null | awk '{ print $1}'`
+    tmp=`ls -l "${BASE}/a/abc/y" 2>/dev/null | awk '{ print $1}' | cut -c 1-10`
     if [ "x$tmp" = "x-r-Sr--r--" ]; then
 	egrep "CRIT.*POLICY \[SuidCheck\].*${BASE}/a/abc/y" $LOGFILE >/dev/null 2>&1
 	if [ $? -ne 0 ]; then
@@ -134,7 +134,7 @@ mod_suiddata_6 () {
 
 chk_suiddata_6 () {
     one_sec_sleep
-    tmp=`ls -l "${BASE}/a/a/y" 2>/dev/null | awk '{ print $1}'`
+    tmp=`ls -l "${BASE}/a/a/y" 2>/dev/null | awk '{ print $1}' | cut -c 1-10`
     if [ "x$tmp" = "x-rwsr-xr-x" ]; then
 	egrep "CRIT.*POLICY \[SuidCheck\].*${BASE}/a/a/y" $LOGFILE >/dev/null 2>&1
 	if [ $? -ne 0 ]; then
@@ -249,7 +249,7 @@ mod_suiddata_3 () {
 
 chk_suiddata_3 () {
     one_sec_sleep
-    tmp=`ls -l "${BASE}/a/a/y" 2>/dev/null | awk '{ print $1}'`
+    tmp=`ls -l "${BASE}/a/a/y" 2>/dev/null | awk '{ print $1}' | cut -c 1-10`
     if [ "x$tmp" = "x-rwxr-xr-x" ]; then
 	return 0;
     else

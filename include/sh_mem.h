@@ -34,6 +34,7 @@ void sh_mem_stat (void);
 
 #define SH_FREE(a)   sh_mem_free((a), FIL__, __LINE__)
 #define SH_ALLOC(a)  sh_mem_malloc((a), FIL__, __LINE__) 
+#define SH_OALLOC(a,b,c)  sh_mem_malloc((a), (b), (c)) 
 
 #else
 
@@ -50,6 +51,9 @@ void   sh_mem_free (/*@only@*//*@out@*//*@null@*/ void * a);
 
 #define SH_FREE(a)   sh_mem_free(a)
 #define SH_ALLOC(a)  sh_mem_malloc(a)
+#define SH_OALLOC(a,b,c)  ((void) (b),		 \
+			   (void) (c),		 \
+			   sh_mem_malloc(a))	 \
 
 #endif
 

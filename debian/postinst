@@ -10,13 +10,9 @@ case "$1" in
     upgrade)
     ;;
     configure)
-     # Only initialize if the database does not exist yet
-     if [ ! -f /var/state/samhain/samhain_file ] ; then
-         [ -f /var/log/samhain/samhain-init.log ] && rm -f /var/log/samhain/samhain-init.log
-         echo "Creating samhain's file integrity database (this can take some minutes)...."
-         samhain -t init >/var/log/samhain/samhain-init.log 2>&1
-     fi
-
+    # Do not do anything. In the past we setup samhain's database but
+    # that would send a mail to root on installation and was determined
+    # to be unwise (see Debian Bug #749602)
     ;;
     abort-upgrade|abort-remove|abort-deconfigure)
     ;;

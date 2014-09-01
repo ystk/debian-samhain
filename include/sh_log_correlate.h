@@ -21,4 +21,8 @@ void sh_keep_match_del();
  */
 void sh_keep_match();
 
+/* Deadtime for a correlation rule
+ */
+int sh_keep_deadtime (const char * str);
+
 #endif

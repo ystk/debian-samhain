@@ -64,6 +64,8 @@ int    taus_seed           (void);
 /* returns allocated memory
  */
 char * sh_util_strdup (const char * str) SH_GNUC_MALLOC;
+char * sh_util_strdup_track (const char * str, 
+			     char * file, int line) SH_GNUC_MALLOC;
 
 /* returns allocated memory
  */
@@ -95,6 +97,7 @@ int sh_util_flagval(const char * c, int * fval);
  */
 int sh_util_ask_update(const char * path);
 int sh_util_set_interactive(const char * str);
+int sh_util_update_file (const char * str);
 
 /* don't log output files
  */
@@ -185,7 +188,7 @@ int sh_util_printf_maxlength (const char * fmt, va_list  vl);
 
 /* check for obscure filenames
  */
-int sh_util_obscurename (ShErrLevel level, char * name, int flag);
+int sh_util_obscurename (ShErrLevel level, const char * name, int flag);
 
 /* returns freshly allocated memory, return value should be free'd
  */

@@ -286,7 +286,7 @@ sh_word32 * sh_tiger_hash_val (const char * filename, TigerType what,
 	/* MAY_LOCK */
 	sh.statistics.bytes_hashed += tt;
 	
-	bptr = buffer; tt = 0;
+	tt = 0;
 	for (i = 0; i < blk; ++i)
 	  {
 	    bptr = &buffer[tt]; tt += 64;
@@ -365,7 +365,10 @@ sh_word32 * sh_tiger_hash_val (const char * filename, TigerType what,
 	tiger_t(TIGER_CAST bbuf, 64, res);
 	/* MAY_LOCK */
 	sh.statistics.bytes_hashed += 64;
-	++nblocks; ncount = 0;
+	++nblocks; 
+#ifdef TIGER_DBG
+	ncount = 0;
+#endif
         sl_memset(bbuf, 0, 56 ); 
       }
 
@@ -556,6 +559,7 @@ static void *md5_finish_ctx(struct md5_ctx *ctx, void *resbuf)
   /* Take yet unprocessed bytes into account.  */
   md5_uint32 bytes = ctx->buflen;
   size_t pad;
+  md5_uint32 temp;
 
   /* Now count remaining bytes.  */
   ctx->total[0] += bytes;
@@ -566,9 +570,10 @@ static void *md5_finish_ctx(struct md5_ctx *ctx, void *resbuf)
   memcpy(&ctx->buffer[bytes], fillbuf, pad);
 
   /* Put the 64-bit file length in *bits* at the end of the buffer.  */
-  *(md5_uint32 *) & ctx->buffer[bytes + pad] = SWAP(ctx->total[0] << 3);
-  *(md5_uint32 *) & ctx->buffer[bytes + pad + 4] =
-    SWAP((ctx->total[1] << 3) | (ctx->total[0] >> 29));
+  temp = SWAP(ctx->total[0] << 3);
+  memcpy(&(ctx->buffer[bytes + pad]), &temp, sizeof(temp));
+  temp = SWAP((ctx->total[1] << 3) | (ctx->total[0] >> 29));
+  memcpy(&(ctx->buffer[bytes + pad + 4]), &temp, sizeof(temp));
 
   /* Process last bytes.  */
   md5_process_block(ctx->buffer, bytes + pad + 8, ctx);
@@ -1380,15 +1385,21 @@ static void sha_digest(struct sha_ctx *ctx, sha_word8 *s)
 }
 /*@+type@*/
 
+#include "sh_checksum.h"
+
+#define SH_VAR_SHA1   0
+#define SH_VAR_SHA256 1
+
 /* Compute SHA1 message digest for bytes read from STREAM.  The
    resulting message digest number will be written into the 16 bytes
    beginning at RESBLOCK.  */
-static int sha1_stream(char * filename, void *resblock, 
-		       UINT64 * Length, int timeout, SL_TICKET fd)
+static int SHA_stream(char * filename, void *resblock, 
+		      UINT64 * Length, int timeout, SL_TICKET fd, int variant)
 {
   /* Important: BLOCKSIZE must be a multiple of 64.  */
   static const int BLOCKSIZE = 4096;
   struct sha_ctx ctx;
+  SHA256_CTX ctx_sha2;
   char * buffer = SH_ALLOC(4168); /* BLOCKSIZE + 72 AIX compiler chokes */
   off_t sum = 0;
   char * tmp;
@@ -1404,7 +1415,10 @@ static int sha1_stream(char * filename, void *resblock,
 #endif
 
   /* Initialize the computation context.  */
-  (void) sha_init(&ctx);
+  if (variant == SH_VAR_SHA256)
+    (void) SHA256_Init(&ctx_sha2);
+  else
+    (void) sha_init(&ctx);
 
   if (SL_ISERROR (fd))
     {
@@ -1500,7 +1514,10 @@ static int sha1_stream(char * filename, void *resblock,
     /* Process buffer with BLOCKSIZE bytes.  Note that
        BLOCKSIZE % 64 == 0
     */
-    sha_update(&ctx, (sha_word8*) buffer, (sha_word32) BLOCKSIZE);
+    if (variant == SH_VAR_SHA256)
+      SHA256_Update(&ctx_sha2, (sha2_byte*) buffer, (size_t) BLOCKSIZE);
+    else
+      sha_update(&ctx, (sha_word8*) buffer, (sha_word32) BLOCKSIZE);
     sh.statistics.bytes_hashed += BLOCKSIZE;
 
 #if defined (SH_WITH_CLIENT) || defined (SH_STANDALONE) 
@@ -1522,14 +1539,24 @@ static int sha1_stream(char * filename, void *resblock,
   /* Add the last bytes if necessary.  */
   if (sum > 0)
     {
-      sha_update(&ctx, (sha_word8*) buffer, (sha_word32) sum);
+      if (variant == SH_VAR_SHA256)
+	SHA256_Update(&ctx_sha2, (sha2_byte*) buffer, (size_t) sum);
+      else
+	sha_update(&ctx, (sha_word8*) buffer, (sha_word32) sum);
       sh.statistics.bytes_hashed += sum;
     }
 
-  sha_final (&ctx);
-
   /* Construct result in desired memory.  */
-  sha_digest (&ctx, resblock);
+  if (variant == SH_VAR_SHA256)
+    {
+      SHA256_End(&ctx_sha2, resblock);
+    }
+  else
+    {
+      sha_final (&ctx);
+      sha_digest (&ctx, resblock);
+    }
+
   *Length = bcount;
   SH_FREE(buffer);
   return 0;
@@ -1544,7 +1571,7 @@ static char * sh_tiger_sha1_hash  (char * filename, TigerType what,
   char outbuf[KEY_LEN+1];
   unsigned char sha1buffer[20];
 
-  (void) sha1_stream (filename, sha1buffer, Length, timeout, what);
+  (void) SHA_stream (filename, sha1buffer, Length, timeout, what, SH_VAR_SHA1);
 
   /*@-bufferoverflowhigh -usedef@*/
   for (cnt = 0; cnt < 20; ++cnt)
@@ -1559,10 +1586,22 @@ static char * sh_tiger_sha1_hash  (char * filename, TigerType what,
   return out;
 }
 
+static char * sh_tiger_sha256_hash  (char * filename, TigerType what, 
+				     UINT64 * Length, int timeout, 
+				     char * out, size_t len)
+{
+  char outbuf[KEYBUF_SIZE];
+
+  (void) SHA_stream (filename, outbuf, Length, timeout, what, SH_VAR_SHA256);
+
+  sl_strlcpy(out, outbuf, len);
+  return out;
+}
+
 /* ifdef USE_SHA1 */
 #endif
 
-static int hash_type = 0;
+static int hash_type = SH_TIGER192;
 
 int sh_tiger_get_hashtype ()
 {
@@ -1579,14 +1618,18 @@ int sh_tiger_hashtype (const char * c)
     }
 
   if (0 == strcmp(c, _("TIGER192")))
-    hash_type = 0;
+    hash_type = SH_TIGER192;
 #ifdef USE_SHA1
   else if (0 == strcmp(c, _("SHA1")))    
-    hash_type = 1;
+    hash_type = SH_SHA1;
 #endif
 #ifdef USE_MD5
   else if (0 == strcmp(c, _("MD5")))    
-    hash_type = 2;
+    hash_type = SH_MD5;
+#endif
+#ifdef USE_SHA1
+  else if (0 == strcmp(c, _("SHA256")))    
+    hash_type = SH_SHA256;
 #endif
   else
     {
@@ -1612,12 +1655,16 @@ char * sh_tiger_generic_hash (char * filename, TigerType what,
 			      char * out, size_t len)
 {
 #ifdef USE_SHA1
-  if (hash_type == 1)
+  if (hash_type == SH_SHA1)
     return sh_tiger_sha1_hash    (filename, what, Length, timeout, out, len);
 #endif
 #ifdef USE_MD5
-  if (hash_type == 2)
+  if (hash_type == SH_MD5)
     return sh_tiger_md5_hash     (filename, what, Length, timeout, out, len);
+#endif
+#ifdef USE_SHA1
+  if (hash_type == SH_SHA256)
+    return sh_tiger_sha256_hash  (filename, what, Length, timeout, out, len);
 #endif
   return sh_tiger_hash_internal  (filename, what, Length, timeout, out, len);
 }

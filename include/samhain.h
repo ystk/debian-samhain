@@ -124,6 +124,8 @@
 #elif defined(HAVE_SHORT_32)
 #define UINT32 unsigned short
 #define SINT32 short
+#else
+#error "No 32 bit integer type found"
 #endif
 
 #ifdef HAVE_INTTYPES_H
@@ -158,6 +160,13 @@
 
 
 #define UBYTE unsigned char
+
+enum {
+  SH_TIGER192    = 0, 
+  SH_SHA1        = 1,
+  SH_MD5         = 2,
+  SH_SHA256      = 3
+};
 
 
 enum {
@@ -198,6 +207,14 @@ enum {
 #define SH_FFLAG_SUIDCHK_SET(a)     (((a) & SH_FFLAG_SUIDCHK) != 0)
 #define SET_SH_FFLAG_SUIDCHK(a)     ((a) |= SH_FFLAG_SUIDCHK)
 #define CLEAR_SH_FFLAG_SUIDCHK(a)   ((a) &= ~SH_FFLAG_SUIDCHK)
+
+/* Flags for inotify
+ */
+#define SH_INOTIFY_USE      (1<<0)
+#define SH_INOTIFY_DOSCAN   (1<<1)
+#define SH_INOTIFY_NEEDINIT (1<<2)
+#define SH_INOTIFY_INSCAN   (1<<3)
+#define SH_INOTIFY_IFUSED(a)   if ((sh.flag.inotify & SH_INOTIFY_USE) != 0) { a }
 
 
 /**************************************************
@@ -260,6 +277,9 @@ typedef struct {
   time_t          time_check;    /* time      last check */
   unsigned long   dirs_checked;  /* #dirs     last check */
   unsigned long   files_checked; /* #files    last check */
+  unsigned long   files_report;  /* #file reports        */
+  unsigned long   files_error;   /* #file access error   */
+  unsigned long   files_nodir;   /* #file not a directory*/
 } sh_sh_stat;
 
 typedef struct {
@@ -281,7 +301,8 @@ typedef struct {
   int    client_class;             /* TRUE if client class used       */
   int    audit;
   unsigned long aud_mask;
-  int    hidefile;                 /* TRUE if file not reveled in log */
+  int    hidefile;                 /* TRUE if file not shown in log   */
+  int    inotify;                  /* Flags for inotify               */
 } sh_sh_flag;
 
 typedef struct {
@@ -319,6 +340,11 @@ typedef struct {
 
   int    looptime;                 /* timing for main loop            */
   /*@null@*//*@out@*/ char   * timezone;
+
+#ifdef SCREW_IT_UP
+  int sigtrap_max_duration;
+#endif
+
 } sh_struct;
 
 
@@ -441,22 +467,34 @@ void safe_fatal  (const char * details, const char *f, int l);
      } while (0)
 
 #if defined(HAVE_MLOCK) && !defined(HAVE_BROKEN_MLOCK)
+#ifdef USE_SUID
 #define MLOCK(a, b) \
       if ((skey != NULL) && skey->mlock_failed == SL_FALSE){ \
         (void) sl_set_suid(); \
 	if (sh_unix_mlock(FIL__, __LINE__, a, b) < 0) skey->mlock_failed = SL_TRUE; \
-        (void) sl_unset_suid(); } 
+        (void) sl_unset_suid(); }
+#else
+#define MLOCK(a, b) \
+      if ((skey != NULL) && skey->mlock_failed == SL_FALSE){ \
+        if (sh_unix_mlock(FIL__, __LINE__, a, b) < 0) skey->mlock_failed = SL_TRUE; }
+#endif 
 #else
 #define MLOCK(a, b) \
   ;
 #endif
 
 #if defined(HAVE_MLOCK) && !defined(HAVE_BROKEN_MLOCK)
+#ifdef USE_SUID
 #define MUNLOCK(a, b) \
       if ((skey != NULL) && skey->mlock_failed == SL_FALSE){ \
         (void) sl_set_suid(); \
 	(void) sh_unix_munlock( a, b );\
-        (void) sl_unset_suid(); } 
+        (void) sl_unset_suid(); }
+#else
+#define MUNLOCK(a, b) \
+      if ((skey != NULL) && skey->mlock_failed == SL_FALSE){ \
+        (void) sh_unix_munlock( a, b ); }
+#endif 
 #else
 #define MUNLOCK(a, b) \
   ;

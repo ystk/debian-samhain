@@ -26,15 +26,22 @@
 
 #include "config_xor.h"
 
+/* changed from 500 to 600 b/o FreeBSD (see sys/cdefs.h) 
+ * which needs _POSIX_C_SOURCE >= 200112 for lstat()
+ */
+#if defined(__sun) || defined(__sun__) || defined(sun)
 #define _XOPEN_SOURCE 500
+#else
+#define _XOPEN_SOURCE 600
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
 #include <sys/types.h>
-#include <dirent.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <signal.h>
 #include <unistd.h>
 
@@ -459,6 +466,9 @@ static void check_watchlist (short * res)
 	}
       list = list->next;
     }
+
+  sh_dummy_watchlist = NULL;
+  return;
 }
 
 /* Add 'str' to the list of watched processes for which
@@ -517,14 +527,17 @@ int sh_prochk_set_pspath(const char *str)
 {
   SL_ENTER(_("sh_prochk_set_pspath"));
 
-  if (!str && ('/' != str[0]))
+  if (!str || ('/' != str[0]))
     SL_RETURN((-1), _("sh_prochk_set_pspath"));
   if (sh_prochk_pspath)
     SH_FREE(sh_prochk_pspath);
+#ifdef SH_EVAL_SHELL
   sh_prochk_pspath = sh_util_strdup (str);
-
   SL_RETURN((0), _("sh_prochk_set_pspath"));
-
+#else
+  sh_prochk_pspath = NULL;
+  SL_RETURN((-1), _("sh_prochk_set_pspath"));
+#endif
 }
 
 /* argument for ps
@@ -535,10 +548,14 @@ int sh_prochk_set_psarg(const char *str)
 
   if (sh_prochk_psarg)
     SH_FREE(sh_prochk_psarg);
+#ifdef SH_EVAL_SHELL
   sh_prochk_psarg = sh_util_strdup (str);
-
   SL_RETURN((0), _("sh_prochk_set_psarg"));
-
+#else
+  (void) str;
+  sh_prochk_psarg = NULL;
+  SL_RETURN((-1), _("sh_prochk_set_psarg"));
+#endif
 }
 
 
@@ -631,9 +648,11 @@ int sh_prochk_set_interval (const char * c)
       SH_MUTEX_UNLOCK(mutex_thread_nolog);
       retval = -1;
     }
-
-  sh_prochk_interval = (time_t) val;
-  SL_RETURN(0, _("sh_prochk_set_interval"));
+  else
+    {
+      sh_prochk_interval = (time_t) val;
+    }
+  SL_RETURN(retval, _("sh_prochk_set_interval"));
 }
 
 
@@ -845,10 +864,12 @@ static int sh_processes_readps (FILE * in, short * res,
 				short flag, pid_t pid)
 {
   int  cc; 
-  unsigned int  lnum   = 0;
-  unsigned long num    = 0;
+  volatile unsigned int  lnum   = 0;
+  volatile unsigned long num    = 0;
   char c;
   unsigned int  pos = 0;
+#define SH_TWAIT_MAX 60
+  volatile unsigned int  twait = 0;
   char tstr[256];
   enum { SKIP_TO_WS, SKIP_WS, SKIP_TO_WS2, SKIP_WS2, GET_NUM, SKIP_END, GET_NUM2 } line;
 
@@ -872,9 +893,11 @@ static int sh_processes_readps (FILE * in, short * res,
 	    {
 	      break;
 	    }
-	  else if (errno == EAGAIN)
+	  else if ((errno == EAGAIN) && (twait < SH_TWAIT_MAX))
 	    {
 	      clearerr(in);
+	      retry_msleep(1, 0);
+	      ++twait;
 	      continue;
 	    }
 #ifdef HOST_IS_OPENBSD
@@ -888,10 +911,11 @@ static int sh_processes_readps (FILE * in, short * res,
 	    {
 	      char errbuf[SH_ERRBUF_SIZE];
 
-	      /* SH_MUTEX_LOCK(mutex_thread_nolog) is in caller */
+	      SH_MUTEX_LOCK(mutex_thread_nolog);
 	      sh_error_handle(SH_ERR_ALL, FIL__, __LINE__, errno, MSG_E_SUBGEN,
 			      sh_error_message(errno, errbuf, sizeof(errbuf)),
 			      _("sh_processes_readps"));
+	      SH_MUTEX_UNLOCK(mutex_thread_nolog);
 	      break;
 	    }
 	}
@@ -911,11 +935,12 @@ static int sh_processes_readps (FILE * in, short * res,
 	      tstr[pos-1] = '\0';
 	      if (flag_err_debug == SL_TRUE)
 		{
-		  /* SH_MUTEX_LOCK(mutex_thread_nolog) is in caller */
+		  SH_MUTEX_LOCK(mutex_thread_nolog);
 		  sh_error_handle(SH_ERR_ALL, FIL__, __LINE__, num, 
 				  MSG_E_SUBGEN,
 				  tstr,
 				  _("sh_processes_readps"));
+		  SH_MUTEX_UNLOCK(mutex_thread_nolog);
 		}
 	      /* fprintf(stderr, "<%ld> %s\n", num, tstr); */
 	      line = SKIP_WS; pos = 0;
@@ -1013,8 +1038,6 @@ static int sh_processes_runps (short * res, char * str, size_t len,
 
   int    status = 0;
   char * p;
-  struct  sigaction  new_act;
-  struct  sigaction  old_act;
   int retval = 0;
   char  dir[SH_PATHBUF];
 
@@ -1061,16 +1084,12 @@ static int sh_processes_runps (short * res, char * str, size_t len,
   status = sh_ext_popen(&task);
   if (status != 0)
     {
-      /* SH_MUTEX_LOCK(mutex_thread_nolog) is in caller */
+      SH_MUTEX_LOCK(mutex_thread_nolog);
       sh_error_handle(SH_ERR_ALL, FIL__, __LINE__, status, MSG_E_SUBGEN, 
 		      _("Could not open pipe"), _("sh_processes_runps"));
+      SH_MUTEX_UNLOCK(mutex_thread_nolog);
       SL_RETURN ((-1), _("sh_processes_runps"));
     }
-
-  /* ignore SIGPIPE (instead get EPIPE if connection is closed)
-   */
-  new_act.sa_handler = SIG_IGN;
-  (void) retry_sigaction (FIL__, __LINE__, SIGPIPE, &new_act, &old_act);
 
   /* read from the open pipe
    */
@@ -1078,10 +1097,6 @@ static int sh_processes_runps (short * res, char * str, size_t len,
     {
       retval = sh_processes_readps (task.pipe, res, str, len, flag, pid);
     }
-
-  /* restore old signal handler
-   */
-  (void) retry_sigaction (FIL__, __LINE__, SIGPIPE, &old_act, NULL);
 
   /* close pipe and return exit status
    */
@@ -1153,17 +1168,15 @@ static int sh_process_check_int (short * res)
       SL_RETURN ((-1), _("sh_process_check_int"));
     }
 
-  SH_MUTEX_LOCK(mutex_thread_nolog);
   retval = sh_processes_runps (res, NULL, 0, SH_PR_PS, 0);
-  SH_MUTEX_UNLOCK(mutex_thread_nolog);
+
   for (i = sh_prochk_minpid; i != sh_prochk_maxpid; ++i)
     {
       j      = i - sh_prochk_minpid; 
       res[j] = sh_processes_check ((pid_t) i, res[j]);
     }
-  SH_MUTEX_LOCK(mutex_thread_nolog);
+
   retval += sh_processes_runps (res, NULL, 0, SH_PR_PS2, 0);
-  SH_MUTEX_UNLOCK(mutex_thread_nolog);
 
   if (retval != 0)
     {
@@ -1307,7 +1320,10 @@ static int sh_prochk_init_internal(void)
 
   sh_prochk_size = sh_prochk_maxpid - sh_prochk_minpid;
 
-  sh_prochk_res  = SH_ALLOC(sizeof(short) * sh_prochk_size);
+  if (sh_prochk_res == NULL)
+    {
+      sh_prochk_res  = SH_ALLOC(sizeof(short) * sh_prochk_size);
+    }
   memset (sh_prochk_res, 0, sizeof(short) * sh_prochk_size);
   
   SL_RETURN(0, _("sh_prochk_init"));
@@ -1329,6 +1345,12 @@ int sh_prochk_init (struct mod_type * arg)
 	return SH_MOD_THREAD;
       else
 	return SH_MOD_FAILED;
+    }
+  else if (arg != NULL && arg->initval == SH_MOD_THREAD &&
+	   (sh.flag.isdaemon == S_TRUE || sh.flag.loop == S_TRUE))
+    {
+      sh_prochk_init_internal();
+      return SH_MOD_THREAD;
     }
 #endif
   return sh_prochk_init_internal();

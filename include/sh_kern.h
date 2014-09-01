@@ -16,6 +16,7 @@ int sh_kern_set_severity (const char * c);
 int sh_kern_set_timer    (const char * c);
 int sh_kern_set_idt      (const char * c);
 int sh_kern_set_pci      (const char * c);
+int sh_kern_set_proc     (const char * c);
 int sh_kern_set_sct_addr (const char * c);
 int sh_kern_set_sc_addr  (const char * c);
 int sh_kern_set_proc_root (const char * c);

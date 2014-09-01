@@ -39,6 +39,7 @@
 
 *****************/
 
+
 /* --------------------------------------------------------------
  * 
  * Typedefs, global variables, macros.
@@ -61,8 +62,8 @@ typedef long int SL_TICKET;             /* Unique ID for opened files.    */
 #define SL_TRUE  1
 #define SL_FALSE 0
 
-#define SH_GRBUF_SIZE  4096
-#define SH_PWBUF_SIZE  4096
+#define SH_GRBUF_SIZE   4096
+#define SH_PWBUF_SIZE  32768
 
 
 #if defined(__GNUC__) && (__GNUC__ >= 3)
