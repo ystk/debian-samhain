@@ -3,5 +3,5 @@ usr/share/doc/samhain
 etc/init.d
 etc/samhain
 var/log/samhain
-var/state/samhain
+var/lib/samhain
 etc/logrotate.d

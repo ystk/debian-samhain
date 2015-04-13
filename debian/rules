@@ -51,7 +51,7 @@ ifneq "$(wildcard /usr/share/misc/config.guess)" ""
 endif
 	./configure --prefix=/usr --mandir=\$${prefix}/share/man \
 		--with-config-file=/etc/samhain/samhainrc \
-		--with-state-dir=/var/state/samhain  \
+		--with-state-dir=/var/lib/samhain  \
 		--with-prelude \
 		$(DNMALLOC) \
 		$(DISABLE_ASM) \
@@ -69,7 +69,7 @@ build-server-stamp:
 #	dh_autoreconf
 	./configure --prefix=/usr --mandir=\$${prefix}/share/man \
 		--with-config-file=/etc/yule/yulerc \
-		--with-state-dir=/var/state/yule  \
+		--with-state-dir=/var/lib/yule  \
 		--with-prelude \
 		$(DNMALLOC) \
 		--enable-network=server  \
@@ -85,7 +85,7 @@ build-client-stamp:
 #	dh_autoreconf
 	./configure --prefix=/usr --mandir=\$${prefix}/share/man \
 		--with-config-file=/etc/samhain/samhainrc \
-		--with-state-dir=/var/state/samhain  \
+		--with-state-dir=/var/lib/samhain  \
 		--with-prelude \
 		$(DNMALLOC) \
 		--enable-network=client \
@@ -112,7 +112,7 @@ install: build
 	dh_installdirs
 	# Fix the permissions
 	chmod o-rX `pwd`/debian/samhain/var/log/samhain \
-		`pwd`/debian/samhain/var/state/samhain \
+		`pwd`/debian/samhain/var/lib/samhain \
 		`pwd`/debian/samhain/etc/samhain
 
 	$(MAKE) install install-boot DESTDIR=`pwd`/debian/samhain

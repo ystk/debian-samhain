@@ -51,7 +51,7 @@ install: build
 	# Fix the permissions
 	#chmod o-rX `pwd`/debian/tmp/var/log/samhain \
 	#	`pwd`/debian/tmp/var/run/samhain \
-	#	`pwd`/debian/tmp/var/state/samhain \
+	#	`pwd`/debian/tmp/var/lib/samhain \
 	#	`pwd`/debian/tmp/etc/samhain
 
 	# $(MAKE) install install-boot DESTDIR=`pwd`/debian/tmp

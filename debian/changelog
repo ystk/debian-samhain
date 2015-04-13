@@ -1,3 +1,14 @@
+samhain (3.1.0-7) unstable; urgency=medium
+
+  * Applied patch provided by Andrea Claudi to move all non-volatile package
+    state from /var/state/samhain to /var/lib/samhain, according to the FHS
+    (Closes: #771461)
+  * debian/preinst: Move the contents of /var/state/samhain (if they exist)
+    to /var/lib/samhain on upgrades to avoid re-creating the Samhain state
+    database on upgrades from previous versions.
+
+ -- Javier Fernández-Sanguino Peña <jfs@debian.org>  Wed, 03 Dec 2014 00:57:15 +0100
+
 samhain (3.1.0-6) unstable; urgency=medium
 
   * debian/rules: Add an option to disable the ASM code when building

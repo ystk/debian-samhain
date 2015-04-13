@@ -1,0 +1,26 @@
+# Preinstall file for samhain
+
+
+case "$1" in
+    install|upgrade)
+# If there are files in /var/state from previous version of Samhain
+# them move all the files and remove the old directory (deprecated since
+# 3.1.0-7)
+        if [ -e /var/state/samhain/ ] ; then
+            [ ! -e /var/lib/samhain ] && mkdir -p /var/lib/samhain
+            mv /var/state/samhain/* /var/lib/samhain
+           rmdir /var/state/samhain/ || true
+        fi
+    ;;
+    abort-upgrade)
+    ;;
+    *)
+        echo "preinst called with unknown argument \`$1'" >&2
+        exit 0
+        ;;
+esac
+
+
+#DEBHELPER#
+
+exit 0
